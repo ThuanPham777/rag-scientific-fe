@@ -1,0 +1,7 @@
+@import "tailwindcss";
+@import 'react-pdf/dist/Page/AnnotationLayer.css';
+@import 'react-pdf/dist/Page/TextLayer.css';
+
+.pdf-search-hit {
+    box-shadow: 0 0 0 1px rgba(234, 179, 8, .6) inset;
+}
