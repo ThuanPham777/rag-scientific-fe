@@ -1,37 +1,66 @@
 import { useState } from 'react';
-import Input from '../UI/input/Input';
+import { Switch, Tooltip } from 'antd';
+import { AppTextArea } from '../ui/input/Input';
+import { Sigma } from 'lucide-react';
 
-export default function ChatInput({
-  onSend,
-}: {
-  onSend: (text: string) => void;
-}) {
+type Props = {
+  onSend: (text: string, opts?: { highQuality: boolean }) => void;
+  onExplainMath?: () => void; // click nút ∑
+};
+
+export default function ChatInput({ onSend, onExplainMath }: Props) {
   const [text, setText] = useState('');
+  const [hq, setHq] = useState(false);
+
+  const send = () => {
+    const t = text.trim();
+    if (!t) return;
+    onSend(t, { highQuality: hq });
+    setText('');
+  };
+
   return (
-    <div className='border-t border-t-gray-200 p-3 bg-white flex items-center gap-2'>
-      <Input
-        placeholder='Ask about the paper…'
-        className='flex-1 rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-400'
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && text.trim()) {
-            onSend(text.trim());
-            setText('');
+    <div className='px-3 pb-3 bg-white'>
+      {/* Khung giống ảnh: viền + bo góc, TextArea borderless */}
+      <div className='rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm'>
+        <AppTextArea
+          variant='borderless'
+          value={text}
+          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+            setText(e.target.value)
           }
-        }}
-      />
-      <button
-        className='px-4 py-2 rounded-xl bg-brand-600 text-white hover:bg-brand-700'
-        onClick={() => {
-          if (text.trim()) {
-            onSend(text.trim());
-            setText('');
-          }
-        }}
-      >
-        Send
-      </button>
+          placeholder='Ask any question...'
+          submitOnEnter
+          onSubmit={send}
+          className='!px-3 !pt-3 !pb-1'
+        />
+
+        {/* Hàng điều khiển dưới cùng */}
+        <div className='flex items-center justify-between px-3 py-2 bg-white'>
+          <label className='flex items-center gap-2 text-sm text-gray-700'>
+            <Switch
+              size='small'
+              checked={hq}
+              onChange={setHq}
+            />
+            <span>High Quality</span>
+          </label>
+
+          <Tooltip
+            title='Select and drag the cursor over an area containing formulas, equations or tables'
+            placement='top'
+            getPopupContainer={() => document.body}
+          >
+            <button
+              type='button'
+              onClick={onExplainMath}
+              className='w-8 h-8 grid place-items-center rounded-md text-gray-700 hover:bg-gray-100'
+            >
+              <Sigma size={16} />
+            </button>
+          </Tooltip>
+        </div>
+      </div>
     </div>
   );
 }

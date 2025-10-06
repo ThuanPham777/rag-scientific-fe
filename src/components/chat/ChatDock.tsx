@@ -1,0 +1,129 @@
+// src/components/chat/ChatDockFixed.tsx
+import { useEffect, useRef, useState } from 'react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Globe,
+  Trash2,
+  BotMessageSquare,
+} from 'lucide-react';
+import ChatMessage from './ChatMessage';
+import ChatInput from './ChatInput';
+import type { Session } from '../../utils/types';
+
+type Props = { session: Session; onSend: (text: string) => void };
+
+export default function ChatDock({ session, onSend }: Props) {
+  const [open, setOpen] = useState(true);
+  const [suggestions] = useState([
+    'Methods used',
+    'Contributions',
+    'Explain Abstract',
+    'Related Papers',
+    'Limitations',
+    'Dataset used',
+    'Future works',
+  ]);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [open, session.messages.length]);
+
+  // Kích thước cửa sổ chat
+  const WIDTH = 'w-[450px]';
+  const HEIGHT = 'h-[81vh]';
+  return (
+    <>
+      {/* Chat nổi cố định */}
+      {open && (
+        <div
+          className={`fixed right-4 bottom-4 z-50 ${WIDTH} ${HEIGHT} bg-white border border-gray-200 rounded-lg flex flex-col pointer-events-auto`}
+          role='dialog'
+          aria-label='Chat'
+        >
+          {/* Header */}
+          <div className='px-4 py-2 border-b border-b-gray-200 flex items-center justify-between'>
+            <div className='flex items-center gap-2 font-semibold'>
+              <span>
+                <BotMessageSquare className='text-orange-500' />
+              </span>
+              <span>Chat</span>
+            </div>
+            <div className='flex items-center gap-2 text-sm text-gray-600'>
+              <button
+                className='p-1.5 rounded hover:bg-gray-50'
+                title='Language'
+              >
+                <Globe size={16} />
+              </button>
+              <button
+                className='p-1.5 rounded hover:bg-gray-50'
+                title='Clear messages'
+                onClick={() => console.log('TODO: clear messages')}
+              >
+                <Trash2 size={16} />
+              </button>
+              <button
+                className='p-1.5 rounded hover:bg-gray-50'
+                title='Minimize'
+                onClick={() => setOpen(false)}
+              >
+                <ChevronDown size={16} />
+              </button>
+            </div>
+          </div>
+
+          {/* Chips */}
+          <div className='px-4 pt-3 flex-shrink-0'>
+            <div className='flex flex-wrap gap-2'>
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  className='px-3 py-1.5 rounded-full border text-sm bg-white hover:bg-gray-50'
+                  onClick={() => onSend(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className='flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50 min-h-0'>
+            {session.messages.map((m) => (
+              <ChatMessage
+                key={m.id}
+                msg={m}
+              />
+            ))}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <ChatInput onSend={onSend} />
+        </div>
+      )}
+
+      {/* Thanh thu gọn (cũng fixed, không cuộn) */}
+      {!open && (
+        <div className={`fixed right-4 bottom-3 z-40 ${WIDTH}`}>
+          <button
+            className='w-full bg-white border border-gray-300 rounded-lg flex items-center justify-between px-4 py-3 hover:bg-gray-50'
+            onClick={() => setOpen(true)}
+            aria-expanded='false'
+          >
+            <span className='flex items-center gap-2'>
+              <span>
+                <BotMessageSquare className='text-orange-500' />
+              </span>
+              <span className='font-medium'>Chat</span>
+            </span>
+            <ChevronUp size={18} />
+          </button>
+        </div>
+      )}
+    </>
+  );
+}

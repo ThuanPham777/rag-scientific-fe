@@ -1,8 +1,9 @@
+// src/pages/ChatPage.tsx
 import { useEffect } from 'react';
 import { usePapersStore } from '../store/usePapersStore';
 import { pollMessages, sendQuery } from '../services/api';
 import PdfPanel from '../components/pdf/PdfPanel';
-import ChatPanel from '../components/chat/ChatPanel';
+import ChatDock from '../components/chat/ChatDock';
 
 export default function ChatPage() {
   const { session, addMessage, papers } = usePapersStore();
@@ -41,20 +42,22 @@ export default function ChatPage() {
   };
 
   return (
-    <div className='pt-8 pl-8 pb-6'>
-      {/* đặt chiều cao khung làm việc một lần */}
+    <div className='pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2'>
+      {/* lưới 2 cột: trái PDF, phải spacer giữ khoảng cho chat nổi */}
       <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3'>
-        {/* LEFT: PDF Panel */}
         <PdfPanel activePaper={activePaper} />
-
-        {/* RIGHT: Chat Panel */}
-        {session && (
-          <ChatPanel
-            session={session}
-            onSend={onSend}
-          />
-        )}
+        <div
+          className='hidden lg:block'
+          aria-hidden
+        />{' '}
+        {/* spacer phải */}
       </div>
+
+      {/* Chat nổi cố định — luôn ghim góc phải, không cuộn */}
+      <ChatDock
+        session={session}
+        onSend={onSend}
+      />
     </div>
   );
 }

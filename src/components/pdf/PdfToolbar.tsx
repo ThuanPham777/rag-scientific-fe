@@ -1,5 +1,13 @@
 import { useRef, useState, useEffect } from 'react';
-import { Search } from 'lucide-react';
+import {
+  Search,
+  ZoomOut,
+  ZoomIn,
+  Maximize,
+  EllipsisVertical,
+  Sigma,
+} from 'lucide-react';
+import ATooltip from '../ui/tooltip/ATooltip';
 
 type Props = {
   showSearch: boolean;
@@ -68,37 +76,55 @@ export default function PdfToolbar({
   }, [showZoomDropdown]);
 
   return (
-    <div className='relative px-3 py-2 flex items-center gap-2 border-b border-gray-200 bg-white flex-shrink-0'>
+    <div className='relative px-3 py-2 flex items-center gap-2 border-b border-gray-200 bg-gray-400/10 rounded-md flex-shrink-0'>
       {/* Search button */}
       <button
         ref={searchBtnRef}
-        className='w-9 h-9 grid place-items-center rounded-md border'
+        className='w-9 h-9 grid place-items-center rounded-md border cursor-pointer hover:bg-gray-50'
         onClick={onToggleSearch}
-        title='Search in PDF'
       >
         <Search size={16} />
       </button>
 
       {/* Explain math & table */}
-      <button
-        className={`h-9 px-4 rounded-md border text-sm ${
-          captureMode
-            ? 'bg-orange-500 text-white hover:bg-orange-600'
-            : 'bg-white hover:bg-gray-50'
-        }`}
-        onClick={onToggleCapture}
+      <ATooltip
+        placement='top'
+        title='Select and drag the cursor over an area containing formulas, equations or tables'
       >
-        <span className='mr-1'>∑</span> Explain math &amp; table
-      </button>
+        <button
+          className={`h-9 px-4 rounded-md border text-sm ${
+            captureMode
+              ? 'bg-orange-500 text-white hover:bg-orange-600'
+              : 'bg-gray-400/10 hover:bg-gray-400/20 text-gray-700'
+          }`}
+          onClick={onToggleCapture}
+        >
+          <p className='flex items-center gap-1'>
+            <span className='mr-1'>
+              <Sigma
+                size={16}
+                className='text-purple-600'
+              />
+            </span>{' '}
+            <span>Explain math &amp; table</span>
+          </p>
+        </button>
+      </ATooltip>
 
       <div className='ml-auto flex items-center gap-1 text-sm'>
-        <button
-          className='w-9 h-9 rounded-md border hover:bg-gray-50'
-          onClick={zoomOut}
-          title='Zoom out'
+        <ATooltip
+          placement='top'
+          title='Zoom Out'
         >
-          -
-        </button>
+          <button
+            type='button'
+            className='w-8 h-8 rounded-md hover:bg-gray-200 grid place-items-center'
+            onClick={zoomOut}
+          >
+            <ZoomOut size={22} />
+          </button>
+        </ATooltip>
+
         {/* Dropdown % giống ảnh */}
         <div
           className='relative'
@@ -142,25 +168,42 @@ export default function PdfToolbar({
             </div>
           )}
         </div>
-        <button
-          className='w-9 h-9 rounded-md border hover:bg-gray-50'
-          onClick={zoomIn}
-          title='Zoom in'
+        <ATooltip
+          placement='top'
+          title='Zoom In'
         >
-          +
-        </button>
-        <button
-          className='w-9 h-9 rounded-md border hover:bg-gray-50'
-          title='Fit to width'
+          <button
+            type='button'
+            className='w-8 h-8 rounded-md hover:bg-gray-200 grid place-items-center'
+            onClick={zoomIn}
+          >
+            <ZoomIn size={22} />
+          </button>
+        </ATooltip>
+
+        <ATooltip
+          placement='top'
+          title='Enter Fullscreen'
         >
-          ⤢
-        </button>
-        <button
-          className='w-9 h-9 rounded-md border hover:bg-gray-50'
-          title='More options'
+          <button
+            type='button'
+            className='w-8 h-8 rounded-md hover:bg-gray-200 grid place-items-center'
+          >
+            <Maximize size={22} />
+          </button>
+        </ATooltip>
+
+        <ATooltip
+          placement='top'
+          title='More Options'
         >
-          ⋮
-        </button>
+          <button
+            type='button'
+            className='w-8 h-8 rounded-md hover:bg-gray-200 grid place-items-center'
+          >
+            <EllipsisVertical size={22} />
+          </button>
+        </ATooltip>
       </div>
 
       {/* Search popover */}
