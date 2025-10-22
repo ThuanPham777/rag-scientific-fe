@@ -1,7 +1,7 @@
 // src/pages/ChatPage.tsx
 import { useEffect } from 'react';
 import { usePapersStore } from '../store/usePapersStore';
-import { pollMessages, sendQuery } from '../services/api';
+import { sendQuery } from '../services/api';
 import PdfPanel from '../components/pdf/PdfPanel';
 import ChatDock from '../components/chat/ChatDock';
 
@@ -10,19 +10,7 @@ export default function ChatPage() {
   const activePaper =
     papers.find((p) => p.id === session?.activePaperId) ?? papers[0];
 
-  useEffect(() => {
-    let t: any;
-    const run = async () => {
-      if (!session) return;
-      try {
-        const res = await pollMessages(session.id);
-        res.messages.forEach((m: any) => addMessage(m));
-      } catch {}
-      t = setTimeout(run, 1200);
-    };
-    run();
-    return () => clearTimeout(t);
-  }, [session?.id]);
+  useEffect(() => { }, [session?.id]);
 
   if (!session)
     return (
@@ -32,13 +20,13 @@ export default function ChatPage() {
     );
 
   const onSend = async (text: string) => {
-    addMessage({
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: text,
-      createdAt: new Date().toISOString(),
-    });
-    await sendQuery(session.id, text, session.activePaperId);
+    const { userMsg, assistantMsg } = await sendQuery(
+      session.id,
+      text,
+      session.activePaperId
+    );
+    addMessage(userMsg);
+    addMessage(assistantMsg);
   };
 
   return (

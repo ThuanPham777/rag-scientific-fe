@@ -1,102 +1,143 @@
-// src/services/api.ts (mocked)
+import { API_BASE_URL } from "../config";
+import type { ChatMessage, Citation, Paper } from "../utils/types";
 
-import type { ChatMessage, Citation, Paper } from '../utils/types';
+// ============================
+// 🔹 Local in-memory store
+// ============================
+let SESSIONS: Record<string, { messages: ChatMessage[]; paperIds: string[] }> = {};
 
-// in-memory store (per tab)
-let FAKE_PAPERS: Paper[] = [];
-let SESSIONS: Record<string, { messages: ChatMessage[]; paperIds: string[] }> =
-  {};
+// ============================
+// 🔹 Start a chat session
+// ============================
+export async function startSession(paperIds: string[]) {
+  const sessionId = crypto.randomUUID();
+  SESSIONS[sessionId] = { messages: [], paperIds };
+  return { sessionId, paperIds };
+}
 
+// ============================
+// 🔹 Upload one or many PDFs
+// ============================
 export async function uploadPdfs(
   files: File[],
   onProgress?: (pct: number) => void
 ) {
-  let loaded = 0;
-  const total = files.reduce((s, f) => s + f.size, 0) || 10;
-  const tick = () => {
-    loaded = Math.min(total, loaded + total / 8);
-    onProgress?.(Math.round((loaded / total) * 100));
-  };
-  for (let i = 0; i < 8; i++) {
-    await new Promise((r) => setTimeout(r, 80));
-    tick();
+  const uploadedPapers: Paper[] = [];
+  const total = files.length;
+  let processed = 0;
+
+  for (const file of files) {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`${API_BASE_URL}/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Upload failed (${res.status}): ${text}`);
+      }
+
+      const data = await res.json();
+
+      uploadedPapers.push({
+        id: data.file_id,
+        name: data.filename || file.name,
+        size: file.size,
+        localUrl: URL.createObjectURL(file),
+      });
+    } catch (err) {
+      console.error("❌ Upload error:", err);
+      throw err;
+    } finally {
+      processed++;
+      onProgress?.(Math.round((processed / total) * 100));
+    }
   }
 
-  FAKE_PAPERS = files.map((f) => ({
-    id: crypto.randomUUID(),
-    name: f.name,
-    size: f.size,
-    localUrl: URL.createObjectURL(f), // <-- quan trọng
-  }));
-  return { papers: FAKE_PAPERS };
+  return { papers: uploadedPapers };
 }
 
-export async function startSession(paperIds: string[]) {
-  const sessionId = crypto.randomUUID();
-  SESSIONS[sessionId] = { messages: [], paperIds };
-  return { sessionId };
-}
-
+// ============================
+// 🔹 Send a query to backend
+// ============================
 export async function sendQuery(
   sessionId: string,
   message: string,
   activePaperId?: string
 ) {
-  // Push user message
+  // 1️⃣ User message
   const userMsg: ChatMessage = {
     id: crypto.randomUUID(),
-    role: 'user',
+    role: "user",
     content: message,
     createdAt: new Date().toISOString(),
   };
+
+  if (!SESSIONS[sessionId])
+    SESSIONS[sessionId] = { messages: [], paperIds: [] };
   SESSIONS[sessionId].messages.push(userMsg);
 
-  // Fake assistant answer
-  const answer = fakeRagAnswer(message, activePaperId);
+  // 2️⃣ Request body
+  const body = {
+    file_id: activePaperId,
+    question: message,
+    include_context: true,
+  };
+
+  // 3️⃣ Fetch backend
+  let data: any;
+  try {
+    const res = await fetch(`${API_BASE_URL}/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Query failed (${res.status}): ${text}`);
+    }
+
+    data = await res.json();
+  } catch (err) {
+    console.error("❌ Query error:", err);
+    throw err;
+  }
+
+  // 4️⃣ Parse citations (từ context.texts)
+  const citations: Citation[] =
+    data.context?.texts?.map((t: any, i: number) => ({
+      paperId: activePaperId ?? "",
+      page: i + 1,
+      title: t.type,
+      snippet: t.text.slice(0, 200) + (t.text.length > 200 ? "..." : ""),
+    })) ?? [];
+
+  // 5️⃣ Assistant message
   const assistantMsg: ChatMessage = {
     id: crypto.randomUUID(),
-    role: 'assistant',
-    content: answer.text,
-    citations: answer.citations,
+    role: "assistant",
+    content: data.answer,
+    citations,
     createdAt: new Date().toISOString(),
   };
 
-  await new Promise((r) => setTimeout(r, 500));
+  // 6️⃣ Save to session
   SESSIONS[sessionId].messages.push(assistantMsg);
-  return { messageId: assistantMsg.id };
+
+  return { userMsg, assistantMsg };
 }
 
+// ============================
+// 🔹 Poll messages
+// ============================
 export async function pollMessages(sessionId: string) {
   return {
     messages: SESSIONS[sessionId]?.messages ?? [],
     nextCursor: undefined,
   };
-}
-
-function fakeRagAnswer(
-  q: string,
-  paperId?: string
-): { text: string; citations?: Citation[] } {
-  const canned = [
-    `Here is a brief summary based on your upload. The paper discusses an e-learning framework, methodology, and results.
-
-• Objective: evaluate platform usability
-• Methods: mixed (survey + log data)
-• Key results: positive learning outcomes
-• Limitations: small sample, single course`,
-    `Main contributions:
-1) Clear taxonomy of features
-2) Lightweight pipeline for PDF parsing
-3) Open dataset for replication`,
-    `Limitations include small sample size, potential annotation bias, and restricted generalization beyond the studied cohort.`,
-  ];
-
-  const text = canned[Math.floor(Math.random() * canned.length)];
-  const citations: Citation[] = paperId
-    ? [
-      { paperId, page: 3, title: 'Methodology' },
-      { paperId, page: 14, title: 'Results' },
-    ]
-    : [];
-  return { text, citations };
 }

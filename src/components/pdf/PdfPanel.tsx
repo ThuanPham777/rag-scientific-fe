@@ -8,6 +8,7 @@ import {
   saveSummaryToStorage,
   type SummaryResponse,
 } from '../../services/summaryApi';
+import { sendQuery } from '../../services/api';
 
 type Props = {
   activePaper?: Paper;
@@ -56,21 +57,19 @@ export default function PdfPanel({ activePaper }: Props) {
       <div className='px-4 pt-3 border-b border-gray-200 bg-white flex-shrink-0'>
         <div className='flex gap-6'>
           <button
-            className={`pb-3 font-medium transition-colors ${
-              activeTab === 'pdf'
-                ? 'border-b-2 border-orange-500 text-orange-500'
-                : 'text-gray-500 hover:text-orange-500'
-            }`}
+            className={`pb-3 font-medium transition-colors ${activeTab === 'pdf'
+              ? 'border-b-2 border-orange-500 text-orange-500'
+              : 'text-gray-500 hover:text-orange-500'
+              }`}
             onClick={() => setActiveTab('pdf')}
           >
             PDF file
           </button>
           <button
-            className={`pb-3 font-medium transition-colors ${
-              activeTab === 'summary'
-                ? 'border-b-2 border-orange-500 text-orange-500'
-                : 'text-gray-500 hover:text-orange-500'
-            }`}
+            className={`pb-3 font-medium transition-colors ${activeTab === 'summary'
+              ? 'border-b-2 border-orange-500 text-orange-500'
+              : 'text-gray-500 hover:text-orange-500'
+              }`}
             onClick={() => setActiveTab('summary')}
           >
             Summary
@@ -88,7 +87,7 @@ export default function PdfPanel({ activePaper }: Props) {
                 console.log('PdfPanel: onAction called with:', action, payload);
                 if (action === 'explain' && payload.imageDataUrl) {
                   // Gửi ảnh sang backend / hiển thị trong chat:
-                  // sendQuery(session.id, "Explain this image", session.activePaperId, payload.imageDataUrl)
+                  //sendQuery(session.id, "Explain this image", session.activePaperId, payload.imageDataUrl)
                   console.log(
                     'Captured PNG:',
                     payload.imageDataUrl.slice(0, 64),
