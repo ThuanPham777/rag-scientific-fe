@@ -1,9 +1,9 @@
 import axios, { AxiosError } from "axios";
-import { API_BASE_URL } from "./env"; // 👈 nếu bạn có file env.ts (hoặc dùng import.meta.env)
+import { API_BASE_URL } from "./env";
 
 const api = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 120000, // 120s
+    timeout: 500000, // 500s
     headers: {
         "Content-Type": "application/json",
     },
