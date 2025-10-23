@@ -1,25 +1,23 @@
-//import { uploadPdfs, startSession } from '@/services/api';
 import { useNavigate } from 'react-router-dom';
 import FileDropzone from '../components/uploader/FileDropzone';
-import { usePapersStore } from '../store/usePapersStore';
-import { startSession, uploadPdfs } from '../services/api';
+import { startSession, uploadPdf } from '../services/api';
+import { usePaperStore } from '../store/usePaperStore';
 
 export default function HomeUpload() {
   const nav = useNavigate();
-  const setPapers = usePapersStore((s) => s.setPapers);
-  const setSession = usePapersStore((s) => s.setSession);
+  const setPaper = usePaperStore((s) => s.setPaper);
+  const setSession = usePaperStore((s) => s.setSession);
 
-  const onUpload = async (files: File[], setProgress: (n: number) => void) => {
-    const { papers } = await uploadPdfs(files, setProgress);
-    console.log('HomeUpload - uploaded papers:', papers);
-    setPapers(papers);
-    const { sessionId } = await startSession(papers.map((p) => p.id));
+  const onUpload = async (file: File, setProgress: (v: number) => void) => {
+    const { paper } = await uploadPdf(file, setProgress);
+    console.log('HomeUpload - uploaded paper:', paper);
+    setPaper(paper);
+    const { sessionId } = await startSession([paper.id]);
     console.log('HomeUpload - created session:', sessionId);
     setSession({
       id: sessionId,
-      paperIds: papers.map((p) => p.id),
+      paperIds: [paper.id],
       messages: [],
-      activePaperId: papers[0]?.id,
     });
     nav(`/chat`);
   };

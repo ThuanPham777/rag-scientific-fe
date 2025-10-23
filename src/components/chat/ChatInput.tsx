@@ -5,7 +5,7 @@ import { Sigma } from 'lucide-react';
 
 type Props = {
   onSend: (text: string, opts?: { highQuality: boolean }) => void;
-  onExplainMath?: () => void; // click nút ∑
+  onExplainMath?: () => void;
 };
 
 export default function ChatInput({ onSend, onExplainMath }: Props) {
@@ -21,7 +21,6 @@ export default function ChatInput({ onSend, onExplainMath }: Props) {
 
   return (
     <div className='px-3 pb-3 bg-white'>
-      {/* Khung giống ảnh: viền + bo góc, TextArea borderless */}
       <div className='rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm'>
         <AppTextArea
           variant='borderless'
@@ -34,8 +33,6 @@ export default function ChatInput({ onSend, onExplainMath }: Props) {
           onSubmit={send}
           className='!px-3 !pt-3 !pb-1'
         />
-
-        {/* Hàng điều khiển dưới cùng */}
         <div className='flex items-center justify-between px-3 py-2 bg-white'>
           <label className='flex items-center gap-2 text-sm text-gray-700'>
             <Switch

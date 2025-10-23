@@ -1,51 +1,67 @@
 // src/pages/ChatPage.tsx
-import { useEffect } from 'react';
-import { usePapersStore } from '../store/usePapersStore';
-import { sendQuery } from '../services/api';
-import PdfPanel from '../components/pdf/PdfPanel';
-import ChatDock from '../components/chat/ChatDock';
+import { useState } from "react";
+import { usePaperStore } from "../store/usePaperStore";
+import { sendQuery } from "../services/api";
+import PdfPanel from "../components/pdf/PdfPanel";
+import ChatDock from "../components/chat/ChatDock";
+import type { ChatMessage } from "../utils/types";
 
 export default function ChatPage() {
-  const { session, addMessage, papers } = usePapersStore();
-  const activePaper =
-    papers.find((p) => p.id === session?.activePaperId) ?? papers[0];
-
-  useEffect(() => { }, [session?.id]);
+  const { session, paper, addMessage } = usePaperStore();
+  const [loading, setLoading] = useState(false);
 
   if (!session)
     return (
-      <div className='min-h-[calc(100vh-4rem)] pl-16 pt-16 flex items-center justify-center'>
-        No session. Go back and upload PDFs.
+      <div className="min-h-[calc(100vh-4rem)] pl-16 pt-16 flex items-center justify-center text-gray-600">
+        No session. Go back and upload a PDF file.
       </div>
     );
 
+
   const onSend = async (text: string) => {
-    const { userMsg, assistantMsg } = await sendQuery(
-      session.id,
-      text,
-      session.activePaperId
-    );
+    if (!text.trim() || !session) return;
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: text.trim(),
+      createdAt: new Date().toISOString(),
+    };
+
     addMessage(userMsg);
-    addMessage(assistantMsg);
+
+    try {
+      setLoading(true);
+
+      const { assistantMsg } = await sendQuery(session.id, text, paper?.id);
+
+      addMessage(assistantMsg);
+    } catch (err: any) {
+      console.error("❌ Chat error:", err);
+
+      // 4️⃣ Thêm thông báo lỗi vào chat
+      const errorMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content:
+          "⚠️ Sorry, something went wrong while processing your question.",
+        createdAt: new Date().toISOString(),
+      };
+      addMessage(errorMsg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className='pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2'>
-      {/* lưới 2 cột: trái PDF, phải spacer giữ khoảng cho chat nổi */}
-      <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3'>
-        <PdfPanel activePaper={activePaper} />
-        <div
-          className='hidden lg:block'
-          aria-hidden
-        />{' '}
-        {/* spacer phải */}
+    <div className="pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2">
+      {/* Lưới 2 cột: bên trái PDF, bên phải chừa chỗ cho khung chat nổi */}
+      <div className="h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3">
+        <PdfPanel activePaper={paper} />
+        <div className="hidden lg:block" aria-hidden /> {/* spacer phải */}
       </div>
 
-      {/* Chat nổi cố định — luôn ghim góc phải, không cuộn */}
-      <ChatDock
-        session={session}
-        onSend={onSend}
-      />
+      {/* Chat nổi cố định */}
+      <ChatDock session={session} onSend={onSend} />
     </div>
   );
 }

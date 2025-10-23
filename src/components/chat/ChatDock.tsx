@@ -1,4 +1,3 @@
-// src/components/chat/ChatDockFixed.tsx
 import { useEffect, useRef, useState } from 'react';
 import {
   ChevronDown,
@@ -7,6 +6,7 @@ import {
   Trash2,
   BotMessageSquare,
 } from 'lucide-react';
+import ChatSuggestions from "./ChatSuggestions";
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import type { Session } from '../../utils/types';
@@ -15,15 +15,6 @@ type Props = { session: Session; onSend: (text: string) => void };
 
 export default function ChatDock({ session, onSend }: Props) {
   const [open, setOpen] = useState(true);
-  const [suggestions] = useState([
-    'Methods used',
-    'Contributions',
-    'Explain Abstract',
-    'Related Papers',
-    'Limitations',
-    'Dataset used',
-    'Future works',
-  ]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -75,23 +66,11 @@ export default function ChatDock({ session, onSend }: Props) {
             </div>
           </div>
 
-          {/* Chips */}
-          <div className='px-4 pt-3 flex-shrink-0'>
-            <div className='flex flex-wrap gap-2'>
-              {suggestions.map((s, i) => (
-                <button
-                  key={i}
-                  className='px-3 py-1.5 rounded-full border text-sm bg-white hover:bg-gray-50'
-                  onClick={() => onSend(s)}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* 🔹 Suggestions */}
+          {session.messages.length === 0 && <ChatSuggestions onSelect={onSend} />}
 
           {/* Messages */}
-          <div className='flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50 min-h-0'>
+          <div className='flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0'>
             {session.messages.map((m) => (
               <ChatMessage
                 key={m.id}

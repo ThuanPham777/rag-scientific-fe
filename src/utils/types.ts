@@ -27,8 +27,7 @@ export type ChatMessage = {
 };
 
 export type Session = {
-  id: string; // chat session id returned by backend
+  id: string;
   paperIds: string[];
   messages: ChatMessage[];
-  activePaperId?: string;
 };

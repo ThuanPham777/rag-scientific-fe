@@ -6,20 +6,16 @@ export function isPdf(file: File) {
   );
 }
 
-export function validateFiles(files: File[]) {
+export function validateFile(file: File) {
   const errors: string[] = [];
-  const valid: File[] = [];
-  for (const f of files) {
-    if (!isPdf(f)) {
-      errors.push(`${f.name}: not a PDF`);
-      continue;
-    }
-    const mb = f.size / (1024 * 1024);
-    if (mb > MAX_PDF_MB) {
-      errors.push(`${f.name}: exceeds ${MAX_PDF_MB}MB`);
-      continue;
-    }
-    valid.push(f);
+  if (!isPdf(file)) {
+    errors.push(`${file.name}: not a PDF`);
+    return { valid: false, errors: [errors[0]] };
   }
-  return { valid, errors };
+  const mb = file.size / (1024 * 1024);
+  if (mb > MAX_PDF_MB) {
+    errors.push(`${file.name}: exceeds ${MAX_PDF_MB}MB`);
+    return { valid: [], errors: [errors[0]] };
+  }
+  return { valid: [file], errors: [] };
 }
