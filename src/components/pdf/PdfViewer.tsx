@@ -16,6 +16,7 @@ type Highlight = {
   pageNumber: number;
   rects: HighlightRect[];
   text: string;
+  color?: string;
 };
 
 type Props = {
@@ -49,6 +50,7 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
 
   // === Highlight + Selection =================================================
   const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [lastColor, setLastColor] = useState<string | undefined>('#ffd700');
   const [sel, setSel] = useState<{
     pageNumber: number;
     text: string;
@@ -462,22 +464,58 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
   };
 
   // === helpers ===============================================================
-  const addHighlight = () => {
+  const getBBox = (rects: HighlightRect[]) => {
+    const left = Math.min(...rects.map((r) => r.left));
+    const top = Math.min(...rects.map((r) => r.top));
+    const right = Math.max(...rects.map((r) => r.left + r.width));
+    const bottom = Math.max(...rects.map((r) => r.top + r.height));
+    return { left, top, right, bottom, width: right - left, height: bottom - top };
+  };
+
+  const overlapRatio = (a: { left: number; top: number; right: number; bottom: number }, b: { left: number; top: number; right: number; bottom: number }) => {
+    const x1 = Math.max(a.left, b.left);
+    const y1 = Math.max(a.top, b.top);
+    const x2 = Math.min(a.right, b.right);
+    const y2 = Math.min(a.bottom, b.bottom);
+    if (x2 <= x1 || y2 <= y1) return 0;
+    const inter = (x2 - x1) * (y2 - y1);
+    const areaA = (a.right - a.left) * (a.bottom - a.top);
+    const areaB = (b.right - b.left) * (b.bottom - b.top);
+    return inter / Math.min(areaA, areaB);
+  };
+
+  const addHighlight = (color?: string) => {
     if (!sel) return;
-    setHighlights((hs) => [
-      ...hs,
-      {
-        id: crypto.randomUUID(),
-        pageNumber: sel.pageNumber,
-        rects: sel.rects,
-        text: sel.text,
-      },
-    ]);
+    setHighlights((hs) => {
+      const page = sel.pageNumber;
+      const newBox = getBBox(sel.rects);
+      const filtered = hs.filter((h) => {
+        if (h.pageNumber !== page) return true;
+        const oldBox = getBBox(h.rects);
+        // Only replace if the overlap ratio indicates nearly-identical regions
+        const ratio = overlapRatio(newBox, oldBox);
+        return ratio < 0.85;
+      });
+      return [
+        ...filtered,
+        {
+          id: crypto.randomUUID(),
+          pageNumber: sel.pageNumber,
+          rects: sel.rects,
+          text: sel.text,
+          color,
+        },
+      ];
+    });
     onAction?.('highlight', {
       text: sel.text,
       pageNumber: sel.pageNumber,
       rects: sel.rects,
     });
+    setSel(null);
+  };
+
+  const cancelHighlight = () => {
     setSel(null);
   };
 
@@ -520,10 +558,11 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
       {/* Viewer: chỉ phần này scroll */}
       <div
         ref={viewerScrollRef}
-        className={`flex-1 overflow-auto bg-gray-50 min-h-0 ${
-          captureMode ? 'cursor-crosshair' : ''
-        }`}
+        className={`flex-1 overflow-auto bg-gray-50 min-h-0 ${captureMode ? 'cursor-crosshair' : ''
+          }`}
       >
+        {/* Hover bold effect for PDF text */}
+        <style>{`.textLayer span:hover{font-weight:700}`}</style>
         {!fileUrl ? (
           <div className='p-6 text-sm text-gray-500'>No PDF selected.</div>
         ) : (
@@ -542,6 +581,9 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
             onEndDrag={onEndDrag}
             onAction={fire}
             onAddHighlight={addHighlight}
+            onRemoveHighlight={cancelHighlight}
+            selectedColorDefault={lastColor}
+            onSelectedColorChange={setLastColor}
             onLoadSuccess={setNumPages}
           />
         )}

@@ -2,9 +2,10 @@ import { useState } from "react";
 
 type Props = {
     onSelect: (text: string) => void;
+    disabled?: boolean;
 };
 
-export default function ChatSuggestions({ onSelect }: Props) {
+export default function ChatSuggestions({ onSelect, disabled = false }: Props) {
     const [suggestions] = useState<string[]>([
         "Practical Implications",
         "Explain Abstract",
@@ -21,9 +22,11 @@ export default function ChatSuggestions({ onSelect }: Props) {
                 {suggestions.map((s, i) => (
                     <button
                         key={i}
-                        onClick={() => onSelect(s)}
+                        onClick={() => !disabled && onSelect(s)}
+                        disabled={disabled}
                         className="px-3 py-1.5 rounded-full border border-gray-300 bg-white text-sm text-gray-700
-                       hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150"
+                       hover:bg-gray-50 active:bg-gray-100 transition-colors duration-150
+                       disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {s}
                     </button>

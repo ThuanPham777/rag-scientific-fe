@@ -53,7 +53,7 @@ export default function TopNav() {
           className='flex items-center gap-2 font-semibold'
         >
           <div className='w-5 h-5 rounded-sm bg-brand-600' />
-          <span className='tracking-wide'>SCISPACE</span>
+          <span className='tracking-wide'>CHATPDF</span>
         </Link>
 
         {/* Papers + Search (input group) */}

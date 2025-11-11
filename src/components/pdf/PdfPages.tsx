@@ -2,7 +2,7 @@ import { Document, Page } from "react-pdf";
 import SelectionPopup from "./SelectionPopup";
 
 type HighlightRect = { top: number; left: number; width: number; height: number };
-type Highlight = { id: string; pageNumber: number; rects: HighlightRect[]; text: string };
+type Highlight = { id: string; pageNumber: number; rects: HighlightRect[]; text: string; color?: string };
 
 type SelectionState = {
     pageNumber: number;
@@ -43,7 +43,10 @@ type Props = {
         action: "explain" | "summarize" | "related" | "highlight" | "save",
         payload: { text: string; pageNumber: number; rects: HighlightRect[] }
     ) => void;
-    onAddHighlight: () => void;
+    onAddHighlight: (color?: string) => void;
+    onRemoveHighlight: () => void;
+    selectedColorDefault?: string;
+    onSelectedColorChange?: (color: string | undefined) => void;
     onLoadSuccess: (numPages: number) => void;
 };
 
@@ -62,6 +65,9 @@ export default function PdfPages({
     onEndDrag,
     onAction,
     onAddHighlight,
+    onRemoveHighlight,
+    selectedColorDefault,
+    onSelectedColorChange,
     onLoadSuccess,
 }: Props) {
     // Debug
@@ -129,13 +135,22 @@ export default function PdfPages({
 
                                 {/* highlights đã lưu */}
                                 {pageHighlights.map((h) =>
-                                    h.rects.map((r, i) => (
-                                        <div
-                                            key={`${h.id}-${i}`}
-                                            className="absolute bg-fuchsia-300/40 rounded-[2px] pointer-events-none"
-                                            style={{ top: r.top, left: r.left, width: r.width, height: r.height }}
-                                        />
-                                    ))
+                                    h.rects.map((r, i) => {
+                                        const color = h.color || "#ffd700"; // default yellow
+                                        // convert HEX like #rrggbb to rgba with 0.4 alpha
+                                        const hex = color.replace("#", "");
+                                        const r255 = parseInt(hex.substring(0, 2), 16);
+                                        const g255 = parseInt(hex.substring(2, 4), 16);
+                                        const b255 = parseInt(hex.substring(4, 6), 16);
+                                        const bg = `rgba(${r255}, ${g255}, ${b255}, 0.4)`;
+                                        return (
+                                            <div
+                                                key={`${h.id}-${i}`}
+                                                className="absolute rounded-[2px] pointer-events-none"
+                                                style={{ top: r.top, left: r.left, width: r.width, height: r.height, backgroundColor: bg }}
+                                            />
+                                        );
+                                    })
                                 )}
 
                                 {/* popup khi bôi đen */}
@@ -145,6 +160,9 @@ export default function PdfPages({
                                         scale={scale}
                                         onAction={onAction}
                                         onAddHighlight={onAddHighlight}
+                                        onRemoveHighlight={onRemoveHighlight}
+                                        selectedColorDefault={selectedColorDefault}
+                                        onSelectedColorChange={onSelectedColorChange}
                                     />
                                 )}
 
