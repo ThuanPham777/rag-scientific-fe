@@ -17,9 +17,10 @@ type Props = {
   onSend: (text: string) => void;
   isLoading?: boolean;
   defaultOpen?: boolean;
+  position?: 'fixed' | 'static';
 };
 
-export default function ChatDock({ session, onSend, isLoading = false, defaultOpen = true }: Props) {
+export default function ChatDock({ session, onSend, isLoading = false, defaultOpen = true, position = 'fixed' }: Props) {
   const [open, setOpen] = useState(defaultOpen);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -36,19 +37,27 @@ export default function ChatDock({ session, onSend, isLoading = false, defaultOp
   }, [open, session.messages.length, isLoading]);
 
   // Kích thước cửa sổ chat
-  const WIDTH = 'w-[450px]';
-  const HEIGHT = 'h-[81vh]';
+  const WIDTH = position === 'fixed' ? 'w-[450px]' : 'w-full';
+  const HEIGHT = position === 'fixed' ? 'h-[81vh]' : 'h-full';
   return (
     <>
       {/* Chat nổi cố định */}
       {open && (
         <div
-          className={`fixed right-4 bottom-4 z-50 ${WIDTH} ${HEIGHT} bg-white border border-gray-200 rounded-lg flex flex-col pointer-events-auto`}
+          className={`${position === 'fixed'
+              ? `fixed right-4 bottom-4 z-50 ${WIDTH} ${HEIGHT}`
+              : `relative ${WIDTH} ${HEIGHT}`
+            } bg-white border border-gray-200 rounded-lg flex flex-col pointer-events-auto overflow-hidden`}
           role='dialog'
           aria-label='Chat'
         >
-          {/* Header */}
-          <div className='px-4 py-2 border-b border-b-gray-200 flex items-center justify-between'>
+          {/* Header (click to toggle open/close) */}
+          <div
+            className='px-4 py-2 border-b border-b-gray-200 flex items-center justify-between cursor-pointer select-none'
+            onClick={() => setOpen((v) => !v)}
+            role='button'
+            aria-expanded={open}
+          >
             <div className='flex items-center gap-2 font-semibold'>
               <span>
                 <BotMessageSquare className='text-orange-500' />
@@ -59,20 +68,27 @@ export default function ChatDock({ session, onSend, isLoading = false, defaultOp
               <button
                 className='p-1.5 rounded hover:bg-gray-50'
                 title='Language'
+                onClick={(e) => e.stopPropagation()}
               >
                 <Globe size={16} />
               </button>
               <button
                 className='p-1.5 rounded hover:bg-gray-50'
                 title='Clear messages'
-                onClick={() => console.log('TODO: clear messages')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('TODO: clear messages');
+                }}
               >
                 <Trash2 size={16} />
               </button>
               <button
                 className='p-1.5 rounded hover:bg-gray-50'
                 title='Minimize'
-                onClick={() => setOpen(false)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                }}
               >
                 <ChevronDown size={16} />
               </button>
@@ -93,6 +109,9 @@ export default function ChatDock({ session, onSend, isLoading = false, defaultOp
             {isLoading && <ChatMessageLoading />}
             <div ref={bottomRef} />
           </div>
+
+          {/* Overlay portal root (for sources modal); positioned within chat dock */}
+          <div id="chat-dock-overlay" className="absolute inset-0 z-40 pointer-events-none" />
 
           {/* Input */}
           <ChatInput onSend={onSend} disabled={isLoading} />

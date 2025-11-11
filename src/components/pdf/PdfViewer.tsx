@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import PdfToolbar from './PdfToolbar';
 import PdfPages from './PdfPages';
 
@@ -21,6 +21,7 @@ type Highlight = {
 
 type Props = {
   fileUrl?: string;
+  jumpToPage?: number;
   onAction?: (
     action: 'explain' | 'summarize' | 'related' | 'highlight' | 'save',
     payload: {
@@ -37,7 +38,7 @@ type PageIndex = {
   spans: { start: number; end: number; el: HTMLSpanElement }[];
 };
 
-export default function PdfViewer({ fileUrl, onAction }: Props) {
+export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1.0);
 
@@ -170,7 +171,6 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
   }, []);
 
   // zoom
-  const pct = useMemo(() => Math.round(scale * 100), [scale]);
   const zoomOut = () => setScale((s) => Math.max(0.5, +(s - 0.1).toFixed(2)));
   const zoomIn = () => setScale((s) => Math.min(3, +(s + 0.1).toFixed(2)));
 
@@ -237,6 +237,21 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [zoomIn, zoomOut, captureMode, dragBox]);
+
+  // Jump to page on external request
+  useEffect(() => {
+    if (!jumpToPage) return;
+    const pageEl = pageRefs.current[jumpToPage];
+    if (!pageEl) return;
+    pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // flash highlight border
+    const prev = pageEl.className;
+    pageEl.className = prev + ' ring-4 ring-orange-400 transition';
+    const t = setTimeout(() => {
+      pageEl.className = prev;
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [jumpToPage]);
 
   // =================== EXPLAIN (capture ảnh) ================================
   const toggleCapture = () => {

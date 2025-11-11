@@ -16,6 +16,7 @@ export type Citation = {
   page?: number;
   title?: string;
   url?: string; // if backend gives a viewer link
+  snippet?: string;
 };
 
 export type ChatMessage = {

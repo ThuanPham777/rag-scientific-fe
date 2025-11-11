@@ -15,7 +15,7 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
   const [summaryData, setSummaryData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const { session, paper } = usePaperStore();
+  const { session, paper, pendingJump, setPendingJump } = usePaperStore();
 
   // 🔹 Gọi API query để summarize
   const handleSummary = async () => {
@@ -79,6 +79,7 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
           <div className='flex-1 min-h-0'>
             <PdfViewer
               fileUrl={activePaper?.localUrl}
+              jumpToPage={pendingJump?.pageNumber}
               onAction={(action, payload) => {
                 if (!session) return;
 
@@ -155,6 +156,11 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
           </div>
         )}
       </div>
+
+      {/* Clear pending jump after rendering to avoid repeated jumps */}
+      {pendingJump && (
+        <span style={{ display: 'none' }}>{setTimeout(() => setPendingJump(null), 0)}</span>
+      )}
     </section>
   );
 }

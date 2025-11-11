@@ -68,9 +68,9 @@ export async function sendQuery(
   const citations: Citation[] =
     data.context?.texts?.map((t: any, i: number) => ({
       paperId: activePaperId ?? "",
-      page: i + 1,
+      page: t.page ?? i + 1,
       title: t.type,
-      snippet: t.text.slice(0, 200) + (t.text.length > 200 ? "..." : ""),
+      snippet: t.text,
     })) ?? [];
 
   const assistantMsg: ChatMessage = {

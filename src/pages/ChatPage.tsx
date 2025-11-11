@@ -108,11 +108,12 @@ export default function ChatPage() {
       {/* Lưới 2 cột: bên trái PDF, bên phải chừa chỗ cho khung chat nổi */}
       <div className="h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3">
         <PdfPanel activePaper={paper} onPdfAction={handlePdfAction} />
-        <div className="hidden lg:block" aria-hidden /> {/* spacer phải */}
+        {/* spacer phải giữ layout */}
+        <div className="hidden lg:block" aria-hidden />
       </div>
 
-      {/* Chat nổi cố định */}
-      <ChatDock session={session} onSend={onSend} isLoading={loading} />
+      {/* Chat nổi cố định (open/close như trước) */}
+      <ChatDock session={session} onSend={onSend} isLoading={loading} defaultOpen={true} />
     </div>
   );
 }
