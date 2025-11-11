@@ -26,7 +26,18 @@ export default function ChatMessage({ msg }: { msg: Msg }) {
         className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-soft whitespace-pre-wrap ${isUser ? 'bg-gray-100 text-black' : 'bg-blue-100'
           }`}
       >
-        <div className='text-sm leading-relaxed'>{msg.content}</div>
+        {msg.imageDataUrl && (
+          <div className='mb-2'>
+            <img
+              src={msg.imageDataUrl}
+              alt='selected region'
+              className='rounded-md max-h-64 object-contain'
+            />
+          </div>
+        )}
+        {msg.content && (
+          <div className='text-sm leading-relaxed'>{msg.content}</div>
+        )}
         {/* {!isUser && msg.citations && <Citations cites={msg.citations} />} */}
       </div>
     </div>
