@@ -22,6 +22,7 @@ export type ChatMessage = {
   id: string;
   role: ChatRole;
   content: string;
+  imageDataUrl?: string;
   citations?: Citation[];
   createdAt: string;
 };

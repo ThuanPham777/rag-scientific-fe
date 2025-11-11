@@ -21,6 +21,7 @@ export async function startSession(paperIds: string[]) {
 export async function uploadPdf(file: File, onProgress?: (pct: number) => void) {
   const formData = new FormData();
   formData.append("file", file);
+   console.log("HELLO");
 
   const res = await api.post("/upload", formData, {
     headers: { "Content-Type": "multipart/form-data" },
@@ -30,6 +31,7 @@ export async function uploadPdf(file: File, onProgress?: (pct: number) => void) 
         onProgress?.(pct);
       }
     },
+   
   });
 
   const data = res.data;
@@ -85,6 +87,22 @@ export async function sendQuery(
   SESSIONS[sessionId].messages.push(assistantMsg);
 
   return { assistantMsg };
+}
+
+// ============================
+// 🔹 Explain cropped region (image base64)
+// ============================
+export async function explainRegion(imageDataUrl: string, fileId?: string) {
+  // Extract base64 part after comma if data URL
+  const commaIdx = imageDataUrl.indexOf(",");
+  const image_b64 =
+    commaIdx >= 0 ? imageDataUrl.slice(commaIdx + 1) : imageDataUrl;
+
+  const body: any = { image_b64 };
+  if (fileId) body.file_id = fileId;
+
+  const { data } = await api.post("/explain-region", body);
+  return { explanation: data.explanation as string };
 }
 
 // ============================

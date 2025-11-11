@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import PdfViewer from './PdfViewer';
 import SummaryView from './SummaryView';
 import type { Paper } from '../../utils/types';
-import { sendQuery } from '../../services/api';
+import { sendQuery, explainRegion } from '../../services/api';
 import { usePaperStore } from '../../store/usePaperStore';
 
 type Props = {
@@ -78,6 +78,40 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
             <PdfViewer
               fileUrl={activePaper?.localUrl}
               onAction={(action, payload) => {
+                if (!session) return;
+                if (action === "explain" && (payload as any).imageDataUrl) {
+                  const imageDataUrl = (payload as any).imageDataUrl as string;
+                  const fileId = paper?.id;
+
+                  // Push user message with image
+                  usePaperStore.getState().addMessage({
+                    id: crypto.randomUUID(),
+                    role: "user",
+                    content: "Explain this region",
+                    imageDataUrl,
+                    createdAt: new Date().toISOString(),
+                  });
+
+                  // Call backend and push assistant message
+                  explainRegion(imageDataUrl, fileId)
+                    .then(({ explanation }) => {
+                      usePaperStore.getState().addMessage({
+                        id: crypto.randomUUID(),
+                        role: "assistant",
+                        content: explanation || "No explanation available.",
+                        createdAt: new Date().toISOString(),
+                      });
+                    })
+                    .catch((err) => {
+                      console.error("❌ Explain error:", err);
+                      usePaperStore.getState().addMessage({
+                        id: crypto.randomUUID(),
+                        role: "assistant",
+                        content:
+                          "⚠️ Sorry, something went wrong while explaining the selected region.",
+                        createdAt: new Date().toISOString(),
+                      });
+                    });
                 // Xử lý explain và summarize từ text selection
                 if ((action === 'explain' || action === 'summarize') && payload.text) {
                   onPdfAction?.(action, payload.text);
