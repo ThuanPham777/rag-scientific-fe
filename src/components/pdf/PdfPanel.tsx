@@ -7,9 +7,10 @@ import { usePaperStore } from '../../store/usePaperStore';
 
 type Props = {
   activePaper?: Paper;
+  onPdfAction?: (action: 'explain' | 'summarize', selectedText: string) => void;
 };
 
-export default function PdfPanel({ activePaper }: Props) {
+export default function PdfPanel({ activePaper, onPdfAction }: Props) {
   const [activeTab, setActiveTab] = useState<'pdf' | 'summary'>('pdf');
   const [summaryData, setSummaryData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -111,6 +112,14 @@ export default function PdfPanel({ activePaper }: Props) {
                         createdAt: new Date().toISOString(),
                       });
                     });
+                // Xử lý explain và summarize từ text selection
+                if ((action === 'explain' || action === 'summarize') && payload.text) {
+                  onPdfAction?.(action, payload.text);
+                }
+                // Xử lý explain từ image capture (nếu có)
+                if (action === "explain" && payload.imageDataUrl) {
+                  // TODO: Xử lý image capture nếu cần
+                  //console.log("Captured PNG:", payload.imageDataUrl.slice(0, 64), "...");
                 }
               }}
             />

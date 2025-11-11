@@ -52,16 +52,67 @@ export default function ChatPage() {
     }
   };
 
+  // Xử lý action từ PDF (explain, summarize)
+  const handlePdfAction = async (
+    action: 'explain' | 'summarize',
+    selectedText: string
+  ) => {
+    if (!session || !selectedText.trim()) return;
+
+    // Tạo query text dựa trên action
+    const queryText =
+      action === 'explain'
+        ? `Explain the following text: "${selectedText}"`
+        : `Summarize the following text: "${selectedText}"`;
+
+    // Tạo user message
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: queryText,
+      createdAt: new Date().toISOString(),
+    };
+
+    addMessage(userMsg);
+
+    try {
+      setLoading(true);
+
+      const { assistantMsg } = await sendQuery(
+        session.id,
+        queryText,
+        paper?.id
+      );
+
+      console.log("call api success 12345", assistantMsg);
+
+      addMessage(assistantMsg);
+    } catch (err: any) {
+      console.error("❌ PDF action error:", err);
+
+      const errorMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content:
+          "⚠️ Sorry, something went wrong while processing your request.",
+        createdAt: new Date().toISOString(),
+      };
+      addMessage(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2">
       {/* Lưới 2 cột: bên trái PDF, bên phải chừa chỗ cho khung chat nổi */}
       <div className="h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3">
-        <PdfPanel activePaper={paper} />
+        <PdfPanel activePaper={paper} onPdfAction={handlePdfAction} />
         <div className="hidden lg:block" aria-hidden /> {/* spacer phải */}
       </div>
 
       {/* Chat nổi cố định */}
-      <ChatDock session={session} onSend={onSend} />
+      <ChatDock session={session} onSend={onSend} isLoading={loading} />
     </div>
   );
 }

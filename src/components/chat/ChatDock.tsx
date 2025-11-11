@@ -8,19 +8,32 @@ import {
 } from 'lucide-react';
 import ChatSuggestions from "./ChatSuggestions";
 import ChatMessage from './ChatMessage';
+import ChatMessageLoading from './ChatMessageLoading';
 import ChatInput from './ChatInput';
 import type { Session } from '../../utils/types';
 
-type Props = { session: Session; onSend: (text: string) => void };
+type Props = {
+  session: Session;
+  onSend: (text: string) => void;
+  isLoading?: boolean;
+  defaultOpen?: boolean;
+};
 
-export default function ChatDock({ session, onSend }: Props) {
-  const [open, setOpen] = useState(true);
+export default function ChatDock({ session, onSend, isLoading = false, defaultOpen = true }: Props) {
+  const [open, setOpen] = useState(defaultOpen);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Tự động mở chat khi có message mới (để user thấy response từ PDF action)
+  useEffect(() => {
+    if (session.messages.length > 0 && !open) {
+      setOpen(true);
+    }
+  }, [session.messages.length, open]);
 
   useEffect(() => {
     if (!open) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [open, session.messages.length]);
+  }, [open, session.messages.length, isLoading]);
 
   // Kích thước cửa sổ chat
   const WIDTH = 'w-[450px]';
@@ -67,7 +80,7 @@ export default function ChatDock({ session, onSend }: Props) {
           </div>
 
           {/* 🔹 Suggestions */}
-          {session.messages.length === 0 && <ChatSuggestions onSelect={onSend} />}
+          {session.messages.length === 0 && <ChatSuggestions onSelect={onSend} disabled={isLoading} />}
 
           {/* Messages */}
           <div className='flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0'>
@@ -77,11 +90,12 @@ export default function ChatDock({ session, onSend }: Props) {
                 msg={m}
               />
             ))}
+            {isLoading && <ChatMessageLoading />}
             <div ref={bottomRef} />
           </div>
 
           {/* Input */}
-          <ChatInput onSend={onSend} />
+          <ChatInput onSend={onSend} disabled={isLoading} />
         </div>
       )}
 

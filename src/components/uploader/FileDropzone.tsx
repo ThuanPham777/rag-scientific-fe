@@ -36,7 +36,7 @@ export default function FileDropzone({ onUpload }: Props) {
   return (
     <div className="relative rounded-xl border border-gray-200 bg-white p-4 sm:p-6">
       {/* Overlay loading */}
-      {isLoading && <Loading text="Processing your PDF..." overlay />} {/* 👈 */}
+      {isLoading && <Loading text="Processing your PDF..." overlay className='text-orange-500' />} {/* 👈 */}
 
       {/* Inner dashed panel */}
       <div
