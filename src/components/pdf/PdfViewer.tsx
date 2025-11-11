@@ -56,6 +56,9 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
     text: string;
     rects: HighlightRect[];
     anchor: { x: number; y: number };
+    // client size of page when selection was made - used to re-scale on zoom
+    pageClientWidth?: number;
+    pageClientHeight?: number;
   } | null>(null);
 
   // === Capture (ảnh) mode ====================================================
@@ -138,7 +141,19 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
       const first = rects[0];
       const anchor = { x: first.left + first.width + 12, y: first.top };
 
-      setSel({ pageNumber, text, rects, anchor });
+      // capture the page element client size at the time of selection so we can
+      // re-scale positions if the page is later zoomed/resized
+      const pageClientWidth = pageEl.clientWidth;
+      const pageClientHeight = pageEl.clientHeight;
+
+      setSel({
+        pageNumber,
+        text,
+        rects,
+        anchor,
+        pageClientWidth,
+        pageClientHeight,
+      });
     };
 
     document.addEventListener('mouseup', handleMouseUp);
@@ -318,8 +333,13 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
   const onPageRender = (pageNumber: number) => {
     const pageEl = pageRefs.current[pageNumber];
     if (!pageEl) return;
-    const textLayer = pageEl.querySelector('.textLayer') as HTMLElement | null;
-    if (!textLayer) return;
+    let textLayer = pageEl.querySelector('.textLayer') as HTMLElement | null;
+    if (!textLayer) {
+      // Sometimes the textLayer is inserted shortly after onRenderSuccess.
+      // Retry once after a short delay to improve reliability of building the index.
+      setTimeout(() => onPageRender(pageNumber), 60);
+      return;
+    }
 
     const spans = Array.from(
       textLayer.querySelectorAll('span')
@@ -469,10 +489,41 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
     const top = Math.min(...rects.map((r) => r.top));
     const right = Math.max(...rects.map((r) => r.left + r.width));
     const bottom = Math.max(...rects.map((r) => r.top + r.height));
-    return { left, top, right, bottom, width: right - left, height: bottom - top };
+    return {
+      left,
+      top,
+      right,
+      bottom,
+      width: right - left,
+      height: bottom - top,
+    };
   };
 
-  const overlapRatio = (a: { left: number; top: number; right: number; bottom: number }, b: { left: number; top: number; right: number; bottom: number }) => {
+  // scale selection rects/anchor from the pageClient size when selection was
+  // made to current page element size. Returns a shallow copy with rects/anchor
+  // adjusted. If page element not available, returns the original selection.
+  const scaleSelectionToCurrent = (s: typeof sel) => {
+    if (!s) return s;
+    const pageEl = pageRefs.current[s.pageNumber];
+    if (!pageEl) return s;
+    const baseW = s.pageClientWidth || pageEl.clientWidth;
+    const baseH = s.pageClientHeight || pageEl.clientHeight;
+    const fx = pageEl.clientWidth / baseW;
+    const fy = pageEl.clientHeight / baseH;
+    const rects = s.rects.map((r) => ({
+      top: r.top * fy,
+      left: r.left * fx,
+      width: r.width * fx,
+      height: r.height * fy,
+    }));
+    const anchor = { x: s.anchor.x * fx, y: s.anchor.y * fy };
+    return { ...s, rects, anchor } as typeof sel;
+  };
+
+  const overlapRatio = (
+    a: { left: number; top: number; right: number; bottom: number },
+    b: { left: number; top: number; right: number; bottom: number }
+  ) => {
     const x1 = Math.max(a.left, b.left);
     const y1 = Math.max(a.top, b.top);
     const x2 = Math.min(a.right, b.right);
@@ -486,36 +537,107 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
 
   const addHighlight = (color?: string) => {
     if (!sel) return;
+    const scaled = scaleSelectionToCurrent(sel);
+    // Store normalized rects (fractions relative to page size) so highlights
+    // remain correct when the page is later resized/zoomed.
+    const pageEl = pageRefs.current[scaled!.pageNumber];
+    let normalized = scaled!.rects;
+    if (pageEl) {
+      const pw = pageEl.clientWidth;
+      const ph = pageEl.clientHeight;
+      normalized = scaled!.rects.map((r) => ({
+        top: r.top / ph,
+        left: r.left / pw,
+        width: r.width / pw,
+        height: r.height / ph,
+      }));
+    }
+
     setHighlights((hs) => {
-      const page = sel.pageNumber;
-      const newBox = getBBox(sel.rects);
+      const page = scaled!.pageNumber;
+      // For overlap comparison, convert existing highlights to pixel coords
+      const pw = pageEl?.clientWidth || 1;
+      const ph = pageEl?.clientHeight || 1;
+      const newBox = getBBox(scaled!.rects);
       const filtered = hs.filter((h) => {
         if (h.pageNumber !== page) return true;
-        const oldBox = getBBox(h.rects);
+        const oldRectsPx = h.rects.map((r) => {
+          // if r appears normalized (values <= 1), convert to pixels; otherwise assume pixels already
+          if (r.left <= 1 && r.width <= 1 && r.top <= 1 && r.height <= 1) {
+            return {
+              top: r.top * ph,
+              left: r.left * pw,
+              width: r.width * pw,
+              height: r.height * ph,
+            };
+          }
+          return r as HighlightRect;
+        });
+        const oldBox = getBBox(oldRectsPx);
         // Only replace if the overlap ratio indicates nearly-identical regions
+        // AND the new region is not significantly smaller than the old region.
         const ratio = overlapRatio(newBox, oldBox);
-        return ratio < 0.85;
+        const areaNew = newBox.width * newBox.height;
+        const areaOld = oldBox.width * oldBox.height;
+        // If new overlaps almost entirely with old, but is much smaller (child inside parent),
+        // don't remove the parent. Remove only when new is roughly same size or larger.
+        if (ratio > 0.85 && areaNew >= areaOld * 0.9) {
+          return false; // drop old
+        }
+        return true; // keep old
       });
       return [
         ...filtered,
         {
           id: crypto.randomUUID(),
           pageNumber: sel.pageNumber,
-          rects: sel.rects,
+          rects: normalized,
           text: sel.text,
           color,
         },
       ];
     });
+
+    // Keep onAction payload in pixel coords (caller likely expects pixels)
     onAction?.('highlight', {
       text: sel.text,
       pageNumber: sel.pageNumber,
-      rects: sel.rects,
+      rects: scaled!.rects,
     });
-    setSel(null);
   };
 
   const cancelHighlight = () => {
+    if (!sel) {
+      setSel(null);
+      return;
+    }
+    // Remove any highlight that overlaps strongly with current selection
+    const scaled = scaleSelectionToCurrent(sel);
+    setHighlights((hs) => {
+      const page = scaled!.pageNumber;
+      const pageEl = pageRefs.current[page];
+      const pw = pageEl?.clientWidth || 1;
+      const ph = pageEl?.clientHeight || 1;
+      const curBox = getBBox(scaled!.rects);
+      return hs.filter((h) => {
+        if (h.pageNumber !== page) return true;
+        const oldRectsPx = h.rects.map((r) => {
+          if (r.left <= 1 && r.width <= 1 && r.top <= 1 && r.height <= 1) {
+            return {
+              top: r.top * ph,
+              left: r.left * pw,
+              width: r.width * pw,
+              height: r.height * ph,
+            };
+          }
+          return r as HighlightRect;
+        });
+        const oldBox = getBBox(oldRectsPx);
+        const ratio = overlapRatio(curBox, oldBox);
+        // keep if not almost identical to current selection
+        return ratio < 0.85;
+      });
+    });
     setSel(null);
   };
 
@@ -523,10 +645,11 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
     type: NonNullable<Parameters<NonNullable<Props['onAction']>>[0]>
   ) => {
     if (!sel) return;
+    const scaled = scaleSelectionToCurrent(sel);
     onAction?.(type, {
       text: sel.text,
       pageNumber: sel.pageNumber,
-      rects: sel.rects,
+      rects: scaled!.rects,
     });
     setSel(null);
   };
@@ -558,8 +681,9 @@ export default function PdfViewer({ fileUrl, onAction }: Props) {
       {/* Viewer: chỉ phần này scroll */}
       <div
         ref={viewerScrollRef}
-        className={`flex-1 overflow-auto bg-gray-50 min-h-0 ${captureMode ? 'cursor-crosshair' : ''
-          }`}
+        className={`flex-1 overflow-auto bg-gray-50 min-h-0 ${
+          captureMode ? 'cursor-crosshair' : ''
+        }`}
       >
         {/* Hover bold effect for PDF text */}
         <style>{`.textLayer span:hover{font-weight:700}`}</style>
