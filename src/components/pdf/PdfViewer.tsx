@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import PdfToolbar from './PdfToolbar';
-import PdfPages from './PdfPages';
+import { useEffect, useRef, useState } from "react";
+import PdfToolbar from "./PdfToolbar";
+import PdfPages from "./PdfPages";
 
-import 'react-pdf/dist/Page/AnnotationLayer.css';
-import 'react-pdf/dist/Page/TextLayer.css';
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
 
 type HighlightRect = {
   top: number;
@@ -19,11 +19,19 @@ type Highlight = {
   color?: string;
 };
 
+type JumpHighlight = {
+  pageNumber: number;
+  rect: HighlightRect;
+};
+
 type Props = {
   fileUrl?: string;
   jumpToPage?: number;
+  jumpHighlight?: JumpHighlight | null;
+  /** External contexts (from response) that include locator bbox and page info. */
+  contexts?: any[];
   onAction?: (
-    action: 'explain' | 'summarize' | 'related' | 'highlight' | 'save',
+    action: "explain" | "summarize" | "related" | "highlight" | "save",
     payload: {
       text: string;
       pageNumber: number;
@@ -38,12 +46,18 @@ type PageIndex = {
   spans: { start: number; end: number; el: HTMLSpanElement }[];
 };
 
-export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
+export default function PdfViewer({
+  fileUrl,
+  jumpToPage,
+  jumpHighlight,
+  contexts,
+  onAction,
+}: Props) {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1.0);
 
   // Debug logging
-  console.log('PdfViewer render:', {
+  console.log("PdfViewer render:", {
     fileUrl,
     numPages,
     hasFileUrl: !!fileUrl,
@@ -51,13 +65,12 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
 
   // === Highlight + Selection =================================================
   const [highlights, setHighlights] = useState<Highlight[]>([]);
-  const [lastColor, setLastColor] = useState<string | undefined>('#ffd700');
+  const [lastColor, setLastColor] = useState<string | undefined>("#ffd700");
   const [sel, setSel] = useState<{
     pageNumber: number;
     text: string;
     rects: HighlightRect[];
     anchor: { x: number; y: number };
-    // client size of page when selection was made - used to re-scale on zoom
     pageClientWidth?: number;
     pageClientHeight?: number;
   } | null>(null);
@@ -75,7 +88,7 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
 
   // === Search ================================================================
   const [showSearch, setShowSearch] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [matchCase, setMatchCase] = useState(false);
   const [wholeWords, setWholeWords] = useState(false);
   const [hits, setHits] = useState<
@@ -84,13 +97,9 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
   const [hitIndex, setHitIndex] = useState(0);
 
   // Refs
-  // === DÙNG CHUNG pageRefs giữa parent & child
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
-
   const viewerScrollRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
-
-  // DOM index of text layer per page (để search theo DOM)
   const pageIndexRef = useRef<Record<number, PageIndex>>({});
 
   // reset khi đổi file
@@ -104,7 +113,7 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
     setHitIndex(0);
   }, [fileUrl]);
 
-  // Chỉ hiển popup action khi có selection
+  // selection text popup
   useEffect(() => {
     const handleMouseUp = () => {
       if (captureMode) return;
@@ -123,11 +132,11 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
         anchorNode instanceof HTMLElement
           ? anchorNode
           : (anchorNode?.parentElement as HTMLElement)
-      )?.closest('[data-page]') as HTMLElement | null;
+      )?.closest("[data-page]") as HTMLElement | null;
 
       if (!pageEl) return;
 
-      const pageNumber = Number(pageEl.getAttribute('data-page') || 1);
+      const pageNumber = Number(pageEl.getAttribute("data-page") || 1);
       const pageBounds = pageEl.getBoundingClientRect();
       const range = selection.getRangeAt(0);
       const rectsDom = Array.from(range.getClientRects());
@@ -142,8 +151,6 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
       const first = rects[0];
       const anchor = { x: first.left + first.width + 12, y: first.top };
 
-      // capture the page element client size at the time of selection so we can
-      // re-scale positions if the page is later zoomed/resized
       const pageClientWidth = pageEl.clientWidth;
       const pageClientHeight = pageEl.clientHeight;
 
@@ -157,8 +164,8 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
       });
     };
 
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => document.removeEventListener("mouseup", handleMouseUp);
   }, [captureMode]);
 
   // cuộn viewer ⇒ ẩn popup
@@ -166,24 +173,24 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
     const el = viewerScrollRef.current;
     if (!el) return;
     const h = () => setSel(null);
-    el.addEventListener('scroll', h, { passive: true });
-    return () => el.removeEventListener('scroll', h);
+    el.addEventListener("scroll", h, { passive: true });
+    return () => el.removeEventListener("scroll", h);
   }, []);
 
   // zoom
   const zoomOut = () => setScale((s) => Math.max(0.5, +(s - 0.1).toFixed(2)));
   const zoomIn = () => setScale((s) => Math.min(3, +(s + 0.1).toFixed(2)));
 
-  // Keyboard shortcuts for zoom + Global mouse events for capture
+  // Keyboard shortcuts + global mouse (capture)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         setSel(null);
         setCaptureMode(false);
-      } else if (e.key === '+' || e.key === '=') {
+      } else if (e.key === "+" || e.key === "=") {
         e.preventDefault();
         zoomIn();
-      } else if (e.key === '-') {
+      } else if (e.key === "-") {
         e.preventDefault();
         zoomOut();
       }
@@ -213,7 +220,6 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
 
     const handleMouseUp = () => {
       if (!captureMode || !dragBox?.active) return;
-      console.log('Mouse up - ending drag');
       onEndDrag(dragBox.pageNumber);
     };
 
@@ -225,54 +231,183 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('mousedown', closeOnClickOutside);
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", closeOnClickOutside);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('mousedown', closeOnClickOutside);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", closeOnClickOutside);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
     };
   }, [zoomIn, zoomOut, captureMode, dragBox]);
 
-  // Jump to page on external request
+  // Jump tới page (cũ, theo pageNumber thôi)
   useEffect(() => {
     if (!jumpToPage) return;
     const pageEl = pageRefs.current[jumpToPage];
     if (!pageEl) return;
-    pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // flash highlight border
+    pageEl.scrollIntoView({ behavior: "smooth", block: "start" });
     const prev = pageEl.className;
-    pageEl.className = prev + ' ring-4 ring-orange-400 transition';
+    pageEl.className = prev + " ring-4 ring-orange-400 transition";
     const t = setTimeout(() => {
       pageEl.className = prev;
     }, 1500);
     return () => clearTimeout(t);
   }, [jumpToPage]);
 
+  // 🔥 Jump + flash highlight từ Summary (page + rect normalized)
+  useEffect(() => {
+    if (!jumpHighlight) return;
+    const { pageNumber } = jumpHighlight;
+
+    const pageEl = pageRefs.current[pageNumber];
+    if (pageEl) {
+      pageEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      const prev = pageEl.className;
+      pageEl.className = prev + " ring-4 ring-orange-400 transition";
+      const t = setTimeout(() => {
+        pageEl.className = prev;
+      }, 1500);
+      return () => clearTimeout(t);
+    }
+  }, [jumpHighlight]);
+
+  // === External contexts -> highlights =====================================
+  // Convert incoming contexts (with locator.bbox JSON like in the example)
+  // into normalized highlight entries. External highlights are prefixed with
+  // `ctx-` in their id so they can be replaced on subsequent updates.
+  useEffect(() => {
+    if (!contexts || !Array.isArray(contexts) || contexts.length === 0) return;
+
+    const ext: Highlight[] = [];
+
+    contexts.forEach((c: any, idx: number) => {
+      try {
+        // Locator may be in c.locator or in c.metadata; try both.
+        const locator = c.locator || c.metadata || {};
+        // bbox may be a JSON string or an object
+        let bboxRaw = locator.bbox || c.metadata?.bbox || c.bbox;
+        let parsed: any = null;
+        if (!bboxRaw) {
+          // nothing to map
+          return;
+        }
+        if (typeof bboxRaw === "string") {
+          try {
+            parsed = JSON.parse(bboxRaw);
+          } catch (e) {
+            // sometimes bbox is a small string — ignore
+            return;
+          }
+        } else {
+          parsed = bboxRaw;
+        }
+
+        const x1 = Number(parsed.x1 ?? parsed.left ?? parsed.x ?? 0);
+        const y1 = Number(parsed.y1 ?? parsed.top ?? parsed.y ?? 0);
+        const x2 = Number(
+          parsed.x2 ??
+            parsed.right ??
+            (parsed.x1 ? parsed.x1 + (parsed.width || 0) : 0)
+        );
+        const y2 = Number(
+          parsed.y2 ??
+            parsed.bottom ??
+            (parsed.y1 ? parsed.y1 + (parsed.height || 0) : 0)
+        );
+
+        // Prefer explicit layout sizes when available, otherwise fall back to common defaults
+        const layoutW =
+          Number(
+            parsed.layout_width || parsed.page_width || parsed.width || 612
+          ) || 612;
+        const layoutH =
+          Number(
+            parsed.layout_height || parsed.page_height || parsed.height || 792
+          ) || 792;
+
+        // If parsed provided x2/y2 as zero because of parsing above, try alternatives
+        let finalX2 = x2;
+        let finalY2 = y2;
+        if (!finalX2 || finalX2 <= x1) {
+          if (parsed.width) finalX2 = x1 + Number(parsed.width);
+          else finalX2 = x1 + 1;
+        }
+        if (!finalY2 || finalY2 <= y1) {
+          if (parsed.height) finalY2 = y1 + Number(parsed.height);
+          else finalY2 = y1 + 1;
+        }
+
+        const left = x1 / layoutW;
+        const top = y1 / layoutH;
+        const width = (finalX2 - x1) / layoutW;
+        const height = (finalY2 - y1) / layoutH;
+
+        const pageNumber = Number(
+          locator.page_label ?? locator.page ?? c.page ?? c.page_label ?? 1
+        );
+
+        ext.push({
+          id: `ctx-${c.source_id ?? "unknown"}-${idx}`,
+          pageNumber,
+          rects: [
+            {
+              top: top < 0 ? 0 : top,
+              left: left < 0 ? 0 : left,
+              width: Math.min(Math.max(width, 0.001), 1),
+              height: Math.min(Math.max(height, 0.001), 1),
+            },
+          ],
+          text: c.text || c.summary || "",
+          color: "#7dd3fc", // light blue for external contexts
+        });
+      } catch (e) {
+        console.warn("Failed to parse context locator", e, c);
+      }
+    });
+
+    if (ext.length) {
+      setHighlights((prev) => {
+        // remove previous external highlights (ids starting with ctx-)
+        const filtered = prev.filter((h) => !h.id.startsWith("ctx-"));
+        return [...filtered, ...ext];
+      });
+    }
+  }, [contexts]);
+
+  // tạo temporary highlight overlay cho jumpHighlight
+  useEffect(() => {
+    if (!jumpHighlight) return;
+    const { pageNumber, rect } = jumpHighlight;
+    const id = `jump-${pageNumber}-${Date.now()}`;
+
+    const h: Highlight = {
+      id,
+      pageNumber,
+      rects: [rect],
+      text: "",
+      color: "#fff3b0", // vàng nhạt
+    };
+
+    setHighlights((prev) => [...prev, h]);
+
+    const timeout = setTimeout(() => {
+      setHighlights((prev) => prev.filter((x) => x.id !== id));
+    }, 4000);
+
+    return () => clearTimeout(timeout);
+  }, [jumpHighlight]);
+
   // =================== EXPLAIN (capture ảnh) ================================
   const toggleCapture = () => {
-    console.log(
-      'PdfViewer: toggleCapture called, current captureMode:',
-      captureMode
-    );
-    setCaptureMode((v) => {
-      console.log('PdfViewer: captureMode changing from', v, 'to', !v);
-      return !v;
-    });
+    setCaptureMode((v) => !v);
     setSel(null);
   };
 
   const onStartDrag = (e: React.MouseEvent, pageNumber: number) => {
-    console.log(
-      'PdfViewer: onStartDrag called with pageNumber:',
-      pageNumber,
-      'captureMode:',
-      captureMode
-    );
     if (!captureMode) return;
     const pageEl = pageRefs.current[pageNumber]!;
     const box = pageEl.getBoundingClientRect();
@@ -296,19 +431,10 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
   };
 
   const onEndDrag = (pageNumber: number) => {
-    console.log(
-      'PdfViewer: onEndDrag called with pageNumber:',
-      pageNumber,
-      'captureMode:',
-      captureMode,
-      'dragBox:',
-      dragBox
-    );
     if (!captureMode || !dragBox) return;
 
-    // cắt ảnh từ canvas của trang
     const pageEl = pageRefs.current[pageNumber]!;
-    const canvas = pageEl.querySelector('canvas') as HTMLCanvasElement | null;
+    const canvas = pageEl.querySelector("canvas") as HTMLCanvasElement | null;
     if (canvas && dragBox.w > 3 && dragBox.h > 3) {
       const scaleX = canvas.width / pageEl.clientWidth;
       const scaleY = canvas.height / pageEl.clientHeight;
@@ -318,16 +444,15 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
       const sw = Math.round(dragBox.w * scaleX);
       const sh = Math.round(dragBox.h * scaleY);
 
-      const out = document.createElement('canvas');
+      const out = document.createElement("canvas");
       out.width = sw;
       out.height = sh;
-      const octx = out.getContext('2d')!;
+      const octx = out.getContext("2d")!;
       octx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-      const dataUrl = out.toDataURL('image/png');
+      const dataUrl = out.toDataURL("image/png");
 
-      console.log('PdfViewer: Calling onAction with explain and imageDataUrl');
-      onAction?.('explain', {
-        text: '',
+      onAction?.("explain", {
+        text: "",
         pageNumber,
         rects: [
           {
@@ -348,23 +473,21 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
   const onPageRender = (pageNumber: number) => {
     const pageEl = pageRefs.current[pageNumber];
     if (!pageEl) return;
-    let textLayer = pageEl.querySelector('.textLayer') as HTMLElement | null;
+    let textLayer = pageEl.querySelector(".textLayer") as HTMLElement | null;
     if (!textLayer) {
-      // Sometimes the textLayer is inserted shortly after onRenderSuccess.
-      // Retry once after a short delay to improve reliability of building the index.
       setTimeout(() => onPageRender(pageNumber), 60);
       return;
     }
 
     const spans = Array.from(
-      textLayer.querySelectorAll('span')
+      textLayer.querySelectorAll("span")
     ) as HTMLSpanElement[];
-    let text = '';
+    let text = "";
     let cursor = 0;
-    const entries: PageIndex['spans'] = [];
+    const entries: PageIndex["spans"] = [];
 
     spans.forEach((s) => {
-      const t = s.textContent ?? '';
+      const t = s.textContent ?? "";
       const start = cursor;
       const end = cursor + t.length;
       cursor = end;
@@ -377,15 +500,15 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
 
   const buildRegex = () => {
     if (!query.trim()) return null;
-    const esc = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const esc = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const pattern = wholeWords ? `\\b${esc}\\b` : esc;
-    return new RegExp(pattern, matchCase ? 'g' : 'gi');
+    return new RegExp(pattern, matchCase ? "g" : "gi");
   };
 
   const clearSearchOverlays = (pageNumber: number) => {
     const pageEl = pageRefs.current[pageNumber];
     if (!pageEl) return;
-    pageEl.querySelectorAll('.pdf-search-hit').forEach((el) => el.remove());
+    pageEl.querySelectorAll(".pdf-search-hit").forEach((el) => el.remove());
   };
 
   const overlayForRange = (range: Range, pageEl: HTMLElement) => {
@@ -397,9 +520,9 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
       height: r.height,
     }));
     rects.forEach((r) => {
-      const div = document.createElement('div');
+      const div = document.createElement("div");
       div.className =
-        'pdf-search-hit absolute bg-yellow-300/40 rounded-[2px] pointer-events-none';
+        "pdf-search-hit absolute bg-yellow-300/40 rounded-[2px] pointer-events-none";
       Object.assign(div.style, {
         top: `${r.top}px`,
         left: `${r.left}px`,
@@ -462,11 +585,11 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
     if (allHits.length) {
       const first = allHits[0].rects[0];
       pageRefs.current[allHits[0].pageNumber]?.scrollIntoView({
-        block: 'center',
+        block: "center",
       });
       viewerScrollRef.current?.scrollBy({
         top: Math.max(0, first.top - 80),
-        behavior: 'smooth',
+        behavior: "smooth",
       });
     }
   };
@@ -486,10 +609,10 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
     for (const h of hits) {
       for (const r of h.rects) {
         if (k === next) {
-          pageRefs.current[h.pageNumber]?.scrollIntoView({ block: 'center' });
+          pageRefs.current[h.pageNumber]?.scrollIntoView({ block: "center" });
           viewerScrollRef.current?.scrollBy({
             top: Math.max(0, r.top - 80),
-            behavior: 'smooth',
+            behavior: "smooth",
           });
           return;
         }
@@ -514,9 +637,6 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
     };
   };
 
-  // scale selection rects/anchor from the pageClient size when selection was
-  // made to current page element size. Returns a shallow copy with rects/anchor
-  // adjusted. If page element not available, returns the original selection.
   const scaleSelectionToCurrent = (s: typeof sel) => {
     if (!s) return s;
     const pageEl = pageRefs.current[s.pageNumber];
@@ -553,8 +673,6 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
   const addHighlight = (color?: string) => {
     if (!sel) return;
     const scaled = scaleSelectionToCurrent(sel);
-    // Store normalized rects (fractions relative to page size) so highlights
-    // remain correct when the page is later resized/zoomed.
     const pageEl = pageRefs.current[scaled!.pageNumber];
     let normalized = scaled!.rects;
     if (pageEl) {
@@ -570,14 +688,12 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
 
     setHighlights((hs) => {
       const page = scaled!.pageNumber;
-      // For overlap comparison, convert existing highlights to pixel coords
       const pw = pageEl?.clientWidth || 1;
       const ph = pageEl?.clientHeight || 1;
       const newBox = getBBox(scaled!.rects);
       const filtered = hs.filter((h) => {
         if (h.pageNumber !== page) return true;
         const oldRectsPx = h.rects.map((r) => {
-          // if r appears normalized (values <= 1), convert to pixels; otherwise assume pixels already
           if (r.left <= 1 && r.width <= 1 && r.top <= 1 && r.height <= 1) {
             return {
               top: r.top * ph,
@@ -589,17 +705,13 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
           return r as HighlightRect;
         });
         const oldBox = getBBox(oldRectsPx);
-        // Only replace if the overlap ratio indicates nearly-identical regions
-        // AND the new region is not significantly smaller than the old region.
         const ratio = overlapRatio(newBox, oldBox);
         const areaNew = newBox.width * newBox.height;
         const areaOld = oldBox.width * oldBox.height;
-        // If new overlaps almost entirely with old, but is much smaller (child inside parent),
-        // don't remove the parent. Remove only when new is roughly same size or larger.
         if (ratio > 0.85 && areaNew >= areaOld * 0.9) {
-          return false; // drop old
+          return false;
         }
-        return true; // keep old
+        return true;
       });
       return [
         ...filtered,
@@ -613,8 +725,7 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
       ];
     });
 
-    // Keep onAction payload in pixel coords (caller likely expects pixels)
-    onAction?.('highlight', {
+    onAction?.("highlight", {
       text: sel.text,
       pageNumber: sel.pageNumber,
       rects: scaled!.rects,
@@ -626,7 +737,6 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
       setSel(null);
       return;
     }
-    // Remove any highlight that overlaps strongly with current selection
     const scaled = scaleSelectionToCurrent(sel);
     setHighlights((hs) => {
       const page = scaled!.pageNumber;
@@ -649,7 +759,6 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
         });
         const oldBox = getBBox(oldRectsPx);
         const ratio = overlapRatio(curBox, oldBox);
-        // keep if not almost identical to current selection
         return ratio < 0.85;
       });
     });
@@ -657,7 +766,7 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
   };
 
   const fire = (
-    type: NonNullable<Parameters<NonNullable<Props['onAction']>>[0]>
+    type: NonNullable<Parameters<NonNullable<Props["onAction"]>>[0]>
   ) => {
     if (!sel) return;
     const scaled = scaleSelectionToCurrent(sel);
@@ -670,8 +779,7 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
   };
 
   return (
-    <div className='flex flex-col h-full min-h-0'>
-      {/* Toolbar */}
+    <div className="flex flex-col h-full min-h-0">
       <PdfToolbar
         showSearch={showSearch}
         onToggleSearch={() => setShowSearch((v) => !v)}
@@ -693,17 +801,15 @@ export default function PdfViewer({ fileUrl, jumpToPage, onAction }: Props) {
         setScale={setScale}
       />
 
-      {/* Viewer: chỉ phần này scroll */}
       <div
         ref={viewerScrollRef}
         className={`flex-1 overflow-auto bg-gray-50 min-h-0 ${
-          captureMode ? 'cursor-crosshair' : ''
+          captureMode ? "cursor-crosshair" : ""
         }`}
       >
-        {/* Hover bold effect for PDF text */}
         <style>{`.textLayer span:hover{font-weight:700}`}</style>
         {!fileUrl ? (
-          <div className='p-6 text-sm text-gray-500'>No PDF selected.</div>
+          <div className="p-6 text-sm text-gray-500">No PDF selected.</div>
         ) : (
           <PdfPages
             fileUrl={fileUrl}

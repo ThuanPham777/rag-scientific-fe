@@ -4,13 +4,21 @@ import type { ChatMessage, Paper, Session } from "../utils/types";
 interface PaperState {
   paper?: Paper;
   session?: Session;
-  pendingJump?: { pageNumber: number } | null;
+  pendingJump?: {
+    pageNumber: number;
+    rect?: { top: number; left: number; width: number; height: number };
+  } | null;
   setPaper: (p: Paper) => void;
   updatePaper: (p: Partial<Paper>) => void;
   setSession: (s: Session) => void;
   addMessage: (m: ChatMessage) => void;
   updateMessage: (id: string, partial: Partial<ChatMessage>) => void;
-  setPendingJump: (jump: { pageNumber: number } | null) => void;
+  setPendingJump: (
+    jump: {
+      pageNumber: number;
+      rect?: { top: number; left: number; width: number; height: number };
+    } | null
+  ) => void;
   reset: () => void;
 }
 
