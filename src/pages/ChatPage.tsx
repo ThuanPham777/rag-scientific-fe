@@ -9,6 +9,9 @@ import type { ChatMessage } from "../utils/types";
 export default function ChatPage() {
   const { session, paper, addMessage } = usePaperStore();
   const [loading, setLoading] = useState(false);
+  
+  // State lưu context của câu hỏi gần nhất để highlight
+  const [lastQueryContexts, setLastQueryContexts] = useState<any[]>([]);
 
   if (!session)
     return (
@@ -16,7 +19,6 @@ export default function ChatPage() {
         No session. Go back and upload a PDF file.
       </div>
     );
-
 
   const onSend = async (text: string) => {
     if (!text.trim() || !session) return;
@@ -32,18 +34,21 @@ export default function ChatPage() {
     try {
       setLoading(true);
 
-      const { assistantMsg } = await sendQuery(session.id, text, paper?.id);
+      // Lấy raw response để lấy context bbox
+      const { assistantMsg, raw } = await sendQuery(session.id, text, paper?.id);
+
+      // Cập nhật context highlight
+      if (raw?.context?.texts) {
+        setLastQueryContexts(raw.context.texts);
+      }
 
       addMessage(assistantMsg);
     } catch (err: any) {
       console.error("❌ Chat error:", err);
-
-      // 4️⃣ Thêm thông báo lỗi vào chat
       const errorMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content:
-          "⚠️ Sorry, something went wrong while processing your question.",
+        content: "⚠️ Sorry, something went wrong while processing your question.",
         createdAt: new Date().toISOString(),
       };
       addMessage(errorMsg);
@@ -52,20 +57,17 @@ export default function ChatPage() {
     }
   };
 
-  // Xử lý action từ PDF (explain, summarize)
   const handlePdfAction = async (
     action: 'explain' | 'summarize',
     selectedText: string
   ) => {
     if (!session || !selectedText.trim()) return;
 
-    // Tạo query text dựa trên action
     const queryText =
       action === 'explain'
         ? `Explain the following text: "${selectedText}"`
         : `Summarize the following text: "${selectedText}"`;
 
-    // Tạo user message
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -78,23 +80,25 @@ export default function ChatPage() {
     try {
       setLoading(true);
 
-      const { assistantMsg } = await sendQuery(
+      const { assistantMsg, raw } = await sendQuery(
         session.id,
         queryText,
         paper?.id
       );
 
-      console.log("call api success 12345", assistantMsg);
+      // Cập nhật context highlight
+      if (raw?.context?.texts) {
+        setLastQueryContexts(raw.context.texts);
+      }
 
+      console.log("call api success", assistantMsg);
       addMessage(assistantMsg);
     } catch (err: any) {
       console.error("❌ PDF action error:", err);
-
       const errorMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content:
-          "⚠️ Sorry, something went wrong while processing your request.",
+        content: "⚠️ Sorry, something went wrong while processing your request.",
         createdAt: new Date().toISOString(),
       };
       addMessage(errorMsg);
@@ -105,14 +109,17 @@ export default function ChatPage() {
 
   return (
     <div className="pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2">
-      {/* Lưới 2 cột: bên trái PDF, bên phải chừa chỗ cho khung chat nổi */}
       <div className="h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3">
-        <PdfPanel activePaper={paper} onPdfAction={handlePdfAction} />
-        {/* spacer phải giữ layout */}
+        <PdfPanel 
+          activePaper={paper} 
+          onPdfAction={handlePdfAction} 
+          chatContexts={lastQueryContexts}
+          // 🔥 MỚI: Reset context khi user click ngoài khoảng trắng trong PDF
+          onClearContexts={() => setLastQueryContexts([])}
+        />
         <div className="hidden lg:block" aria-hidden />
       </div>
 
-      {/* Chat nổi cố định (open/close như trước) */}
       <ChatDock session={session} onSend={onSend} isLoading={loading} defaultOpen={true} />
     </div>
   );

@@ -1,3 +1,4 @@
+// src/components/pdf/PdfViewer.tsx
 import { useEffect, useRef, useState } from "react";
 import PdfToolbar from "./PdfToolbar";
 import PdfPages from "./PdfPages";
@@ -39,6 +40,8 @@ type Props = {
       imageDataUrl?: string;
     }
   ) => void;
+  // 🔥 MỚI: Callback để xóa highlight khi click background
+  onClearExternalHighlights?: () => void;
 };
 
 type PageIndex = {
@@ -52,16 +55,10 @@ export default function PdfViewer({
   jumpHighlight,
   contexts,
   onAction,
+  onClearExternalHighlights,
 }: Props) {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1.0);
-
-  // Debug logging
-  console.log("PdfViewer render:", {
-    fileUrl,
-    numPages,
-    hasFileUrl: !!fileUrl,
-  });
 
   // === Highlight + Selection =================================================
   const [highlights, setHighlights] = useState<Highlight[]>([]);
@@ -250,15 +247,10 @@ export default function PdfViewer({
     const pageEl = pageRefs.current[jumpToPage];
     if (!pageEl) return;
     pageEl.scrollIntoView({ behavior: "smooth", block: "start" });
-    const prev = pageEl.className;
-    pageEl.className = prev + " ring-4 ring-orange-400 transition";
-    const t = setTimeout(() => {
-      pageEl.className = prev;
-    }, 1500);
-    return () => clearTimeout(t);
+    // 🔥 ĐÃ XÓA: logic thêm class ring-4 để không bị nháy
   }, [jumpToPage]);
 
-  // 🔥 Jump + flash highlight từ Summary (page + rect normalized)
+  // 🔥 Jump + flash highlight từ Summary
   useEffect(() => {
     if (!jumpHighlight) return;
     const { pageNumber } = jumpHighlight;
@@ -266,19 +258,11 @@ export default function PdfViewer({
     const pageEl = pageRefs.current[pageNumber];
     if (pageEl) {
       pageEl.scrollIntoView({ behavior: "smooth", block: "center" });
-      const prev = pageEl.className;
-      pageEl.className = prev + " ring-4 ring-orange-400 transition";
-      const t = setTimeout(() => {
-        pageEl.className = prev;
-      }, 1500);
-      return () => clearTimeout(t);
+      // 🔥 ĐÃ XÓA: logic thêm class ring-4
     }
   }, [jumpHighlight]);
 
   // === External contexts -> highlights =====================================
-  // Convert incoming contexts (with locator.bbox JSON like in the example)
-  // into normalized highlight entries. External highlights are prefixed with
-  // `ctx-` in their id so they can be replaced on subsequent updates.
   useEffect(() => {
     if (!contexts || !Array.isArray(contexts) || contexts.length === 0) return;
 
@@ -286,60 +270,30 @@ export default function PdfViewer({
 
     contexts.forEach((c: any, idx: number) => {
       try {
-        // Locator may be in c.locator or in c.metadata; try both.
-        const locator = c.locator || c.metadata || {};
-        // bbox may be a JSON string or an object
-        let bboxRaw = locator.bbox || c.metadata?.bbox || c.bbox;
+        const metadata = c.metadata || {};
+        const locator = c.locator || {};
+        let bboxRaw = metadata.bbox || locator.bbox || c.bbox;
         let parsed: any = null;
-        if (!bboxRaw) {
-          // nothing to map
-          return;
-        }
+        if (!bboxRaw) return;
+
         if (typeof bboxRaw === "string") {
           try {
             parsed = JSON.parse(bboxRaw);
-          } catch (e) {
-            // sometimes bbox is a small string — ignore
-            return;
-          }
+          } catch (e) { return; }
         } else {
           parsed = bboxRaw;
         }
 
-        const x1 = Number(parsed.x1 ?? parsed.left ?? parsed.x ?? 0);
-        const y1 = Number(parsed.y1 ?? parsed.top ?? parsed.y ?? 0);
-        const x2 = Number(
-          parsed.x2 ??
-            parsed.right ??
-            (parsed.x1 ? parsed.x1 + (parsed.width || 0) : 0)
-        );
-        const y2 = Number(
-          parsed.y2 ??
-            parsed.bottom ??
-            (parsed.y1 ? parsed.y1 + (parsed.height || 0) : 0)
-        );
+        const layoutW = Number(parsed.layout_width || parsed.page_width || 612);
+        const layoutH = Number(parsed.layout_height || parsed.page_height || 792);
 
-        // Prefer explicit layout sizes when available, otherwise fall back to common defaults
-        const layoutW =
-          Number(
-            parsed.layout_width || parsed.page_width || parsed.width || 612
-          ) || 612;
-        const layoutH =
-          Number(
-            parsed.layout_height || parsed.page_height || parsed.height || 792
-          ) || 792;
-
-        // If parsed provided x2/y2 as zero because of parsing above, try alternatives
-        let finalX2 = x2;
-        let finalY2 = y2;
-        if (!finalX2 || finalX2 <= x1) {
-          if (parsed.width) finalX2 = x1 + Number(parsed.width);
-          else finalX2 = x1 + 1;
-        }
-        if (!finalY2 || finalY2 <= y1) {
-          if (parsed.height) finalY2 = y1 + Number(parsed.height);
-          else finalY2 = y1 + 1;
-        }
+        const x1 = Number(parsed.x1 ?? parsed.left ?? 0);
+        const y1 = Number(parsed.y1 ?? parsed.top ?? 0);
+        
+        let finalX2 = Number(parsed.x2 ?? parsed.right ?? 0);
+        let finalY2 = Number(parsed.y2 ?? parsed.bottom ?? 0);
+        if (!finalX2 || finalX2 <= x1) finalX2 = x1 + (Number(parsed.width) || 1);
+        if (!finalY2 || finalY2 <= y1) finalY2 = y1 + (Number(parsed.height) || 1);
 
         const left = x1 / layoutW;
         const top = y1 / layoutH;
@@ -347,34 +301,44 @@ export default function PdfViewer({
         const height = (finalY2 - y1) / layoutH;
 
         const pageNumber = Number(
-          locator.page_label ?? locator.page ?? c.page ?? c.page_label ?? 1
+          metadata.page_label ?? 
+          locator.page_label ?? 
+          c.page ?? 
+          1
         );
 
         ext.push({
-          id: `ctx-${c.source_id ?? "unknown"}-${idx}`,
+          id: `ctx-${c.source_id ?? idx}`,
           pageNumber,
           rects: [
             {
-              top: top < 0 ? 0 : top,
-              left: left < 0 ? 0 : left,
-              width: Math.min(Math.max(width, 0.001), 1),
-              height: Math.min(Math.max(height, 0.001), 1),
+              top: Math.max(0, top),
+              left: Math.max(0, left),
+              width: Math.min(width, 1),
+              height: Math.min(height, 1),
             },
           ],
           text: c.text || c.summary || "",
-          color: "#7dd3fc", // light blue for external contexts
+          color: "#7dd3fc", 
         });
       } catch (e) {
-        console.warn("Failed to parse context locator", e, c);
+        console.warn("Context parse error:", e);
       }
     });
 
     if (ext.length) {
       setHighlights((prev) => {
-        // remove previous external highlights (ids starting with ctx-)
         const filtered = prev.filter((h) => !h.id.startsWith("ctx-"));
         return [...filtered, ...ext];
       });
+      
+      const first = ext[0];
+      if (first) {
+        setTimeout(() => {
+           const pageEl = pageRefs.current[first.pageNumber];
+           pageEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+      }
     }
   }, [contexts]);
 
@@ -389,7 +353,7 @@ export default function PdfViewer({
       pageNumber,
       rects: [rect],
       text: "",
-      color: "#fff3b0", // vàng nhạt
+      color: "#fff3b0",
     };
 
     setHighlights((prev) => [...prev, h]);
@@ -806,6 +770,13 @@ export default function PdfViewer({
         className={`flex-1 overflow-auto bg-gray-50 min-h-0 ${
           captureMode ? "cursor-crosshair" : ""
         }`}
+        // 🔥 MỚI: Click vào khoảng trắng sẽ trigger xóa context highlight
+        onClick={(e) => {
+            // Chỉ xóa nếu user không đang bôi đen text
+            if (!sel && !captureMode) {
+                 onClearExternalHighlights?.();
+            }
+        }}
       >
         <style>{`.textLayer span:hover{font-weight:700}`}</style>
         {!fileUrl ? (

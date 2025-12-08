@@ -64,30 +64,45 @@ export async function sendQuery(
 
   const { data } = await api.post("/query", body);
 
-  // 4️⃣ Parse citations (từ context.texts)
+  // data lúc này chính là object mà bạn gửi ở trên:
+  // {
+  //   answer: string,
+  //   context: { texts: [...], images: [], tables: [] },
+  //   ...
+  // }
+  const rawResponse = data;
+
+  // Parse citations để hiển thị ở chat (optional)
   const citations: Citation[] =
-    data.context?.texts?.map((t: any, i: number) => ({
+    rawResponse.context?.texts?.map((t: any, i: number) => ({
       paperId: activePaperId ?? "",
-      page: t.page ?? i + 1,
-      title: t.type,
+      page:
+        t.page ??
+        t.locator?.page_label ??
+        t.metadata?.page_label ??
+        i + 1,
+      title: t.metadata?.section_title ?? t.type,
       snippet: t.text,
     })) ?? [];
 
   const assistantMsg: ChatMessage = {
     id: crypto.randomUUID(),
     role: "assistant",
-    content: data.answer,
+    content: rawResponse.answer,
     citations,
     createdAt: new Date().toISOString(),
   };
 
-  // Save assistant message to session (for consistency)
-  if (!SESSIONS[sessionId])
+  // Lưu message lại như cũ
+  if (!SESSIONS[sessionId]) {
     SESSIONS[sessionId] = { messages: [], paperIds: [] };
+  }
   SESSIONS[sessionId].messages.push(assistantMsg);
 
-  return { assistantMsg };
+  // 🔥 TRẢ THÊM rawResponse để PdfPanel/SummaryView dùng
+  return { assistantMsg, raw: rawResponse };
 }
+
 
 // ============================
 // 🔹 Explain cropped region (image base64)

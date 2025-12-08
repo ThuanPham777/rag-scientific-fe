@@ -1,3 +1,4 @@
+// src/components/pdf/PdfPanel.tsx
 import { useState, useEffect } from "react";
 import PdfViewer from "./PdfViewer";
 import SummaryView from "./SummaryView";
@@ -8,6 +9,9 @@ import { usePaperStore } from "../../store/usePaperStore";
 type Props = {
   activePaper?: Paper;
   onPdfAction?: (action: "explain" | "summarize", selectedText: string) => void;
+  chatContexts?: any[];
+  // 🔥 MỚI: Prop clear từ ChatPage
+  onClearContexts?: () => void;
 };
 
 type PendingJump = {
@@ -15,7 +19,7 @@ type PendingJump = {
   rect?: { top: number; left: number; width: number; height: number };
 };
 
-export default function PdfPanel({ activePaper, onPdfAction }: Props) {
+export default function PdfPanel({ activePaper, onPdfAction, chatContexts, onClearContexts }: Props) {
   const [activeTab, setActiveTab] = useState<"pdf" | "summary">("pdf");
   const [summaryData, setSummaryData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -27,31 +31,16 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
     setPendingJump: (val: PendingJump | null) => void;
   };
 
-  // 🔹 Gọi API RAG để summarize + trả cả context (answer + context)
   const handleSummary = async () => {
     if (!session || !paper?.id) return;
     try {
       setIsLoading(true);
-      const { assistantMsg } = await sendQuery(
+      const { assistantMsg, raw } = await sendQuery(
         session.id,
         "Summarize the content of this paper",
         paper.id
       );
-
-      const raw = (assistantMsg as any).content;
-      let payload: any;
-
-      if (typeof raw === "string") {
-        try {
-          payload = JSON.parse(raw);
-        } catch {
-          // nếu BE vẫn trả text thường
-          payload = { answer: raw };
-        }
-      } else {
-        payload = raw ?? {};
-      }
-
+      const payload = raw ?? { answer: assistantMsg.content };
       setSummaryData(payload);
     } catch (error) {
       console.error("❌ Error summarizing paper:", error);
@@ -59,8 +48,7 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
       setIsLoading(false);
     }
   };
-
-  // 🔹 Khi user chuyển sang tab Summary → tự gọi summarize nếu chưa có
+  
   useEffect(() => {
     if (activeTab === "summary" && !summaryData && !isLoading) {
       handleSummary();
@@ -69,7 +57,6 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
 
   return (
     <section className="bg-white border border-gray-200 rounded-lg overflow-hidden flex flex-col">
-      {/* Tabs row */}
       <div className="px-4 pt-3 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex gap-6">
           <button
@@ -95,7 +82,6 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
         </div>
       </div>
 
-      {/* Content area */}
       <div className="flex-1 flex flex-col min-h-0">
         {activeTab === "pdf" ? (
           <div className="flex-1 min-h-0">
@@ -110,11 +96,15 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                     }
                   : undefined
               }
-              contexts={summaryData?.context?.texts}
+              // Ưu tiên hiển thị chatContexts nếu có
+              contexts={(chatContexts && chatContexts.length > 0) ? chatContexts : summaryData?.context?.texts}
+              
+              // 🔥 MỚI: Truyền callback xóa highlight xuống Viewer
+              onClearExternalHighlights={onClearContexts}
+              
               onAction={(action, payload) => {
                 if (!session) return;
 
-                // Image region explain
                 if (action === "explain" && (payload as any).imageDataUrl) {
                   const imageDataUrl = (payload as any).imageDataUrl as string;
                   const fileId = paper?.id;
@@ -141,16 +131,13 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                       usePaperStore.getState().addMessage({
                         id: crypto.randomUUID(),
                         role: "assistant",
-                        content:
-                          "⚠️ Sorry, something went wrong while explaining the selected region.",
+                        content: "⚠️ Sorry, something went wrong while explaining the selected region.",
                         createdAt: new Date().toISOString(),
                       });
                     });
-
                   return;
                 }
 
-                // text-based explain/summarize
                 if (
                   (action === "explain" || action === "summarize") &&
                   (payload as any).text
@@ -158,8 +145,6 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                   onPdfAction?.(action, (payload as any).text);
                   return;
                 }
-
-                // highlight/save etc. nếu cần thì xử lý thêm ở đây
               }}
             />
           </div>
@@ -176,7 +161,6 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
               <SummaryView
                 summaryData={summaryData}
                 onJumpToSource={({ pageNumber, rect }) => {
-                  // switch về tab PDF + set pendingJump
                   setActiveTab("pdf");
                   setPendingJump({ pageNumber, rect });
                 }}
@@ -193,7 +177,6 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
         )}
       </div>
 
-      {/* Clear pending jump sau khi render để không jump lặp lại */}
       {pendingJump && (
         <span style={{ display: "none" }}>
           {setTimeout(() => setPendingJump(null), 0)}
