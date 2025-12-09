@@ -17,6 +17,11 @@ export type Citation = {
   title?: string;
   url?: string; // if backend gives a viewer link
   snippet?: string;
+  sourceId?: string;
+  rect?: { top: number; left: number; width: number; height: number };
+  rawBBox?: any;
+  layoutWidth?: number;
+  layoutHeight?: number;
 };
 
 export type ChatMessage = {

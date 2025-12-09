@@ -10,9 +10,6 @@ export default function ChatPage() {
   const { session, paper, addMessage } = usePaperStore();
   const [loading, setLoading] = useState(false);
   
-  // State lưu context của câu hỏi gần nhất để highlight
-  const [lastQueryContexts, setLastQueryContexts] = useState<any[]>([]);
-
   if (!session)
     return (
       <div className="min-h-[calc(100vh-4rem)] pl-16 pt-16 flex items-center justify-center text-gray-600">
@@ -35,12 +32,7 @@ export default function ChatPage() {
       setLoading(true);
 
       // Lấy raw response để lấy context bbox
-      const { assistantMsg, raw } = await sendQuery(session.id, text, paper?.id);
-
-      // Cập nhật context highlight
-      if (raw?.context?.texts) {
-        setLastQueryContexts(raw.context.texts);
-      }
+      const { assistantMsg } = await sendQuery(session.id, text, paper?.id);
 
       addMessage(assistantMsg);
     } catch (err: any) {
@@ -80,16 +72,11 @@ export default function ChatPage() {
     try {
       setLoading(true);
 
-      const { assistantMsg, raw } = await sendQuery(
+      const { assistantMsg } = await sendQuery(
         session.id,
         queryText,
         paper?.id
       );
-
-      // Cập nhật context highlight
-      if (raw?.context?.texts) {
-        setLastQueryContexts(raw.context.texts);
-      }
 
       console.log("call api success", assistantMsg);
       addMessage(assistantMsg);
@@ -111,11 +98,8 @@ export default function ChatPage() {
     <div className="pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2">
       <div className="h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3">
         <PdfPanel 
-          activePaper={paper} 
-          onPdfAction={handlePdfAction} 
-          chatContexts={lastQueryContexts}
-          // 🔥 MỚI: Reset context khi user click ngoài khoảng trắng trong PDF
-          onClearContexts={() => setLastQueryContexts([])}
+          activePaper={paper}
+          onPdfAction={handlePdfAction}
         />
         <div className="hidden lg:block" aria-hidden />
       </div>

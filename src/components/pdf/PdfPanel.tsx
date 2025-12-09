@@ -9,9 +9,6 @@ import { usePaperStore } from "../../store/usePaperStore";
 type Props = {
   activePaper?: Paper;
   onPdfAction?: (action: "explain" | "summarize", selectedText: string) => void;
-  chatContexts?: any[];
-  // 🔥 MỚI: Prop clear từ ChatPage
-  onClearContexts?: () => void;
 };
 
 type PendingJump = {
@@ -19,7 +16,7 @@ type PendingJump = {
   rect?: { top: number; left: number; width: number; height: number };
 };
 
-export default function PdfPanel({ activePaper, onPdfAction, chatContexts, onClearContexts }: Props) {
+export default function PdfPanel({ activePaper, onPdfAction }: Props) {
   const [activeTab, setActiveTab] = useState<"pdf" | "summary">("pdf");
   const [summaryData, setSummaryData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -96,12 +93,6 @@ export default function PdfPanel({ activePaper, onPdfAction, chatContexts, onCle
                     }
                   : undefined
               }
-              // Ưu tiên hiển thị chatContexts nếu có
-              contexts={(chatContexts && chatContexts.length > 0) ? chatContexts : summaryData?.context?.texts}
-              
-              // 🔥 MỚI: Truyền callback xóa highlight xuống Viewer
-              onClearExternalHighlights={onClearContexts}
-              
               onAction={(action, payload) => {
                 if (!session) return;
 

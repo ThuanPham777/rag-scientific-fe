@@ -29,8 +29,6 @@ type Props = {
   fileUrl?: string;
   jumpToPage?: number;
   jumpHighlight?: JumpHighlight | null;
-  /** External contexts (from response) that include locator bbox and page info. */
-  contexts?: any[];
   onAction?: (
     action: "explain" | "summarize" | "related" | "highlight" | "save",
     payload: {
@@ -40,8 +38,6 @@ type Props = {
       imageDataUrl?: string;
     }
   ) => void;
-  // 🔥 MỚI: Callback để xóa highlight khi click background
-  onClearExternalHighlights?: () => void;
 };
 
 type PageIndex = {
@@ -53,9 +49,7 @@ export default function PdfViewer({
   fileUrl,
   jumpToPage,
   jumpHighlight,
-  contexts,
   onAction,
-  onClearExternalHighlights,
 }: Props) {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1.0);
@@ -262,105 +256,27 @@ export default function PdfViewer({
     }
   }, [jumpHighlight]);
 
-  // === External contexts -> highlights =====================================
-  useEffect(() => {
-    if (!contexts || !Array.isArray(contexts) || contexts.length === 0) return;
-
-    const ext: Highlight[] = [];
-
-    contexts.forEach((c: any, idx: number) => {
-      try {
-        const metadata = c.metadata || {};
-        const locator = c.locator || {};
-        let bboxRaw = metadata.bbox || locator.bbox || c.bbox;
-        let parsed: any = null;
-        if (!bboxRaw) return;
-
-        if (typeof bboxRaw === "string") {
-          try {
-            parsed = JSON.parse(bboxRaw);
-          } catch (e) { return; }
-        } else {
-          parsed = bboxRaw;
-        }
-
-        const layoutW = Number(parsed.layout_width || parsed.page_width || 612);
-        const layoutH = Number(parsed.layout_height || parsed.page_height || 792);
-
-        const x1 = Number(parsed.x1 ?? parsed.left ?? 0);
-        const y1 = Number(parsed.y1 ?? parsed.top ?? 0);
-        
-        let finalX2 = Number(parsed.x2 ?? parsed.right ?? 0);
-        let finalY2 = Number(parsed.y2 ?? parsed.bottom ?? 0);
-        if (!finalX2 || finalX2 <= x1) finalX2 = x1 + (Number(parsed.width) || 1);
-        if (!finalY2 || finalY2 <= y1) finalY2 = y1 + (Number(parsed.height) || 1);
-
-        const left = x1 / layoutW;
-        const top = y1 / layoutH;
-        const width = (finalX2 - x1) / layoutW;
-        const height = (finalY2 - y1) / layoutH;
-
-        const pageNumber = Number(
-          metadata.page_label ?? 
-          locator.page_label ?? 
-          c.page ?? 
-          1
-        );
-
-        ext.push({
-          id: `ctx-${c.source_id ?? idx}`,
-          pageNumber,
-          rects: [
-            {
-              top: Math.max(0, top),
-              left: Math.max(0, left),
-              width: Math.min(width, 1),
-              height: Math.min(height, 1),
-            },
-          ],
-          text: c.text || c.summary || "",
-          color: "#7dd3fc", 
-        });
-      } catch (e) {
-        console.warn("Context parse error:", e);
-      }
-    });
-
-    if (ext.length) {
-      setHighlights((prev) => {
-        const filtered = prev.filter((h) => !h.id.startsWith("ctx-"));
-        return [...filtered, ...ext];
-      });
-      
-      const first = ext[0];
-      if (first) {
-        setTimeout(() => {
-           const pageEl = pageRefs.current[first.pageNumber];
-           pageEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 300);
-      }
-    }
-  }, [contexts]);
-
   // tạo temporary highlight overlay cho jumpHighlight
   useEffect(() => {
     if (!jumpHighlight) return;
     const { pageNumber, rect } = jumpHighlight;
     const id = `jump-${pageNumber}-${Date.now()}`;
 
-    const h: Highlight = {
-      id,
-      pageNumber,
-      rects: [rect],
-      text: "",
-      color: "#fff3b0",
-    };
-
-    setHighlights((prev) => [...prev, h]);
+    // Clear any existing jump highlights before adding new one
+    setHighlights((prev) => [
+      ...prev.filter((x) => !x.id.startsWith("jump-")),
+      {
+        id,
+        pageNumber,
+        rects: [rect],
+        text: "",
+        color: "#fff3b0",
+      },
+    ]);
 
     const timeout = setTimeout(() => {
-      setHighlights((prev) => prev.filter((x) => x.id !== id));
-    }, 4000);
+      setHighlights((prev) => prev.filter((x) => !x.id.startsWith("jump-")));
+    }, 3000);
 
     return () => clearTimeout(timeout);
   }, [jumpHighlight]);
@@ -770,13 +686,6 @@ export default function PdfViewer({
         className={`flex-1 overflow-auto bg-gray-50 min-h-0 ${
           captureMode ? "cursor-crosshair" : ""
         }`}
-        // 🔥 MỚI: Click vào khoảng trắng sẽ trigger xóa context highlight
-        onClick={(e) => {
-            // Chỉ xóa nếu user không đang bôi đen text
-            if (!sel && !captureMode) {
-                 onClearExternalHighlights?.();
-            }
-        }}
       >
         <style>{`.textLayer span:hover{font-weight:700}`}</style>
         {!fileUrl ? (

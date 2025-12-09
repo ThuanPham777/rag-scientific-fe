@@ -49,7 +49,13 @@ export default function ChatMessage({ msg }: { msg: Msg }) {
                       {c.page && (
                         <button
                           className='text-xs text-gray-600 hover:underline'
-                          onClick={() => setPendingJump?.({ pageNumber: c.page! })}
+                          onClick={() =>
+                            setPendingJump?.(
+                              c.rect
+                                ? { pageNumber: c.page!, rect: c.rect }
+                                : { pageNumber: c.page! }
+                            )
+                          }
                         >
                           Locate in PDF
                         </button>
@@ -107,7 +113,11 @@ export default function ChatMessage({ msg }: { msg: Msg }) {
                       className='inline-flex items-center gap-2 px-3 py-2 rounded-md border text-sm hover:bg-gray-50'
                       onClick={() => {
                         // Jump to page but keep overlay open to allow picking another source
-                        setPendingJump?.({ pageNumber: c.page! });
+                        setPendingJump?.(
+                          c.rect
+                            ? { pageNumber: c.page!, rect: c.rect }
+                            : { pageNumber: c.page! }
+                        );
                       }}
                     >
                       Locate in PDF

@@ -74,16 +74,70 @@ export async function sendQuery(
 
   // Parse citations để hiển thị ở chat (optional)
   const citations: Citation[] =
-    rawResponse.context?.texts?.map((t: any, i: number) => ({
-      paperId: activePaperId ?? "",
-      page:
-        t.page ??
-        t.locator?.page_label ??
-        t.metadata?.page_label ??
-        i + 1,
-      title: t.metadata?.section_title ?? t.type,
-      snippet: t.text,
-    })) ?? [];
+    rawResponse.context?.texts?.map((t: any, i: number) => {
+      const locator = t.locator ?? {};
+      const meta = t.metadata ?? {};
+
+      // Parse bbox (string hoặc object)
+      let parsedBBox: any = locator.bbox ?? meta.bbox ?? t.bbox ?? null;
+      if (typeof parsedBBox === "string") {
+        try {
+          parsedBBox = JSON.parse(parsedBBox);
+        } catch {
+          parsedBBox = null;
+        }
+      }
+
+      const layoutW =
+        Number(
+          parsedBBox?.layout_width ??
+            parsedBBox?.page_width ??
+            parsedBBox?.width ??
+            612
+        ) || 612;
+      const layoutH =
+        Number(
+          parsedBBox?.layout_height ??
+            parsedBBox?.page_height ??
+            parsedBBox?.height ??
+            792
+        ) || 792;
+
+      const x1 = Number(parsedBBox?.x1 ?? parsedBBox?.left ?? 0);
+      const y1 = Number(parsedBBox?.y1 ?? parsedBBox?.top ?? 0);
+      let x2 = Number(parsedBBox?.x2 ?? parsedBBox?.right ?? 0);
+      let y2 = Number(parsedBBox?.y2 ?? parsedBBox?.bottom ?? 0);
+      if (!x2 || x2 <= x1) x2 = x1 + (Number(parsedBBox?.width) || 1);
+      if (!y2 || y2 <= y1) y2 = y1 + (Number(parsedBBox?.height) || 1);
+
+      const rect =
+        layoutW > 0 && layoutH > 0
+          ? {
+              left: x1 / layoutW,
+              top: y1 / layoutH,
+              width: (x2 - x1) / layoutW,
+              height: (y2 - y1) / layoutH,
+            }
+          : undefined;
+
+      return {
+        paperId: activePaperId ?? "",
+        page:
+          t.page ??
+          locator.page_label ??
+          meta.page_label ??
+          locator.page ??
+          t.page_label ??
+          i + 1,
+        title: meta.section_title ?? t.type,
+        snippet: t.text,
+        sourceId: t.source_id,
+        rect,
+        rawBBox: parsedBBox,
+        layoutWidth: layoutW,
+        layoutHeight: layoutH,
+      };
+    }) ?? [];
 
   const assistantMsg: ChatMessage = {
     id: crypto.randomUUID(),
