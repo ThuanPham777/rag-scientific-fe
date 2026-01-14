@@ -191,26 +191,35 @@ export default function PdfPages({
 
                     // stored rects may be normalized (0..1) or legacy pixels.
                     const pageEl = pageRefs.current[pageNumber];
-                    const top = pageEl
-                      ? r.top <= 1
-                        ? r.top * pageEl.clientHeight
-                        : r.top
-                      : r.top;
-                    const left = pageEl
-                      ? r.left <= 1
-                        ? r.left * pageEl.clientWidth
-                        : r.left
-                      : r.left;
-                    const width = pageEl
-                      ? r.width <= 1
-                        ? r.width * pageEl.clientWidth
-                        : r.width
-                      : r.width;
-                    const height = pageEl
-                      ? r.height <= 1
-                        ? r.height * pageEl.clientHeight
-                        : r.height
-                      : r.height;
+                    const textLayer =
+                      (pageEl?.querySelector('.textLayer') as HTMLElement | null) || pageEl;
+
+                    let top = r.top;
+                    let left = r.left;
+                    let width = r.width;
+                    let height = r.height;
+                    
+                    if (pageEl && textLayer) {
+                      const pageBox = pageEl.getBoundingClientRect();
+                      const layerBox = textLayer.getBoundingClientRect();
+                      const offsetTop = layerBox.top - pageBox.top;
+                      const offsetLeft = layerBox.left - pageBox.left;
+                    
+                      top =
+                        (r.top <= 1 ? r.top * textLayer.clientHeight : r.top) +
+                        offsetTop;
+                      left =
+                        (r.left <= 1 ? r.left * textLayer.clientWidth : r.left) +
+                        offsetLeft;
+                      width =
+                        r.width <= 1
+                          ? r.width * textLayer.clientWidth
+                          : r.width;
+                      height =
+                        r.height <= 1
+                          ? r.height * textLayer.clientHeight
+                          : r.height;
+                    }
 
                     return (
                       <div

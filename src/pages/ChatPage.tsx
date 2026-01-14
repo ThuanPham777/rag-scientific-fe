@@ -9,7 +9,7 @@ import type { ChatMessage } from "../utils/types";
 export default function ChatPage() {
   const { session, paper, addMessage } = usePaperStore();
   const [loading, setLoading] = useState(false);
-  
+
   if (!session)
     return (
       <div className="min-h-[calc(100vh-4rem)] pl-16 pt-16 flex items-center justify-center text-gray-600">
@@ -40,7 +40,8 @@ export default function ChatPage() {
       const errorMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: "⚠️ Sorry, something went wrong while processing your question.",
+        content:
+          "⚠️ Sorry, something went wrong while processing your question.",
         createdAt: new Date().toISOString(),
       };
       addMessage(errorMsg);
@@ -50,13 +51,13 @@ export default function ChatPage() {
   };
 
   const handlePdfAction = async (
-    action: 'explain' | 'summarize',
+    action: "explain" | "summarize",
     selectedText: string
   ) => {
     if (!session || !selectedText.trim()) return;
 
     const queryText =
-      action === 'explain'
+      action === "explain"
         ? `Explain the following text: "${selectedText}"`
         : `Summarize the following text: "${selectedText}"`;
 
@@ -85,7 +86,8 @@ export default function ChatPage() {
       const errorMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: "⚠️ Sorry, something went wrong while processing your request.",
+        content:
+          "⚠️ Sorry, something went wrong while processing your request.",
         createdAt: new Date().toISOString(),
       };
       addMessage(errorMsg);
@@ -97,14 +99,17 @@ export default function ChatPage() {
   return (
     <div className="pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2">
       <div className="h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3">
-        <PdfPanel 
-          activePaper={paper}
-          onPdfAction={handlePdfAction}
-        />
+        <PdfPanel activePaper={paper} onPdfAction={handlePdfAction} />
         <div className="hidden lg:block" aria-hidden />
       </div>
 
-      <ChatDock session={session} onSend={onSend} isLoading={loading} defaultOpen={true} />
+      <ChatDock
+        session={session}
+        onSend={onSend}
+        isLoading={loading}
+        defaultOpen={true}
+        activePaperId={paper?.id} // <--- TRUYỀN ID Ở ĐÂY
+      />
     </div>
   );
 }

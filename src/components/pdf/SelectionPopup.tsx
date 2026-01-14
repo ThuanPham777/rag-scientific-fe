@@ -10,7 +10,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
+} from '@/components/UI/tooltip';
 import ColorPopup from './ColorPopup';
 
 type HighlightRect = {

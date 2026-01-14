@@ -127,8 +127,12 @@ export default function PdfViewer({
 
       if (!pageEl) return;
 
+      // Bám theo textLayer để tọa độ trùng sát chữ
+      const textLayer =
+        (pageEl.querySelector(".textLayer") as HTMLElement | null) || pageEl;
+
       const pageNumber = Number(pageEl.getAttribute("data-page") || 1);
-      const pageBounds = pageEl.getBoundingClientRect();
+      const pageBounds = textLayer.getBoundingClientRect();
       const range = selection.getRangeAt(0);
       const rectsDom = Array.from(range.getClientRects());
 
@@ -139,11 +143,16 @@ export default function PdfViewer({
         height: r.height,
       }));
 
+      if (!rects.length) {
+        setSel(null);
+        return;
+      }
+
       const first = rects[0];
       const anchor = { x: first.left + first.width + 12, y: first.top };
 
-      const pageClientWidth = pageEl.clientWidth;
-      const pageClientHeight = pageEl.clientHeight;
+      const pageClientWidth = textLayer.clientWidth;
+      const pageClientHeight = textLayer.clientHeight;
 
       setSel({
         pageNumber,
@@ -392,7 +401,9 @@ export default function PdfViewer({
   };
 
   const overlayForRange = (range: Range, pageEl: HTMLElement) => {
-    const pageBox = pageEl.getBoundingClientRect();
+    const textLayer =
+      (pageEl.querySelector(".textLayer") as HTMLElement | null) || pageEl;
+    const pageBox = textLayer.getBoundingClientRect();
     const rects = Array.from(range.getClientRects()).map((r) => ({
       top: r.top - pageBox.top,
       left: r.left - pageBox.left,
@@ -409,16 +420,22 @@ export default function PdfViewer({
         width: `${r.width}px`,
         height: `${r.height}px`,
       });
-      pageEl.appendChild(div);
+      textLayer.appendChild(div);
     });
     return rects;
   };
 
+  
+  const clearAllSearchHighlights = () => {
+    for (let p = 1; p <= numPages; p++) clearSearchOverlays(p);
+    setHits([]);
+    setHitIndex(0);
+  };
+  
+
   const runSearch = () => {
     if (!query.trim()) {
-      setHits([]);
-      setHitIndex(0);
-      for (let p = 1; p <= numPages; p++) clearSearchOverlays(p);
+      clearAllSearchHighlights();
       return;
     }
     const re = buildRegex();
@@ -521,10 +538,12 @@ export default function PdfViewer({
     if (!s) return s;
     const pageEl = pageRefs.current[s.pageNumber];
     if (!pageEl) return s;
-    const baseW = s.pageClientWidth || pageEl.clientWidth;
-    const baseH = s.pageClientHeight || pageEl.clientHeight;
-    const fx = pageEl.clientWidth / baseW;
-    const fy = pageEl.clientHeight / baseH;
+    const textLayer =
+      (pageEl.querySelector(".textLayer") as HTMLElement | null) || pageEl;
+    const baseW = s.pageClientWidth || textLayer.clientWidth;
+    const baseH = s.pageClientHeight || textLayer.clientHeight;
+    const fx = textLayer.clientWidth / baseW;
+    const fy = textLayer.clientHeight / baseH;
     const rects = s.rects.map((r) => ({
       top: r.top * fy,
       left: r.left * fx,
@@ -554,10 +573,13 @@ export default function PdfViewer({
     if (!sel) return;
     const scaled = scaleSelectionToCurrent(sel);
     const pageEl = pageRefs.current[scaled!.pageNumber];
+    const textLayer =
+      (pageEl?.querySelector(".textLayer") as HTMLElement | null) || pageEl;
+
     let normalized = scaled!.rects;
-    if (pageEl) {
-      const pw = pageEl.clientWidth;
-      const ph = pageEl.clientHeight;
+    if (textLayer) {
+      const pw = textLayer.clientWidth;
+      const ph = textLayer.clientHeight;
       normalized = scaled!.rects.map((r) => ({
         top: r.top / ph,
         left: r.left / pw,
@@ -568,8 +590,8 @@ export default function PdfViewer({
 
     setHighlights((hs) => {
       const page = scaled!.pageNumber;
-      const pw = pageEl?.clientWidth || 1;
-      const ph = pageEl?.clientHeight || 1;
+      const pw = textLayer?.clientWidth || 1;
+      const ph = textLayer?.clientHeight || 1;
       const newBox = getBBox(scaled!.rects);
       const filtered = hs.filter((h) => {
         if (h.pageNumber !== page) return true;
@@ -621,8 +643,10 @@ export default function PdfViewer({
     setHighlights((hs) => {
       const page = scaled!.pageNumber;
       const pageEl = pageRefs.current[page];
-      const pw = pageEl?.clientWidth || 1;
-      const ph = pageEl?.clientHeight || 1;
+      const textLayer =
+        (pageEl?.querySelector(".textLayer") as HTMLElement | null) || pageEl;
+      const pw = textLayer?.clientWidth || 1;
+      const ph = textLayer?.clientHeight || 1;
       const curBox = getBBox(scaled!.rects);
       return hs.filter((h) => {
         if (h.pageNumber !== page) return true;
@@ -662,7 +686,16 @@ export default function PdfViewer({
     <div className="flex flex-col h-full min-h-0">
       <PdfToolbar
         showSearch={showSearch}
-        onToggleSearch={() => setShowSearch((v) => !v)}
+        onToggleSearch={() =>
+          setShowSearch((v) => {
+            const next = !v;
+            if (v && !next) {
+              setQuery("");
+              clearAllSearchHighlights();
+            }
+            return next;
+          })
+        }
         query={query}
         onQueryChange={setQuery}
         hits={hits}

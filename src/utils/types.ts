@@ -38,3 +38,23 @@ export type Session = {
   paperIds: string[];
   messages: ChatMessage[];
 };
+
+// --- NEW TYPES FOR RELATED PAPERS ---
+
+export interface RelatedPaperItem {
+  arxiv_id: string;
+  title: string;
+  abstract: string;
+  authors: string[];
+  url: string;
+  score: number;
+  reason: string;
+  categories?: string[];
+}
+
+export interface RelatedPapersResponse {
+  file_id: string;
+  base_title: string;
+  base_abstract: string;
+  results: RelatedPaperItem[];
+}
