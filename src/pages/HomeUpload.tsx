@@ -1,25 +1,67 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FileDropzone from '../components/uploader/FileDropzone';
 import { startSession, uploadPdf } from '../services/api';
 import { usePaperStore } from '../store/usePaperStore';
+import { useAuthStore } from '../store/useAuthStore';
+import AuthModal from '../components/auth/AuthModal';
 
 export default function HomeUpload() {
   const nav = useNavigate();
+  const { isAuthenticated } = useAuthStore();
   const setPaper = usePaperStore((s) => s.setPaper);
+  const addPaper = usePaperStore((s) => s.addPaper);
   const setSession = usePaperStore((s) => s.setSession);
 
-  const onUpload = async (file: File, setProgress: (v: number) => void) => {
-    const { paper } = await uploadPdf(file, setProgress);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [pendingFile, setPendingFile] = useState<{
+    file: File;
+    setProgress: (v: number) => void;
+  } | null>(null);
+
+  const processUpload = async (
+    file: File,
+    setProgress: (v: number) => void,
+  ) => {
+    const { paper, localUrl } = await uploadPdf(file, setProgress);
     console.log('HomeUpload - uploaded paper:', paper);
-    setPaper(paper);
-    const { sessionId } = await startSession([paper.id]);
-    console.log('HomeUpload - created session:', sessionId);
+
+    // Store paper with local URL for PDF preview
+    const paperWithLocalUrl = { ...paper, localUrl };
+    setPaper(paperWithLocalUrl);
+    addPaper(paperWithLocalUrl);
+
+    // Create a new conversation/session for this paper
+    const { conversationId } = await startSession(paper.id, paper.ragFileId);
+    console.log('HomeUpload - created session:', conversationId);
+
     setSession({
-      id: sessionId,
-      paperIds: [paper.id],
+      id: conversationId,
+      paperId: paper.id,
+      ragFileId: paper.ragFileId,
       messages: [],
     });
-    nav(`/chat`);
+    nav(`/chat/${conversationId}`);
+  };
+
+  const onUpload = async (file: File, setProgress: (v: number) => void) => {
+    // Check auth - if not authenticated, show login modal
+    if (!isAuthenticated) {
+      setPendingFile({ file, setProgress });
+      setShowAuthModal(true);
+      return;
+    }
+
+    await processUpload(file, setProgress);
+  };
+
+  const handleAuthModalClose = () => {
+    setShowAuthModal(false);
+    // If user logged in and we have a pending file, process it
+    if (isAuthenticated && pendingFile) {
+      processUpload(pendingFile.file, pendingFile.setProgress);
+      setPendingFile(null);
+    }
   };
 
   return (
@@ -35,6 +77,13 @@ export default function HomeUpload() {
         </p>
         <FileDropzone onUpload={onUpload} />
       </div>
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={handleAuthModalClose}
+        initialMode='login'
+      />
     </div>
   );
 }

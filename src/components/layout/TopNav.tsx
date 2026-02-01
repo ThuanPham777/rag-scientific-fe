@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
   LogOut,
@@ -7,11 +7,35 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
+import { logout as apiLogout } from '../../services/api';
+import AuthModal from '../auth/AuthModal';
 
 export default function TopNav() {
-  const { isAuthenticated, user, logout } = useAuthStore();
+  const navigate = useNavigate();
+  const { isAuthenticated, user, logout, getRefreshToken } = useAuthStore();
   const [openMenu, setOpenMenu] = useState(false);
+  const [authModal, setAuthModal] = useState<{
+    open: boolean;
+    mode: 'login' | 'signup';
+  }>({
+    open: false,
+    mode: 'login',
+  });
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const handleLogout = async () => {
+    try {
+      const refreshToken = getRefreshToken();
+      if (refreshToken) {
+        await apiLogout(refreshToken);
+      }
+    } catch (err) {
+      console.error('Logout API error:', err);
+    } finally {
+      logout();
+      navigate('/login');
+    }
+  };
 
   // click outside/ESC để đóng popup
   useEffect(() => {
@@ -39,7 +63,7 @@ export default function TopNav() {
   ) : (
     <div className='w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center'>
       <span className='text-xs text-gray-700'>
-        {(user?.name || user?.email || 'U').charAt(0).toUpperCase()}
+        {(user?.displayName || user?.email || 'U').charAt(0).toUpperCase()}
       </span>
     </div>
   );
@@ -89,18 +113,18 @@ export default function TopNav() {
 
           {!isAuthenticated ? (
             <>
-              <NavLink
-                to='/login'
+              <button
+                onClick={() => setAuthModal({ open: true, mode: 'login' })}
                 className='text-sm text-gray-700 hover:text-gray-900'
               >
                 Login
-              </NavLink>
-              <NavLink
-                to='/signup'
+              </button>
+              <button
+                onClick={() => setAuthModal({ open: true, mode: 'signup' })}
                 className='text-sm px-3 py-1.5 rounded-md bg-black text-white hover:opacity-90'
               >
                 Sign up
-              </NavLink>
+              </button>
             </>
           ) : (
             <>
@@ -145,7 +169,7 @@ export default function TopNav() {
                       className='w-full flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-gray-50'
                       onClick={() => {
                         setOpenMenu(false);
-                        logout();
+                        handleLogout();
                       }}
                     >
                       <LogOut size={16} />
@@ -158,6 +182,13 @@ export default function TopNav() {
           )}
         </nav>
       </div>
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={authModal.open}
+        onClose={() => setAuthModal({ ...authModal, open: false })}
+        initialMode={authModal.mode}
+      />
     </header>
   );
 }

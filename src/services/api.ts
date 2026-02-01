@@ -1,29 +1,103 @@
-import api from "../config/axios";
-import type { ChatMessage, Citation, Paper, RelatedPapersResponse } from "../utils/types";
+import api from '../config/axios';
+import type {
+  ApiResponse,
+  ChatMessage,
+  Citation,
+  Conversation,
+  LoginResponse,
+  Paper,
+  RelatedPapersResponse,
+  SignupResponse,
+} from '../utils/types';
 
 // ============================
-// 🔹 Local in-memory store
+// 🔹 AUTH API
 // ============================
-let SESSIONS: Record<string, { messages: ChatMessage[]; paperIds: string[] }> = {};
 
-// ============================
-// 🔹 Start a chat session
-// ============================
-export async function startSession(paperIds: string[]) {
-  const sessionId = crypto.randomUUID();
-  SESSIONS[sessionId] = { messages: [], paperIds };
-  return { sessionId, paperIds };
+export async function signup(
+  email: string,
+  password: string,
+  displayName?: string,
+): Promise<SignupResponse> {
+  const { data } = await api.post('/auth/signup', {
+    email,
+    password,
+    displayName,
+  });
+  return data;
+}
+
+export async function login(
+  email: string,
+  password: string,
+): Promise<LoginResponse> {
+  const { data } = await api.post('/auth/login', { email, password });
+  return data;
+}
+
+export async function googleAuth(idToken: string): Promise<LoginResponse> {
+  const { data } = await api.post('/auth/google', { idToken });
+  return data;
+}
+
+export async function refreshTokens(
+  refreshToken: string,
+): Promise<LoginResponse> {
+  const { data } = await api.post('/auth/refresh', { refreshToken });
+  return data;
+}
+
+export async function logout(refreshToken: string): Promise<void> {
+  await api.post('/auth/logout', { refreshToken });
+}
+
+export async function logoutAll(): Promise<void> {
+  await api.post('/auth/logout-all');
 }
 
 // ============================
-// 🔹 Upload one PDF
+// 🔹 PAPER API
 // ============================
-export async function uploadPdf(file: File, onProgress?: (pct: number) => void) {
-  const formData = new FormData();
-  formData.append("file", file);
 
-  const res = await api.post("/upload", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
+export async function createPaper(paperData: {
+  fileName: string;
+  fileUrl: string;
+  fileSize?: number;
+  fileHash?: string;
+}): Promise<ApiResponse<Paper>> {
+  const { data } = await api.post('/papers', paperData);
+  return data;
+}
+
+export async function listPapers(): Promise<ApiResponse<Paper[]>> {
+  const { data } = await api.get('/papers');
+  return data;
+}
+
+export async function getPaper(id: string): Promise<ApiResponse<Paper>> {
+  const { data } = await api.get(`/papers/${id}`);
+  return data;
+}
+
+export async function deletePaper(id: string): Promise<{ success: boolean }> {
+  const { data } = await api.delete(`/papers/${id}`);
+  return data;
+}
+
+// ============================
+// 🔹 UPLOAD API
+// ============================
+
+export async function uploadPdf(
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<{ paper: Paper; localUrl: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  // 1. Upload to S3
+  const uploadRes = await api.post('/upload/pdf', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: (e) => {
       if (e.total) {
         const pct = Math.round((e.loaded * 100) / e.total);
@@ -32,36 +106,85 @@ export async function uploadPdf(file: File, onProgress?: (pct: number) => void) 
     },
   });
 
-  const data = res.data;
+  const { url } = uploadRes.data.data;
 
-  const uploadedPaper: Paper = {
-    id: data.file_id,
-    name: data.filename,
-    size: file.size,
-    localUrl: URL.createObjectURL(file),
+  // 2. Create paper record in DB
+  const createRes = await api.post('/papers', {
+    fileName: file.name,
+    fileUrl: url,
+    fileSize: file.size,
+  });
+
+  const paper = createRes.data.data;
+  const localUrl = URL.createObjectURL(file);
+
+  return {
+    paper: { ...paper, localUrl },
+    localUrl,
   };
-
-  return { paper: uploadedPaper };
 }
 
 // ============================
-// 🔹 Helper: Parse Citations (UPDATED)
+// 🔹 CONVERSATION API
 // ============================
-function parseCitationsFromResponse(rawResponse: any, activePaperId?: string): Citation[] {
-  // Gộp cả texts, images và tables từ context
-  const images = rawResponse.context?.images ?? [];
-  const tables = rawResponse.context?.tables ?? [];
-  const texts = rawResponse.context?.texts ?? [];
-  
-  const allItems = [...texts, ...images, ...tables];
 
-  return allItems.map((t: any, i: number) => {
+export async function createConversation(
+  paperId: string,
+  title?: string,
+): Promise<ApiResponse<Conversation>> {
+  const { data } = await api.post('/conversations', { paperId, title });
+  return data;
+}
+
+export async function listConversations(
+  paperId?: string,
+): Promise<ApiResponse<Conversation[]>> {
+  const params = paperId ? { paperId } : {};
+  const { data } = await api.get('/conversations', { params });
+  return data;
+}
+
+export async function getConversation(id: string): Promise<any> {
+  const { data } = await api.get(`/conversations/${id}`);
+  return data;
+}
+
+export async function deleteConversation(
+  id: string,
+): Promise<{ success: boolean }> {
+  const { data } = await api.delete(`/conversations/${id}`);
+  return data;
+}
+
+// ============================
+// 🔹 CHAT API
+// ============================
+
+interface AskQuestionResponse {
+  success: boolean;
+  message: string;
+  data: {
+    answer: string;
+    citations: any[];
+    assistantMessageId: string;
+    userMessageId: string;
+    conversationId?: string;
+    modelName?: string;
+    tokenCount?: number;
+  };
+}
+
+// Helper: Parse Citations from RAG response
+function parseCitationsFromResponse(
+  rawCitations: any[],
+  activePaperId?: string,
+): Citation[] {
+  return rawCitations.map((t: any, i: number) => {
     const locator = t.locator ?? {};
     const meta = t.metadata ?? {};
 
-    // Parse bbox (string hoặc object)
     let parsedBBox: any = locator.bbox ?? meta.bbox ?? t.bbox ?? null;
-    if (typeof parsedBBox === "string") {
+    if (typeof parsedBBox === 'string') {
       try {
         parsedBBox = JSON.parse(parsedBBox);
       } catch {
@@ -74,14 +197,14 @@ function parseCitationsFromResponse(rawResponse: any, activePaperId?: string): C
         parsedBBox?.layout_width ??
           parsedBBox?.page_width ??
           parsedBBox?.width ??
-          612
+          612,
       ) || 612;
     const layoutH =
       Number(
         parsedBBox?.layout_height ??
           parsedBBox?.page_height ??
           parsedBBox?.height ??
-          792
+          792,
       ) || 792;
 
     const x1 = Number(parsedBBox?.x1 ?? parsedBBox?.left ?? 0);
@@ -102,7 +225,7 @@ function parseCitationsFromResponse(rawResponse: any, activePaperId?: string): C
         : undefined;
 
     return {
-      paperId: activePaperId ?? "",
+      paperId: activePaperId ?? '',
       page:
         t.page ??
         locator.page_label ??
@@ -110,116 +233,144 @@ function parseCitationsFromResponse(rawResponse: any, activePaperId?: string): C
         locator.page ??
         t.page_label ??
         i + 1,
-      title: meta.section_title ?? t.type ?? "Citation",
-      snippet: t.text,
+      title: meta.section_title ?? t.type ?? 'Citation',
+      snippet: t.text ?? t.snippet,
       sourceId: t.source_id,
       rect,
       rawBBox: parsedBBox,
       layoutWidth: layoutW,
       layoutHeight: layoutH,
     };
-  }) ?? [];
+  });
 }
 
-// ============================
-// 🔹 Send a query to backend
-// ============================
 export async function sendQuery(
-  sessionId: string,
-  message: string,
-  activePaperId?: string
-) {
-  // Request body
-  const body = {
-    file_id: activePaperId,
-    question: message,
-    include_context: true,
-  };
+  conversationId: string,
+  question: string,
+  _activePaperId?: string,
+): Promise<{ assistantMsg: ChatMessage; raw: any }> {
+  const { data } = await api.post<AskQuestionResponse>('/chat/ask', {
+    conversationId,
+    question,
+  });
 
-  const { data } = await api.post("/query", body);
-  const rawResponse = data;
-
-  // Parse citations
-  const citations = parseCitationsFromResponse(rawResponse, activePaperId);
+  const citations = parseCitationsFromResponse(
+    data.data.citations || [],
+    _activePaperId,
+  );
 
   const assistantMsg: ChatMessage = {
-    id: crypto.randomUUID(),
-    role: "assistant",
-    content: rawResponse.answer,
+    id: data.data.assistantMessageId,
+    role: 'assistant',
+    content: data.data.answer,
     citations,
+    modelName: data.data.modelName,
+    tokenCount: data.data.tokenCount,
     createdAt: new Date().toISOString(),
   };
 
-  // Lưu message lại như cũ
-  if (!SESSIONS[sessionId]) {
-    SESSIONS[sessionId] = { messages: [], paperIds: [] };
-  }
-  SESSIONS[sessionId].messages.push(assistantMsg);
-
-  return { assistantMsg, raw: rawResponse };
+  return { assistantMsg, raw: data.data };
 }
 
-// ============================
-// 🔹 Explain cropped region (image base64)
-// ============================
+export async function getMessageHistory(
+  conversationId: string,
+): Promise<ChatMessage[]> {
+  const { data } = await api.get(`/chat/messages/${conversationId}`);
+
+  return data.data.map((m: any) => ({
+    id: m.id,
+    role: m.role.toLowerCase() as 'user' | 'assistant',
+    content: m.content,
+    imageUrl: m.imageUrl,
+    modelName: m.modelName,
+    tokenCount: m.tokenCount,
+    createdAt: m.createdAt,
+  }));
+}
+
 export async function explainRegion(
-  imageDataUrl: string, 
-  fileId?: string, 
-  pageNumber?: number 
-) {
-  // Extract base64 part after comma if data URL
-  const commaIdx = imageDataUrl.indexOf(",");
-  const image_b64 =
+  imageDataUrl: string,
+  options: {
+    conversationId?: string;
+    paperId?: string;
+    pageNumber?: number;
+    question?: string;
+  },
+): Promise<{ assistantMsg: ChatMessage; conversationId?: string; raw: any }> {
+  // Extract base64 part
+  const commaIdx = imageDataUrl.indexOf(',');
+  const imageBase64 =
     commaIdx >= 0 ? imageDataUrl.slice(commaIdx + 1) : imageDataUrl;
 
-  const body: any = { 
-    image_b64, 
-    include_context: true 
-  };
-  
-  if (fileId) body.file_id = fileId;
-  if (pageNumber) body.page_number = pageNumber; 
+  const { data } = await api.post<AskQuestionResponse>('/chat/explain-region', {
+    conversationId: options.conversationId,
+    paperId: options.paperId,
+    imageBase64,
+    pageNumber: options.pageNumber,
+    question: options.question,
+  });
 
-  const { data } = await api.post("/explain-region", body);
-  const rawResponse = data;
-
-  // Parse citations
-  const citations = parseCitationsFromResponse(rawResponse, fileId);
-
-  // Tạo message đầy đủ cấu trúc
   const assistantMsg: ChatMessage = {
-    id: crypto.randomUUID(),
-    role: "assistant",
-    content: rawResponse.answer || rawResponse.explanation,
-    citations, 
+    id: data.data.assistantMessageId,
+    role: 'assistant',
+    content: data.data.answer,
+    citations: parseCitationsFromResponse(
+      data.data.citations || [],
+      options.paperId,
+    ),
     createdAt: new Date().toISOString(),
   };
 
-  return { assistantMsg, raw: rawResponse };
-}
-
-// ============================
-// 🔹 Poll messages
-// ============================
-export async function pollMessages(sessionId: string) {
   return {
-    messages: SESSIONS[sessionId]?.messages ?? [],
-    nextCursor: undefined,
+    assistantMsg,
+    conversationId: data.data.conversationId,
+    raw: data.data,
   };
 }
 
 // ============================
-// 🔹 Get Related Papers
+// 🔹 RAG DIRECT API (for features not in NestJS backend)
 // ============================
-export async function getRelatedPapers(fileId: string) {
-  const { data } = await api.post("/related-papers", { file_id: fileId });
-  return data as RelatedPapersResponse;
+
+import axios from 'axios';
+const RAG_API_URL = import.meta.env.VITE_RAG_API_URL || 'http://localhost:8000';
+
+export async function getRelatedPapers(
+  fileId: string,
+): Promise<RelatedPapersResponse> {
+  const { data } = await axios.post(`${RAG_API_URL}/related-papers`, {
+    file_id: fileId,
+  });
+  return data;
+}
+
+export async function brainstormQuestions(fileId: string): Promise<string[]> {
+  const { data } = await axios.post(`${RAG_API_URL}/brainstorm-questions`, {
+    file_id: fileId,
+  });
+  return data.questions;
 }
 
 // ============================
-// 🔹 Brainstorm Questions
+// 🔹 SESSION HELPERS
 // ============================
-export async function brainstormQuestions(fileId: string) {
-  const { data } = await api.post("/brainstorm-questions", { file_id: fileId });
-  return data.questions as string[];
+
+export async function startSession(
+  paperId: string,
+  _ragFileId?: string,
+): Promise<{ conversationId: string }> {
+  // Create a conversation for this paper
+  const res = await createConversation(paperId);
+  return {
+    conversationId: res.data.id,
+  };
+}
+
+// Legacy: Poll messages (kept for compatibility)
+export async function pollMessages(conversationId: string) {
+  const messages = await getMessageHistory(conversationId);
+  return {
+    messages,
+    nextCursor: undefined,
+  };
 }
