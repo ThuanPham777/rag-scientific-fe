@@ -288,6 +288,7 @@ export async function sendQuery(
 
 export async function getMessageHistory(
   conversationId: string,
+  paperId?: string,
 ): Promise<ChatMessage[]> {
   const { data } = await api.get(`/chat/messages/${conversationId}`);
 
@@ -300,6 +301,10 @@ export async function getMessageHistory(
     imageDataUrl: m.imageUrl || undefined,
     modelName: m.modelName,
     tokenCount: m.tokenCount,
+    // Parse citations if available (for assistant messages)
+    citations: m.citations
+      ? parseCitationsFromResponse(m.citations, paperId)
+      : undefined,
     createdAt: m.createdAt,
   }));
 }
@@ -383,8 +388,8 @@ export async function startSession(
 }
 
 // Legacy: Poll messages (kept for compatibility)
-export async function pollMessages(conversationId: string) {
-  const messages = await getMessageHistory(conversationId);
+export async function pollMessages(conversationId: string, paperId?: string) {
+  const messages = await getMessageHistory(conversationId, paperId);
   return {
     messages,
     nextCursor: undefined,

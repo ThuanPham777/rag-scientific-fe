@@ -73,7 +73,10 @@ export default function ChatPage() {
 
             // Load message history
             try {
-              const messages = await getMessageHistory(urlConversationId);
+              const messages = await getMessageHistory(
+                urlConversationId,
+                conv.paperId,
+              );
               if (messages.length > 0) {
                 setMessages(messages);
               }
@@ -111,7 +114,7 @@ export default function ChatPage() {
   // Load message history when session changes (for existing sessions)
   useEffect(() => {
     if (session?.id && urlConversationId && session.id === urlConversationId) {
-      getMessageHistory(session.id)
+      getMessageHistory(session.id, session.paperId)
         .then((messages) => {
           if (messages.length > 0) {
             setMessages(messages);
