@@ -239,7 +239,7 @@ export default function ChatPage() {
         onSend={onSend}
         isLoading={isChatLoading}
         defaultOpen={true}
-        activePaperId={paper?.id}
+        activePaperId={paper?.ragFileId}
       />
     </div>
   );

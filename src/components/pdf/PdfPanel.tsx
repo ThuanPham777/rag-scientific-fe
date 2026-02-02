@@ -27,10 +27,13 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
     null,
   );
   const [isLoading, setIsLoading] = useState(false);
+  // Track if fetch has been attempted (to prevent infinite retry on error)
+  const [summaryFetched, setSummaryFetched] = useState(false);
+  const [relatedFetched, setRelatedFetched] = useState(false);
 
   const { session, paper, pendingJump, setPendingJump } = usePaperStore() as {
     session: any;
-    paper: { id: string } | null;
+    paper: { id: string; ragFileId?: string } | null;
     pendingJump: PendingJump | null;
     setPendingJump: (val: PendingJump | null) => void;
   };
@@ -38,6 +41,7 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
   // --- Logic 1: Summary ---
   const handleSummary = async () => {
     if (!session || !paper?.id) return;
+    setSummaryFetched(true); // Mark as attempted
     try {
       setIsLoading(true);
       const { assistantMsg, raw } = await sendQuery(
@@ -56,10 +60,14 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
 
   // --- Logic 2: Related Papers ---
   const handleRelated = async () => {
-    if (!paper?.id) return;
+    if (!paper?.ragFileId) {
+      console.error('❌ No ragFileId found for paper');
+      return;
+    }
+    setRelatedFetched(true); // Mark as attempted
     try {
       setIsLoading(true);
-      const data = await getRelatedPapers(paper.id);
+      const data = await getRelatedPapers(paper.ragFileId);
       setRelatedData(data);
     } catch (error) {
       console.error('❌ Error fetching related papers:', error);
@@ -68,15 +76,43 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
     }
   };
 
-  // Effect switch tab logic
+  // Effect switch tab logic - only fetch if not already attempted
   useEffect(() => {
-    if (activeTab === 'summary' && !summaryData && !isLoading) {
+    if (
+      activeTab === 'summary' &&
+      !summaryData &&
+      !summaryFetched &&
+      !isLoading &&
+      session &&
+      paper?.id
+    ) {
       handleSummary();
     }
-    if (activeTab === 'related' && !relatedData && !isLoading) {
+    if (
+      activeTab === 'related' &&
+      !relatedData &&
+      !relatedFetched &&
+      !isLoading &&
+      paper?.ragFileId
+    ) {
       handleRelated();
     }
-  }, [activeTab, summaryData, relatedData, isLoading, paper?.id]);
+  }, [
+    activeTab,
+    summaryFetched,
+    relatedFetched,
+    isLoading,
+    paper?.ragFileId,
+    session,
+  ]);
+
+  // Reset fetch flags when paper changes
+  useEffect(() => {
+    setSummaryData(null);
+    setRelatedData(null);
+    setSummaryFetched(false);
+    setRelatedFetched(false);
+  }, [paper?.id]);
 
   // --- FIX 1: Tự động chuyển tab PDF khi có lệnh jump từ bên ngoài (Chat) ---
   useEffect(() => {
