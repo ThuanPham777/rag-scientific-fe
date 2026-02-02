@@ -2,12 +2,19 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { usePaperStore } from '../store/usePaperStore';
+import { useGuestStore, isGuestSession } from '../store/useGuestStore';
+import { useAuthStore } from '../store/useAuthStore';
 import {
   sendQuery,
   getMessageHistory,
   getConversation,
   getPaper,
 } from '../services/api';
+import {
+  guestAskQuestion,
+  guestCheckIngestStatus,
+  buildGuestAssistantMessage,
+} from '../services/guestApi';
 import PdfPanel from '../components/pdf/PdfPanel';
 import ChatDock from '../components/chat/ChatDock';
 import type { ChatMessage } from '../utils/types';
@@ -17,6 +24,7 @@ export default function ChatPage() {
     conversationId?: string;
   }>();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuthStore();
   const {
     session,
     paper,
@@ -27,16 +35,93 @@ export default function ChatPage() {
     setPaper,
     setChatLoading,
   } = usePaperStore();
+
+  // Guest store
+  const {
+    currentSession: guestSession,
+    currentPaper: guestPaper,
+    addGuestMessage,
+    isLoading: guestIsLoading,
+    setLoading: setGuestLoading,
+  } = useGuestStore();
+
+  // Determine if this is a guest session by checking localStorage
+  const isGuest = urlConversationId
+    ? !isAuthenticated && isGuestSession(urlConversationId)
+    : !isAuthenticated;
+
+  // Use guest or authenticated session/paper
+  const activeSession = isGuest ? guestSession : session;
+  const activePaper = isGuest
+    ? guestPaper
+      ? {
+          id: guestPaper.id,
+          ragFileId: guestPaper.ragFileId,
+          fileName: guestPaper.fileName,
+          fileUrl: guestPaper.fileUrl,
+          localUrl: guestPaper.fileUrl,
+          status: (guestPaper.status || 'COMPLETED') as
+            | 'PROCESSING'
+            | 'COMPLETED'
+            | 'FAILED',
+          createdAt: guestPaper.createdAt,
+          updatedAt: guestPaper.createdAt,
+          userId: '',
+        }
+      : undefined
+    : paper;
+
   // Start as true if we have urlConversationId but no session (need to restore)
-  const [initialLoading, setInitialLoading] = useState(
-    !!urlConversationId && !usePaperStore.getState().session,
-  );
+  const [initialLoading, setInitialLoading] = useState(() => {
+    if (!urlConversationId) return false;
+    // Check if guest session exists in localStorage
+    const guestStore = useGuestStore.getState();
+    if (guestStore.currentSession?.id === urlConversationId) {
+      return false; // Guest session found
+    }
+    // Authenticated session - check paper store
+    if (usePaperStore.getState().session?.id === urlConversationId) {
+      return false;
+    }
+    return true; // Need to restore
+  });
 
   // Restore session from URL on mount/reload
   useEffect(() => {
     const restoreSession = async () => {
-      // If we have a conversationId in URL but no session in store, restore it
-      if (urlConversationId && !session) {
+      // Check if guest session exists in localStorage
+      const guestStore = useGuestStore.getState();
+      if (
+        urlConversationId &&
+        guestStore.currentSession?.id === urlConversationId &&
+        guestStore.currentPaper
+      ) {
+        // Session found in localStorage, sync to paper store for PDF viewer
+        setPaper({
+          id: guestStore.currentPaper.id,
+          ragFileId: guestStore.currentPaper.ragFileId,
+          fileName: guestStore.currentPaper.fileName,
+          fileUrl: guestStore.currentPaper.fileUrl,
+          localUrl: guestStore.currentPaper.fileUrl,
+          status: guestStore.currentPaper.status || 'COMPLETED',
+          createdAt: guestStore.currentPaper.createdAt,
+          updatedAt: guestStore.currentPaper.createdAt,
+          userId: '',
+        } as any);
+
+        setSession({
+          id: guestStore.currentSession.id,
+          paperId: guestStore.currentSession.paperId,
+          ragFileId: guestStore.currentSession.ragFileId,
+          messages: guestStore.currentSession.messages,
+        });
+
+        setInitialLoading(false);
+        return;
+      }
+
+      // For authenticated users, try to restore from API
+      if (urlConversationId && isAuthenticated && !session) {
         setInitialLoading(true);
         try {
           // Get conversation details
@@ -95,24 +180,64 @@ export default function ChatPage() {
         } finally {
           setInitialLoading(false);
         }
+      } else if (
+        urlConversationId &&
+        !isAuthenticated &&
+        !guestStore.currentSession
+      ) {
+        // Guest without session, redirect to home
+        navigate('/', { replace: true });
+        setInitialLoading(false);
       } else {
         setInitialLoading(false);
       }
     };
 
     restoreSession();
-  }, [urlConversationId]);
+  }, [urlConversationId, isAuthenticated]);
 
   // Update URL when session changes (after creating new conversation)
   useEffect(() => {
-    if (session?.id && !urlConversationId) {
-      // Update URL without adding to history
+    // For authenticated sessions
+    if (session?.id && !urlConversationId && !isGuest) {
       navigate(`/chat/${session.id}`, { replace: true });
     }
-  }, [session?.id, urlConversationId, navigate]);
+    // For guest sessions
+    if (guestSession?.id && !urlConversationId && isGuest) {
+      navigate(`/chat/${guestSession.id}`, { replace: true });
+    }
+  }, [session?.id, guestSession?.id, urlConversationId, navigate, isGuest]);
 
-  // Load message history when session changes (for existing sessions)
+  // Poll for ingest status when guest paper is processing
+  const updateGuestPaper = useGuestStore((s) => s.updateGuestPaper);
   useEffect(() => {
+    if (!isGuest || !guestPaper || guestPaper.status !== 'PROCESSING') return;
+
+    const pollStatus = async () => {
+      try {
+        const { status } = await guestCheckIngestStatus(guestPaper.ragFileId);
+        if (status !== 'PROCESSING') {
+          updateGuestPaper({ status });
+          // Also update paper store
+          usePaperStore.getState().updatePaper({ status } as any);
+        }
+      } catch (err) {
+        console.error('Failed to check ingest status:', err);
+      }
+    };
+
+    // Poll every 2 seconds
+    const interval = setInterval(pollStatus, 2000);
+    pollStatus(); // Check immediately
+
+    return () => clearInterval(interval);
+  }, [isGuest, guestPaper?.ragFileId, guestPaper?.status, updateGuestPaper]);
+
+  // Load message history when session changes (for existing authenticated sessions only)
+  useEffect(() => {
+    // Skip for guest sessions - messages are persisted in localStorage
+    if (isGuest) return;
+
     if (session?.id && urlConversationId && session.id === urlConversationId) {
       getMessageHistory(session.id, session.paperId)
         .then((messages) => {
@@ -124,7 +249,7 @@ export default function ChatPage() {
           console.error('Failed to load message history:', err);
         });
     }
-  }, [session?.id, urlConversationId, setMessages]);
+  }, [session?.id, urlConversationId, setMessages, isGuest]);
 
   // Show loading state during initial restore
   if (initialLoading) {
@@ -138,15 +263,23 @@ export default function ChatPage() {
     );
   }
 
-  if (!session)
+  // Check for active session (either guest or authenticated)
+  if (!activeSession) {
     return (
       <div className='min-h-[calc(100vh-4rem)] pl-16 pt-16 flex items-center justify-center text-gray-600'>
         No session. Go back and upload a PDF file.
       </div>
     );
+  }
+
+  // Get messages from appropriate store
+  const messages = isGuest
+    ? guestSession?.messages || []
+    : session?.messages || [];
 
   const onSend = async (text: string) => {
-    if (!text.trim() || !session) return;
+    if (!text.trim() || !activeSession) return;
+
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -154,15 +287,38 @@ export default function ChatPage() {
       createdAt: new Date().toISOString(),
     };
 
-    addMessage(userMsg);
+    // Add user message to appropriate store
+    if (isGuest) {
+      addGuestMessage(userMsg);
+    } else {
+      addMessage(userMsg);
+    }
+
+    // Set loading state on appropriate store
+    const setLoading = isGuest ? setGuestLoading : setChatLoading;
 
     try {
-      setChatLoading(true);
+      setLoading(true);
 
-      // Send query using conversationId
-      const { assistantMsg } = await sendQuery(session.id, text, paper?.id);
-
-      addMessage(assistantMsg);
+      if (isGuest && guestSession) {
+        // Guest: Call guest API
+        const { answer, citations, raw } = await guestAskQuestion(
+          guestSession.ragFileId,
+          text,
+          guestPaper?.id || '',
+        );
+        const assistantMsg = buildGuestAssistantMessage(
+          answer,
+          citations,
+          raw.modelName,
+          raw.tokenCount,
+        );
+        addGuestMessage(assistantMsg);
+      } else if (session) {
+        // Authenticated: Call regular API
+        const { assistantMsg } = await sendQuery(session.id, text, paper?.id);
+        addMessage(assistantMsg);
+      }
     } catch (err: any) {
       console.error('❌ Chat error:', err);
       const errorMsg: ChatMessage = {
@@ -172,9 +328,13 @@ export default function ChatPage() {
           '⚠️ Sorry, something went wrong while processing your question.',
         createdAt: new Date().toISOString(),
       };
-      addMessage(errorMsg);
+      if (isGuest) {
+        addGuestMessage(errorMsg);
+      } else {
+        addMessage(errorMsg);
+      }
     } finally {
-      setChatLoading(false);
+      setLoading(false);
     }
   };
 
@@ -182,7 +342,7 @@ export default function ChatPage() {
     action: 'explain' | 'summarize',
     selectedText: string,
   ) => {
-    if (!session || !selectedText.trim()) return;
+    if (!activeSession || !selectedText.trim()) return;
 
     const queryText =
       action === 'explain'
@@ -196,19 +356,43 @@ export default function ChatPage() {
       createdAt: new Date().toISOString(),
     };
 
-    addMessage(userMsg);
+    // Add user message to appropriate store
+    if (isGuest) {
+      addGuestMessage(userMsg);
+    } else {
+      addMessage(userMsg);
+    }
+
+    // Set loading state on appropriate store
+    const setLoadingPdf = isGuest ? setGuestLoading : setChatLoading;
 
     try {
-      setChatLoading(true);
+      setLoadingPdf(true);
 
-      const { assistantMsg } = await sendQuery(
-        session.id,
-        queryText,
-        paper?.id,
-      );
-
-      console.log('call api success', assistantMsg);
-      addMessage(assistantMsg);
+      if (isGuest && guestSession) {
+        // Guest: Call guest API
+        const { answer, citations, raw } = await guestAskQuestion(
+          guestSession.ragFileId,
+          queryText,
+          guestPaper?.id || '',
+        );
+        const assistantMsg = buildGuestAssistantMessage(
+          answer,
+          citations,
+          raw.modelName,
+          raw.tokenCount,
+        );
+        addGuestMessage(assistantMsg);
+      } else if (session) {
+        // Authenticated: Call regular API
+        const { assistantMsg } = await sendQuery(
+          session.id,
+          queryText,
+          paper?.id,
+        );
+        console.log('call api success', assistantMsg);
+        addMessage(assistantMsg);
+      }
     } catch (err: any) {
       console.error('❌ PDF action error:', err);
       const errorMsg: ChatMessage = {
@@ -218,9 +402,13 @@ export default function ChatPage() {
           '⚠️ Sorry, something went wrong while processing your request.',
         createdAt: new Date().toISOString(),
       };
-      addMessage(errorMsg);
+      if (isGuest) {
+        addGuestMessage(errorMsg);
+      } else {
+        addMessage(errorMsg);
+      }
     } finally {
-      setChatLoading(false);
+      setLoadingPdf(false);
     }
   };
 
@@ -228,7 +416,7 @@ export default function ChatPage() {
     <div className='pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2'>
       <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3'>
         <PdfPanel
-          activePaper={paper}
+          activePaper={activePaper}
           onPdfAction={handlePdfAction}
         />
         <div
@@ -238,11 +426,12 @@ export default function ChatPage() {
       </div>
 
       <ChatDock
-        session={session}
+        session={activeSession}
+        messages={messages}
         onSend={onSend}
-        isLoading={isChatLoading}
+        isLoading={isGuest ? guestIsLoading : isChatLoading}
         defaultOpen={true}
-        activePaperId={paper?.ragFileId}
+        activePaperId={activePaper?.ragFileId}
       />
     </div>
   );

@@ -16,7 +16,7 @@ export default function App() {
           element={<HomeUpload />}
         />
 
-        {/* Protected route - My Library */}
+        {/* Protected route - My Library (requires authentication) */}
         <Route
           path='/library'
           element={
@@ -26,22 +26,14 @@ export default function App() {
           }
         />
 
-        {/* Protected route - Chat with optional conversationId */}
+        {/* Public route - Chat (allows both guest and authenticated users) */}
         <Route
           path='/chat'
-          element={
-            <ProtectedRoute>
-              <ChatPage />
-            </ProtectedRoute>
-          }
+          element={<ChatPage />}
         />
         <Route
           path='/chat/:conversationId'
-          element={
-            <ProtectedRoute>
-              <ChatPage />
-            </ProtectedRoute>
-          }
+          element={<ChatPage />}
         />
       </Route>
 

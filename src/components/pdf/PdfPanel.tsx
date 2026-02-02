@@ -4,7 +4,13 @@ import SummaryView from './SummaryView';
 import RelatedPapersView from './RelatedPapersView';
 import type { Paper, RelatedPapersResponse } from '../../utils/types';
 import { sendQuery, explainRegion, getRelatedPapers } from '../../services/api';
+import {
+  guestExplainRegion,
+  buildGuestAssistantMessage,
+} from '../../services/guestApi';
 import { usePaperStore } from '../../store/usePaperStore';
+import { useGuestStore, isGuestSession } from '../../store/useGuestStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 type Props = {
   activePaper?: Paper;
@@ -31,12 +37,31 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
   const [summaryFetched, setSummaryFetched] = useState(false);
   const [relatedFetched, setRelatedFetched] = useState(false);
 
-  const { session, paper, pendingJump, setPendingJump } = usePaperStore() as {
+  const {
+    session,
+    paper,
+    pendingJump: paperPendingJump,
+    setPendingJump: paperSetPendingJump,
+  } = usePaperStore() as {
     session: any;
     paper: { id: string; ragFileId?: string } | null;
     pendingJump: PendingJump | null;
     setPendingJump: (val: PendingJump | null) => void;
   };
+
+  // Guest store for pendingJump
+  const guestPendingJump = useGuestStore((s) => s.pendingJump);
+  const guestSetPendingJump = useGuestStore((s) => s.setPendingJump);
+  const guestSession = useGuestStore((s) => s.currentSession);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  // Determine if guest mode
+  const isGuest =
+    !isAuthenticated && guestSession?.id && isGuestSession(guestSession.id);
+
+  // Use appropriate pendingJump based on mode
+  const pendingJump = isGuest ? guestPendingJump : paperPendingJump;
+  const setPendingJump = isGuest ? guestSetPendingJump : paperSetPendingJump;
 
   // --- Logic 1: Summary ---
   const handleSummary = async () => {
@@ -179,11 +204,66 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                 : undefined
             }
             onAction={(action, payload) => {
-              if (!session) return;
+              // Check if guest mode (from localStorage) or authenticated
+              const isAuthenticated = useAuthStore.getState().isAuthenticated;
+              const guestSession = useGuestStore.getState().currentSession;
+              const guestPaper = useGuestStore.getState().currentPaper;
+              const isGuest =
+                !isAuthenticated &&
+                guestSession?.id &&
+                isGuestSession(guestSession.id);
+
+              // For guests, use guest session; for auth users, require session
+              if (!isGuest && !session) return;
 
               if (action === 'explain' && (payload as any).imageDataUrl) {
                 const imageDataUrl = (payload as any).imageDataUrl as string;
                 const pageNumber = (payload as any).pageNumber as number;
+
+                if (isGuest && guestPaper?.ragFileId) {
+                  // Guest mode: use guestExplainRegion
+                  const guestStore = useGuestStore.getState();
+
+                  guestStore.addGuestMessage({
+                    id: crypto.randomUUID(),
+                    role: 'user',
+                    content: 'Explain this region',
+                    imageDataUrl,
+                    createdAt: new Date().toISOString(),
+                  });
+
+                  guestStore.setLoading(true);
+
+                  guestExplainRegion(
+                    guestPaper.ragFileId,
+                    imageDataUrl,
+                    pageNumber,
+                  )
+                    .then(({ answer, citations, raw }) => {
+                      const assistantMsg = buildGuestAssistantMessage(
+                        answer,
+                        citations,
+                        raw.modelName,
+                        raw.tokenCount,
+                      );
+                      guestStore.addGuestMessage(assistantMsg);
+                    })
+                    .catch((err) => {
+                      console.error('❌ Guest Explain error:', err);
+                      guestStore.addGuestMessage({
+                        id: crypto.randomUUID(),
+                        role: 'assistant',
+                        content: '⚠️ Sorry, something went wrong.',
+                        createdAt: new Date().toISOString(),
+                      });
+                    })
+                    .finally(() => {
+                      guestStore.setLoading(false);
+                    });
+                  return;
+                }
+
+                // Authenticated mode: use explainRegion
                 const fileId = paper?.id;
 
                 usePaperStore.getState().addMessage({

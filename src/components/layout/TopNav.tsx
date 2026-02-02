@@ -156,7 +156,7 @@ export default function TopNav() {
                 {openMenu && (
                   <div
                     role='menu'
-                    className='absolute right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-3'
+                    className='absolute right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-3 z-[100]'
                   >
                     <div className='px-2 pb-1 text-sm font-medium'>
                       My Account

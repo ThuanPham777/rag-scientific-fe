@@ -5,10 +5,14 @@ import ChatMessage from './ChatMessage';
 import ChatMessageLoading from './ChatMessageLoading';
 import ChatInput from './ChatInput';
 import ChatQuickActions from './ChatQuickActions';
-import type { Session } from '../../utils/types';
+import type {
+  Session,
+  ChatMessage as ChatMessageType,
+} from '../../utils/types';
 
 type Props = {
   session: Session;
+  messages?: ChatMessageType[];
   onSend: (text: string, opts?: { highQuality: boolean }) => void;
   isLoading?: boolean;
   defaultOpen?: boolean;
@@ -25,12 +29,16 @@ const LOADING_STEPS = [
 
 export default function ChatDock({
   session,
+  messages: messagesProp,
   onSend,
   isLoading = false,
   defaultOpen = true,
   position = 'fixed',
   activePaperId,
 }: Props) {
+  // Use messages prop if provided, otherwise fall back to session.messages
+  const messages = messagesProp ?? session.messages;
+
   const [open, setOpen] = useState(defaultOpen);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [stepIndex, setStepIndex] = useState(0);
@@ -57,16 +65,16 @@ export default function ChatDock({
   }, [isLoading]);
 
   // Auto-open only when NEW messages arrive (not on every render)
-  const prevMsgCount = useRef(session.messages.length);
+  const prevMsgCount = useRef(messages.length);
   useEffect(() => {
-    const hasNewMessages = session.messages.length > prevMsgCount.current;
-    prevMsgCount.current = session.messages.length;
+    const hasNewMessages = messages.length > prevMsgCount.current;
+    prevMsgCount.current = messages.length;
 
     // Only auto-open if user hasn't manually closed AND there are new messages
     if (hasNewMessages && !open && !userClosed) {
       setOpen(true);
     }
-  }, [session.messages.length]);
+  }, [messages.length]);
 
   // Reset userClosed when user opens the dock
   const handleToggle = () => {
@@ -85,7 +93,7 @@ export default function ChatDock({
   useEffect(() => {
     if (!open) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [open, session.messages.length, isLoading]);
+  }, [open, messages.length, isLoading]);
 
   const WIDTH = position === 'fixed' ? 'w-[450px]' : 'w-full';
   const HEIGHT = position === 'fixed' ? 'h-[81vh]' : 'h-full';
@@ -126,7 +134,7 @@ export default function ChatDock({
 
           {/* Messages Area */}
           <div className='flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0 bg-gray-50/30 relative'>
-            {session.messages.length === 0 && (
+            {messages.length === 0 && (
               <div className='mb-6'>
                 <ChatSuggestions
                   onSelect={onSend}
@@ -134,7 +142,7 @@ export default function ChatDock({
                 />
               </div>
             )}
-            {session.messages.map((m) => (
+            {messages.map((m) => (
               <ChatMessage
                 key={m.id}
                 msg={m}

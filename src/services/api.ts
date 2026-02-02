@@ -92,6 +92,7 @@ export async function deletePaper(id: string): Promise<{ success: boolean }> {
 export async function uploadPdf(
   file: File,
   onProgress?: (pct: number) => void,
+  folderId?: string,
 ): Promise<{ paper: Paper; localUrl: string }> {
   const formData = new FormData();
   formData.append('file', file);
@@ -109,11 +110,12 @@ export async function uploadPdf(
 
   const { url } = uploadRes.data.data;
 
-  // 2. Create paper record in DB
+  // 2. Create paper record in DB (with optional folderId)
   const createRes = await api.post('/papers', {
     fileName: file.name,
     fileUrl: url,
     fileSize: file.size,
+    folderId: folderId || undefined,
   });
 
   const paper = createRes.data.data;
