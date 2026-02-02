@@ -3,7 +3,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/UI/tooltip';
+} from '@/components/ui/tooltip';
 import { Sigma } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '@radix-ui/react-switch';

@@ -11,10 +11,10 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/UI/tooltip';
-import { Input } from '@/components/UI/input';
-import { Button } from '@/components/UI/button';
-import { Checkbox } from '@/components/UI/checkbox';
+} from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 
 type Props = {
   showSearch: boolean;
@@ -100,7 +100,9 @@ export default function PdfToolbar({
           <Button
             variant={captureMode ? 'default' : 'outline'}
             size='default'
-            className={captureMode ? 'bg-orange-500 text-white hover:bg-orange-600' : ''}
+            className={
+              captureMode ? 'bg-orange-500 text-white hover:bg-orange-600' : ''
+            }
             onClick={onToggleCapture}
           >
             <Sigma
@@ -110,8 +112,14 @@ export default function PdfToolbar({
             Explain math &amp; table
           </Button>
         </TooltipTrigger>
-        <TooltipContent side='top' className='max-w-xs'>
-          <p>Select and drag the cursor over an area containing formulas, equations or tables</p>
+        <TooltipContent
+          side='top'
+          className='max-w-xs'
+        >
+          <p>
+            Select and drag the cursor over an area containing formulas,
+            equations or tables
+          </p>
         </TooltipContent>
       </Tooltip>
 
@@ -242,14 +250,18 @@ export default function PdfToolbar({
             <label className='flex items-center gap-2 text-sm cursor-pointer'>
               <Checkbox
                 checked={matchCase}
-                onCheckedChange={(checked) => onMatchCaseChange(checked === true)}
+                onCheckedChange={(checked) =>
+                  onMatchCaseChange(checked === true)
+                }
               />
               <span>Match case</span>
             </label>
             <label className='flex items-center gap-2 text-sm cursor-pointer'>
               <Checkbox
                 checked={wholeWords}
-                onCheckedChange={(checked) => onWholeWordsChange(checked === true)}
+                onCheckedChange={(checked) =>
+                  onWholeWordsChange(checked === true)
+                }
               />
               <span>Whole words</span>
             </label>

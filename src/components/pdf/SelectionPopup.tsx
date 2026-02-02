@@ -10,7 +10,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/UI/tooltip';
+} from '@/components/ui/tooltip';
 import ColorPopup from './ColorPopup';
 
 type HighlightRect = {
@@ -35,7 +35,7 @@ type Props = {
       pageNumber: number;
       rects: HighlightRect[];
       color?: string;
-    }
+    },
   ) => void;
   onAddHighlight: (color?: string) => void;
   onRemoveHighlight?: () => void;
@@ -54,7 +54,9 @@ export default function SelectionPopup({
 }: Props) {
   const popupRef = useRef<HTMLDivElement>(null);
   const [showColorPopup, setShowColorPopup] = useState(false);
-  const [selectedColor, setSelectedColor] = useState<string | undefined>(selectedColorDefault);
+  const [selectedColor, setSelectedColor] = useState<string | undefined>(
+    selectedColorDefault,
+  );
   const [showMainPopup, setShowMainPopup] = useState(true);
 
   // Tính toán kích thước popup dựa trên scale

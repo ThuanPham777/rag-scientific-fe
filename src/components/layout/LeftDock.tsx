@@ -1,25 +1,11 @@
 import { Link, NavLink } from 'react-router-dom';
-import {
-  Home,
-  BookOpen,
-  FileText,
-  MessageSquare,
-  Search,
-  Beaker,
-  Settings,
-  LifeBuoy,
-  User,
-} from 'lucide-react';
+import { Home, Library, FileText, MessageSquare, User } from 'lucide-react';
 
 const items = [
   { to: '/', icon: Home, label: 'Home' },
-  { to: '/papers', icon: BookOpen, label: 'Papers' },
+  { to: '/library', icon: Library, label: 'My Library' },
   { to: '/uploads', icon: FileText, label: 'Uploads' },
   { to: '/chat', icon: MessageSquare, label: 'Chat' },
-  { to: '/discover', icon: Search, label: 'Discover' },
-  { to: '/labs', icon: Beaker, label: 'Labs' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-  { to: '/help', icon: LifeBuoy, label: 'Help' },
 ];
 
 export default function LeftDock() {

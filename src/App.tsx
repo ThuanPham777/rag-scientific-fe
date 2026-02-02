@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import AppChrome from './components/layout/AppChrome';
 import HomeUpload from './pages/HomeUpload';
 import ChatPage from './pages/ChatPage';
+import MyLibraryPage from './pages/MyLibraryPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 export default function App() {
@@ -13,6 +14,16 @@ export default function App() {
         <Route
           path='/'
           element={<HomeUpload />}
+        />
+
+        {/* Protected route - My Library */}
+        <Route
+          path='/library'
+          element={
+            <ProtectedRoute>
+              <MyLibraryPage />
+            </ProtectedRoute>
+          }
         />
 
         {/* Protected route - Chat with optional conversationId */}

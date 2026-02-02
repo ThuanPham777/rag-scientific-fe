@@ -64,6 +64,7 @@ export async function createPaper(paperData: {
   fileUrl: string;
   fileSize?: number;
   fileHash?: string;
+  folderId?: string;
 }): Promise<ApiResponse<Paper>> {
   const { data } = await api.post('/papers', paperData);
   return data;
