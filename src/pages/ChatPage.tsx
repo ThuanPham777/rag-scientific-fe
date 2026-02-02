@@ -9,12 +9,10 @@ import {
   getMessageHistory,
   getConversation,
   getPaper,
-} from '../services/api';
-import {
   guestAskQuestion,
   guestCheckIngestStatus,
   buildGuestAssistantMessage,
-} from '../services/guestApi';
+} from '../services';
 import PdfPanel from '../components/pdf/PdfPanel';
 import ChatDock from '../components/chat/ChatDock';
 import type { ChatMessage } from '../utils/types';
@@ -144,12 +142,7 @@ export default function ChatPage() {
               try {
                 const paperResponse = await getPaper(conv.paperId);
                 if (paperResponse.data) {
-                  // Add paperUrl from conversation if available
-                  const paperData = {
-                    ...paperResponse.data,
-                    fileUrl: conv.paperUrl || paperResponse.data.fileUrl,
-                  };
-                  setPaper(paperData);
+                  setPaper(paperResponse.data);
                 }
               } catch (err) {
                 console.error('Failed to load paper:', err);

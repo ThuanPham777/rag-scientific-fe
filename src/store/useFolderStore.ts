@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Folder, FolderWithPapers, Paper } from '../utils/types';
-import * as folderApi from '../services/folderApi';
+import * as folderApi from '../services/api/folder.api';
 import { toast } from 'sonner';
 
 type FolderState = {

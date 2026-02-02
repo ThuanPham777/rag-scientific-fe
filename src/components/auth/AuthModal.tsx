@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { login as apiLogin, signup as apiSignup } from '../../services/api';
+import { login as apiLogin, signup as apiSignup } from '../../services';
 import { useAuthStore } from '../../store/useAuthStore';
 
 type AuthMode = 'login' | 'signup';

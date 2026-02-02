@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Upload, Loader2 } from 'lucide-react';
 import { useFolderStore } from '../store/useFolderStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { listPapers } from '../services/api';
+import { listPapers } from '../services';
 import { Button } from '../components/ui/button';
 import type { Paper, Folder as FolderType } from '../utils/types';
 import { useUpload } from '../hooks/useUpload';

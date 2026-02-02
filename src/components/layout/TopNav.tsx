@@ -7,7 +7,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
-import { logout as apiLogout } from '../../services/api';
+import { logout as apiLogout } from '../../services';
 import AuthModal from '../auth/AuthModal';
 
 export default function TopNav() {

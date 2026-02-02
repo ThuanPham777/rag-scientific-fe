@@ -1,8 +1,12 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { listConversations, startSession, deletePaper } from '../services/api';
-import { movePaperToFolder } from '../services/folderApi';
+import {
+  listConversations,
+  startSession,
+  deletePaper,
+  movePaperToFolder,
+} from '../services';
 import { usePaperStore } from '../store/usePaperStore';
 import type { Paper } from '../utils/types';
 

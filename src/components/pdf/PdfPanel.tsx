@@ -3,11 +3,13 @@ import PdfViewer from './PdfViewer';
 import SummaryView from './SummaryView';
 import RelatedPapersView from './RelatedPapersView';
 import type { Paper, RelatedPapersResponse } from '../../utils/types';
-import { sendQuery, explainRegion, getRelatedPapers } from '../../services/api';
 import {
+  sendQuery,
+  explainRegion,
+  getRelatedPapers,
   guestExplainRegion,
   buildGuestAssistantMessage,
-} from '../../services/guestApi';
+} from '../../services';
 import { usePaperStore } from '../../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../../store/useGuestStore';
 import { useAuthStore } from '../../store/useAuthStore';

@@ -1,9 +1,8 @@
-import api from '../config/axios';
-import type { Folder, FolderWithPapers, Paper } from '../utils/types';
+// src/services/api/folder.api.ts
+// Folder (My Library) related API calls
 
-// ============================
-// 🔹 FOLDER API (My Library)
-// ============================
+import api from '../../config/axios';
+import type { Folder, FolderWithPapers, Paper } from '../../utils/types';
 
 /**
  * Get all folders for current user
@@ -13,7 +12,6 @@ export async function getFolders(): Promise<{
   data: Folder[];
 }> {
   const { data } = await api.get('/folders');
-  // Backend returns array directly
   return { success: true, data: Array.isArray(data) ? data : data.data || [] };
 }
 
@@ -24,7 +22,6 @@ export async function getFolder(
   id: string,
 ): Promise<{ success: boolean; data: FolderWithPapers }> {
   const { data } = await api.get(`/folders/${id}`);
-  // Backend returns folder object directly
   return { success: true, data: data.data || data };
 }
 
@@ -36,7 +33,6 @@ export async function getUncategorizedPapers(): Promise<{
   data: Paper[];
 }> {
   const { data } = await api.get('/folders/uncategorized');
-  // Backend returns array directly
   return { success: true, data: Array.isArray(data) ? data : data.data || [] };
 }
 

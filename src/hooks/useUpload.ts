@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { validateFile } from '../utils/file';
-import { uploadPdf } from '../services/api';
+import { uploadPdf } from '../services';
 import { usePaperStore } from '../store/usePaperStore';
 import { useFolderStore } from '../store/useFolderStore';
 import type { UploadItem } from '../types/upload';

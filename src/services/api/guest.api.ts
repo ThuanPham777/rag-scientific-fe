@@ -1,8 +1,9 @@
-// src/services/guestApi.ts
-// API services for guest (non-authenticated) users
+// src/services/api/guest.api.ts
+// Guest (non-authenticated) user API calls
 
-import api from '../config/axios';
-import type { ChatMessage, Citation } from '../utils/types';
+import api from '../../config/axios';
+import type { ChatMessage, Citation } from '../../utils/types';
+import { parseCitationsFromResponse } from '@/utils/citation';
 
 export interface GuestUploadResult {
   paperId: string;
@@ -106,57 +107,7 @@ export async function guestExplainRegion(
 }
 
 /**
- * Parse citations from RAG response
- */
-function parseCitationsFromResponse(
-  rawCitations: any[],
-  paperId: string = '',
-): Citation[] {
-  return rawCitations.map((t: any, i: number) => {
-    const meta = t.metadata ?? {};
-    let parsedBBox: any = t.bbox ?? meta.bbox ?? null;
-    if (typeof parsedBBox === 'string') {
-      try {
-        parsedBBox = JSON.parse(parsedBBox);
-      } catch {
-        parsedBBox = null;
-      }
-    }
-
-    const layoutW =
-      Number(t.layoutWidth ?? meta.layout_width ?? 0) || undefined;
-    const layoutH =
-      Number(t.layoutHeight ?? meta.layout_height ?? 0) || undefined;
-
-    let rect:
-      | { top: number; left: number; width: number; height: number }
-      | undefined;
-    if (parsedBBox && layoutW && layoutH) {
-      const [x1, y1, x2, y2] = parsedBBox;
-      rect = {
-        left: x1 / layoutW,
-        top: y1 / layoutH,
-        width: (x2 - x1) / layoutW,
-        height: (y2 - y1) / layoutH,
-      };
-    }
-
-    return {
-      paperId: paperId,
-      page: t.pageNumber ?? t.page_number ?? t.page ?? meta.page_label ?? 1,
-      title: t.modality ?? t.type ?? meta.section_title ?? 'Citation',
-      snippet: t.snippet ?? t.text ?? '',
-      sourceId: t.sourceId ?? t.source_id ?? `S${i + 1}`,
-      rect,
-      rawBBox: parsedBBox,
-      layoutWidth: layoutW,
-      layoutHeight: layoutH,
-    };
-  });
-}
-
-/**
- * Build a ChatMessage from guest response
+ * Build guest assistant message object
  */
 export function buildGuestAssistantMessage(
   answer: string,
