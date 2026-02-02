@@ -15,6 +15,8 @@ interface PaperState {
     pageNumber: number;
     rect?: { top: number; left: number; width: number; height: number };
   } | null;
+  // Chat loading state (global)
+  isChatLoading: boolean;
 
   // Paper actions
   setPaper: (p: Paper) => void;
@@ -41,6 +43,9 @@ interface PaperState {
     } | null,
   ) => void;
 
+  // Loading state
+  setChatLoading: (loading: boolean) => void;
+
   // Reset
   reset: () => void;
   resetSession: () => void;
@@ -52,6 +57,7 @@ export const usePaperStore = create<PaperState>((set) => ({
   papers: [],
   conversations: [],
   pendingJump: null,
+  isChatLoading: false,
 
   // Paper actions
   setPaper: (paper) => set({ paper }),
@@ -99,6 +105,9 @@ export const usePaperStore = create<PaperState>((set) => ({
   // Navigation
   setPendingJump: (jump) => set({ pendingJump: jump }),
 
+  // Loading state
+  setChatLoading: (loading) => set({ isChatLoading: loading }),
+
   // Reset
   reset: () =>
     set({
@@ -107,7 +116,9 @@ export const usePaperStore = create<PaperState>((set) => ({
       papers: [],
       conversations: [],
       pendingJump: null,
+      isChatLoading: false,
     }),
 
-  resetSession: () => set({ session: undefined, pendingJump: null }),
+  resetSession: () =>
+    set({ session: undefined, pendingJump: null, isChatLoading: false }),
 }));

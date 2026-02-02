@@ -180,10 +180,11 @@ function parseCitationsFromResponse(
   activePaperId?: string,
 ): Citation[] {
   return rawCitations.map((t: any, i: number) => {
-    const locator = t.locator ?? {};
+    // Get metadata from item or nested metadata object
     const meta = t.metadata ?? {};
 
-    let parsedBBox: any = locator.bbox ?? meta.bbox ?? t.bbox ?? null;
+    // Extract bounding box from various possible locations
+    let parsedBBox: any = t.bbox ?? meta.bbox ?? null;
     if (typeof parsedBBox === 'string') {
       try {
         parsedBBox = JSON.parse(parsedBBox);
@@ -192,50 +193,62 @@ function parseCitationsFromResponse(
       }
     }
 
+    // Layout dimensions
     const layoutW =
       Number(
-        parsedBBox?.layout_width ??
+        t.layoutWidth ??
+          t.layout_width ??
+          meta.layout_width ??
+          parsedBBox?.layout_width ??
           parsedBBox?.page_width ??
-          parsedBBox?.width ??
           612,
       ) || 612;
     const layoutH =
       Number(
-        parsedBBox?.layout_height ??
+        t.layoutHeight ??
+          t.layout_height ??
+          meta.layout_height ??
+          parsedBBox?.layout_height ??
           parsedBBox?.page_height ??
-          parsedBBox?.height ??
           792,
       ) || 792;
 
-    const x1 = Number(parsedBBox?.x1 ?? parsedBBox?.left ?? 0);
-    const y1 = Number(parsedBBox?.y1 ?? parsedBBox?.top ?? 0);
-    let x2 = Number(parsedBBox?.x2 ?? parsedBBox?.right ?? 0);
-    let y2 = Number(parsedBBox?.y2 ?? parsedBBox?.bottom ?? 0);
-    if (!x2 || x2 <= x1) x2 = x1 + (Number(parsedBBox?.width) || 1);
-    if (!y2 || y2 <= y1) y2 = y1 + (Number(parsedBBox?.height) || 1);
+    // Calculate rect if bbox exists
+    let rect: Citation['rect'] | undefined;
+    if (parsedBBox) {
+      const x1 = Number(parsedBBox?.x1 ?? parsedBBox?.left ?? 0);
+      const y1 = Number(parsedBBox?.y1 ?? parsedBBox?.top ?? 0);
+      let x2 = Number(parsedBBox?.x2 ?? parsedBBox?.right ?? 0);
+      let y2 = Number(parsedBBox?.y2 ?? parsedBBox?.bottom ?? 0);
+      if (!x2 || x2 <= x1) x2 = x1 + (Number(parsedBBox?.width) || 1);
+      if (!y2 || y2 <= y1) y2 = y1 + (Number(parsedBBox?.height) || 1);
 
-    const rect =
-      layoutW > 0 && layoutH > 0
-        ? {
-            left: x1 / layoutW,
-            top: y1 / layoutH,
-            width: (x2 - x1) / layoutW,
-            height: (y2 - y1) / layoutH,
-          }
-        : undefined;
+      rect =
+        layoutW > 0 && layoutH > 0
+          ? {
+              left: x1 / layoutW,
+              top: y1 / layoutH,
+              width: (x2 - x1) / layoutW,
+              height: (y2 - y1) / layoutH,
+            }
+          : undefined;
+    }
+
+    // Extract page number from various possible fields
+    const pageNum =
+      t.pageNumber ?? t.page ?? meta.page_label ?? meta.page_start ?? null;
 
     return {
       paperId: activePaperId ?? '',
-      page:
-        t.page ??
-        locator.page_label ??
-        meta.page_label ??
-        locator.page ??
-        t.page_label ??
-        i + 1,
-      title: meta.section_title ?? t.type ?? 'Citation',
-      snippet: t.text ?? t.snippet,
-      sourceId: t.source_id,
+      page: pageNum,
+      title:
+        t.sectionTitle ??
+        t.section_title ??
+        meta.section_title ??
+        t.type ??
+        'Citation',
+      snippet: t.snippet ?? t.text ?? '',
+      sourceId: t.sourceId ?? t.source_id ?? `S${i + 1}`,
       rect,
       rawBBox: parsedBBox,
       layoutWidth: layoutW,
@@ -282,6 +295,8 @@ export async function getMessageHistory(
     role: m.role.toLowerCase() as 'user' | 'assistant',
     content: m.content,
     imageUrl: m.imageUrl,
+    // Map imageUrl to imageDataUrl for display (supports both S3 URLs and data URLs)
+    imageDataUrl: m.imageUrl || undefined,
     modelName: m.modelName,
     tokenCount: m.tokenCount,
     createdAt: m.createdAt,

@@ -17,9 +17,16 @@ export default function ChatPage() {
     conversationId?: string;
   }>();
   const navigate = useNavigate();
-  const { session, paper, addMessage, setMessages, setSession, setPaper } =
-    usePaperStore();
-  const [loading, setLoading] = useState(false);
+  const {
+    session,
+    paper,
+    isChatLoading,
+    addMessage,
+    setMessages,
+    setSession,
+    setPaper,
+    setChatLoading,
+  } = usePaperStore();
   // Start as true if we have urlConversationId but no session (need to restore)
   const [initialLoading, setInitialLoading] = useState(
     !!urlConversationId && !usePaperStore.getState().session,
@@ -147,7 +154,7 @@ export default function ChatPage() {
     addMessage(userMsg);
 
     try {
-      setLoading(true);
+      setChatLoading(true);
 
       // Send query using conversationId
       const { assistantMsg } = await sendQuery(session.id, text, paper?.id);
@@ -164,7 +171,7 @@ export default function ChatPage() {
       };
       addMessage(errorMsg);
     } finally {
-      setLoading(false);
+      setChatLoading(false);
     }
   };
 
@@ -189,7 +196,7 @@ export default function ChatPage() {
     addMessage(userMsg);
 
     try {
-      setLoading(true);
+      setChatLoading(true);
 
       const { assistantMsg } = await sendQuery(
         session.id,
@@ -210,7 +217,7 @@ export default function ChatPage() {
       };
       addMessage(errorMsg);
     } finally {
-      setLoading(false);
+      setChatLoading(false);
     }
   };
 
@@ -230,7 +237,7 @@ export default function ChatPage() {
       <ChatDock
         session={session}
         onSend={onSend}
-        isLoading={loading}
+        isLoading={isChatLoading}
         defaultOpen={true}
         activePaperId={paper?.id}
       />

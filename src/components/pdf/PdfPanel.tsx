@@ -158,6 +158,9 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                   createdAt: new Date().toISOString(),
                 });
 
+                // Set loading state
+                usePaperStore.getState().setChatLoading(true);
+
                 explainRegion(imageDataUrl, {
                   conversationId: session?.id,
                   paperId: fileId,
@@ -174,6 +177,9 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                       content: '⚠️ Sorry, something went wrong.',
                       createdAt: new Date().toISOString(),
                     });
+                  })
+                  .finally(() => {
+                    usePaperStore.getState().setChatLoading(false);
                   });
                 return;
               }
