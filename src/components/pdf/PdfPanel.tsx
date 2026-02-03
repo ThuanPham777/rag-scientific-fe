@@ -145,7 +145,11 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
   useEffect(() => {
     // Nếu store có pendingJump mà đang KHÔNG ở tab PDF
     // -> Chuyển ngay về tab PDF để PdfViewer nhận được props và thực hiện scroll
+    if (pendingJump) {
+      console.log('[PdfPanel] pendingJump detected:', pendingJump);
+    }
     if (pendingJump && activeTab !== 'pdf') {
+      console.log('[PdfPanel] Switching to PDF tab due to pendingJump');
       setActiveTab('pdf');
     }
   }, [pendingJump, activeTab]);
@@ -153,11 +157,13 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
   // --- FIX 2: Cleanup Pending Jump ---
   useEffect(() => {
     if (pendingJump && activeTab === 'pdf') {
-      // Khi đã ở tab PDF và có pendingJump, chờ 1s rồi clear
-      // Thời gian này đủ để PdfViewer nhận props và scroll/highlight
+      // Khi đã ở tab PDF và có pendingJump, chờ để PdfViewer nhận props và scroll/highlight
+      // Tăng lên 5s để đảm bảo PDF có đủ thời gian load (đặc biệt khi mở tab mới)
+      console.log('[PdfPanel] Starting cleanup timer for pendingJump (5s)');
       const timer = setTimeout(() => {
+        console.log('[PdfPanel] Clearing pendingJump after timeout');
         setPendingJump(null);
-      }, 1000);
+      }, 5000);
       return () => clearTimeout(timer);
     }
   }, [pendingJump, activeTab, setPendingJump]);

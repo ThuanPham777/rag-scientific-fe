@@ -210,6 +210,12 @@ export default function ChatPage() {
     const pageParam = searchParams.get('page');
     const highlightParam = searchParams.get('highlight');
 
+    console.log('[ChatPage] URL params effect:', {
+      pageParam,
+      highlightParam,
+      initialLoading,
+    });
+
     if (pageParam) {
       const pageNumber = parseInt(pageParam, 10);
       if (!isNaN(pageNumber) && pageNumber > 0) {
@@ -224,6 +230,8 @@ export default function ChatPage() {
             // Invalid JSON, ignore
           }
         }
+
+        console.log('[ChatPage] Setting pendingJump:', { pageNumber, rect });
 
         // Set pending jump to navigate to the page
         setPendingJump({
