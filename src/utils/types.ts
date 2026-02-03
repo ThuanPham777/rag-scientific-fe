@@ -84,6 +84,10 @@ export type Citation = {
   rawBBox?: any;
   layoutWidth?: number;
   layoutHeight?: number;
+  // Multi-paper citation fields
+  sourcePaperId?: string; // Paper ID this citation belongs to
+  sourcePaperTitle?: string; // Paper title for display
+  sourceFileUrl?: string; // PDF URL for navigation
 };
 
 export type ChatMessage = {

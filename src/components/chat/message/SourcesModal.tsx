@@ -3,7 +3,7 @@
 
 import { memo } from 'react';
 import ReactDOM from 'react-dom';
-import { X, FileText, MapPin } from 'lucide-react';
+import { X, FileText, MapPin, ExternalLink } from 'lucide-react';
 import type { Citation } from '../../../utils/types';
 
 interface SourcesModalProps {
@@ -13,6 +13,8 @@ interface SourcesModalProps {
   onClose: () => void;
   onSelectIndex: (index: number) => void;
   onJumpToPage: (citation: Citation) => void;
+  /** Whether this is a multi-paper chat context */
+  isMultiPaper?: boolean;
 }
 
 /**
@@ -25,11 +27,15 @@ function SourcesModalBase({
   onClose,
   onSelectIndex,
   onJumpToPage,
+  isMultiPaper = false,
 }: SourcesModalProps) {
   if (!isOpen || !citations?.length) return null;
 
   const citation = citations[activeIndex] ?? citations[0];
   const portalRoot = document.getElementById('chat-dock-overlay');
+
+  // Check if this citation opens in a new tab
+  const opensInNewTab = isMultiPaper && citation.sourceFileUrl;
 
   const modal = (
     <div className='absolute inset-0 z-50 flex flex-col justify-end pointer-events-auto'>
@@ -79,7 +85,22 @@ function SourcesModalBase({
 
           {/* Citation Content */}
           <div className='space-y-4'>
-            {/* Title */}
+            {/* Paper Title (for multi-paper mode) */}
+            {isMultiPaper && citation.sourcePaperTitle && (
+              <div>
+                <h4 className='text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5'>
+                  From Paper
+                </h4>
+                <div className='flex items-center gap-2 text-sm font-medium text-orange-600'>
+                  <FileText size={14} />
+                  <span className='break-words'>
+                    {citation.sourcePaperTitle}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Section Title */}
             <div>
               <h4 className='text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5'>
                 Source Title
@@ -105,9 +126,11 @@ function SourcesModalBase({
                 <button
                   className='w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-50 text-orange-700 text-sm font-semibold rounded-lg hover:bg-orange-100 transition-colors border border-orange-200'
                   onClick={() => onJumpToPage(citation)}
+                  title={opensInNewTab ? 'Opens in new tab' : 'Jump to page'}
                 >
                   <MapPin size={16} />
-                  Jump to Page {citation.page}
+                  {opensInNewTab ? 'Open' : 'Jump to'} Page {citation.page}
+                  {opensInNewTab && <ExternalLink size={14} />}
                 </button>
               </div>
             )}

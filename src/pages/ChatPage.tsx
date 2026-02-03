@@ -1,6 +1,6 @@
 // src/pages/ChatPage.tsx
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -21,6 +21,7 @@ export default function ChatPage() {
   const { conversationId: urlConversationId } = useParams<{
     conversationId?: string;
   }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();
   const {
@@ -32,6 +33,7 @@ export default function ChatPage() {
     setSession,
     setPaper,
     setChatLoading,
+    setPendingJump,
   } = usePaperStore();
 
   // Guest store
@@ -200,6 +202,40 @@ export default function ChatPage() {
       navigate(`/chat/${guestSession.id}`, { replace: true });
     }
   }, [session?.id, guestSession?.id, urlConversationId, navigate, isGuest]);
+
+  // Handle URL query params for page and highlight (for multi-paper citation links)
+  useEffect(() => {
+    if (initialLoading) return; // Wait until session is restored
+
+    const pageParam = searchParams.get('page');
+    const highlightParam = searchParams.get('highlight');
+
+    if (pageParam) {
+      const pageNumber = parseInt(pageParam, 10);
+      if (!isNaN(pageNumber) && pageNumber > 0) {
+        // Parse highlight rect if provided
+        let rect:
+          | { top: number; left: number; width: number; height: number }
+          | undefined;
+        if (highlightParam) {
+          try {
+            rect = JSON.parse(highlightParam);
+          } catch {
+            // Invalid JSON, ignore
+          }
+        }
+
+        // Set pending jump to navigate to the page
+        setPendingJump({
+          pageNumber,
+          rect,
+        });
+
+        // Clear the query params from URL after handling
+        navigate(window.location.pathname, { replace: true });
+      }
+    }
+  }, [searchParams, initialLoading, setPendingJump, navigate]);
 
   // Poll for ingest status when guest paper is processing
   const updateGuestPaper = useGuestStore((s) => s.updateGuestPaper);

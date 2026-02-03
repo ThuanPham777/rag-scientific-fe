@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, BotMessageSquare } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  BotMessageSquare,
+  X,
+  FileText,
+} from 'lucide-react';
 import ChatSuggestions from './ChatSuggestions';
 import ChatMessage from './ChatMessage';
 import ChatMessageLoading from './ChatMessageLoading';
@@ -10,14 +16,35 @@ import type {
   ChatMessage as ChatMessageType,
 } from '../../utils/types';
 
+export type ChatMode = 'single' | 'multi';
+
+interface SelectedPaperInfo {
+  id: string;
+  fileName: string;
+}
+
 type Props = {
-  session: Session;
+  // Core props
+  session?: Session;
   messages?: ChatMessageType[];
   onSend: (text: string, opts?: { highQuality: boolean }) => void;
   isLoading?: boolean;
+
+  // Display configuration
   defaultOpen?: boolean;
   position?: 'fixed' | 'static';
+
+  // Mode configuration
+  mode?: ChatMode;
   activePaperId?: string;
+
+  // Multi-paper mode props
+  selectedPapers?: SelectedPaperInfo[];
+  onRemovePaper?: (paperId: string) => void;
+
+  // Feature toggles
+  showQuickActions?: boolean;
+  showSuggestions?: boolean;
 };
 
 const LOADING_STEPS = [
@@ -34,10 +61,15 @@ export default function ChatDock({
   isLoading = false,
   defaultOpen = true,
   position = 'fixed',
+  mode = 'single',
   activePaperId,
+  selectedPapers = [],
+  onRemovePaper,
+  showQuickActions = true,
+  showSuggestions = true,
 }: Props) {
-  // Use messages prop if provided, otherwise fall back to session.messages
-  const messages = messagesProp ?? session.messages;
+  // Use messages prop if provided, otherwise fall back to session?.messages
+  const messages = messagesProp ?? session?.messages ?? [];
 
   const [open, setOpen] = useState(defaultOpen);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -100,6 +132,12 @@ export default function ChatDock({
   const currentStepLabel =
     LOADING_STEPS[Math.min(stepIndex, LOADING_STEPS.length - 1)];
 
+  // Determine header title based on mode
+  const headerTitle =
+    mode === 'multi'
+      ? `Chat with ${selectedPapers.length} paper${selectedPapers.length !== 1 ? 's' : ''}`
+      : 'Chat Assistant';
+
   return (
     <>
       {open && (
@@ -117,7 +155,7 @@ export default function ChatDock({
           >
             <div className='flex items-center gap-2 font-semibold text-gray-800'>
               <BotMessageSquare className='text-orange-500' />
-              <span>Chat Assistant</span>
+              <span>{headerTitle}</span>
             </div>
             <div className='flex items-center gap-2 text-sm text-gray-500'>
               <button
@@ -132,20 +170,72 @@ export default function ChatDock({
             </div>
           </div>
 
+          {/* Selected Papers Badge (Multi-paper mode) */}
+          {mode === 'multi' && selectedPapers.length > 0 && (
+            <div className='px-3 py-2 bg-orange-50 border-b border-orange-100'>
+              <div className='flex flex-wrap gap-1.5'>
+                {selectedPapers.map((paper) => (
+                  <span
+                    key={paper.id}
+                    className='inline-flex items-center gap-1 px-2 py-1 bg-white border border-orange-200 rounded-full text-xs text-gray-700'
+                  >
+                    <FileText
+                      size={12}
+                      className='text-orange-500'
+                    />
+                    <span className='max-w-[120px] truncate'>
+                      {paper.fileName}
+                    </span>
+                    {onRemovePaper && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemovePaper(paper.id);
+                        }}
+                        className='ml-0.5 p-0.5 hover:bg-orange-100 rounded-full'
+                      >
+                        <X
+                          size={12}
+                          className='text-gray-400 hover:text-gray-600'
+                        />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Messages Area */}
           <div className='flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0 bg-gray-50/30 relative'>
-            {messages.length === 0 && (
+            {messages.length === 0 && showSuggestions && (
               <div className='mb-6'>
-                <ChatSuggestions
-                  onSelect={onSend}
-                  disabled={isLoading}
-                />
+                {mode === 'multi' && selectedPapers.length === 0 ? (
+                  <div className='text-center py-8 text-gray-500'>
+                    <FileText
+                      size={48}
+                      className='mx-auto mb-3 text-gray-300'
+                    />
+                    <p className='text-sm'>
+                      Select papers from the library to start chatting
+                    </p>
+                  </div>
+                ) : (
+                  <ChatSuggestions
+                    onSelect={onSend}
+                    disabled={
+                      isLoading ||
+                      (mode === 'multi' && selectedPapers.length === 0)
+                    }
+                  />
+                )}
               </div>
             )}
             {messages.map((m) => (
               <ChatMessage
                 key={m.id}
                 msg={m}
+                activePaperId={mode === 'single' ? activePaperId : undefined}
               />
             ))}
             {isLoading && <ChatMessageLoading label={currentStepLabel} />}
@@ -159,16 +249,26 @@ export default function ChatDock({
 
           {/* Footer Area */}
           <div className='bg-white relative z-30 flex flex-col'>
-            {/* Quick Actions: Bây giờ nó nằm trong flow (static), không đè lên message */}
-            <ChatQuickActions
-              onSelect={onSend}
-              fileId={activePaperId}
-              disabled={isLoading}
-            />
+            {/* Quick Actions - only show in single mode with showQuickActions */}
+            {showQuickActions && mode === 'single' && (
+              <ChatQuickActions
+                onSelect={onSend}
+                fileId={activePaperId}
+                disabled={isLoading}
+              />
+            )}
 
             <ChatInput
               onSend={onSend}
-              disabled={isLoading}
+              disabled={
+                isLoading || (mode === 'multi' && selectedPapers.length === 0)
+              }
+              placeholder={
+                mode === 'multi' && selectedPapers.length === 0
+                  ? 'Select papers to start chatting...'
+                  : undefined
+              }
+              showSigmaButton={mode === 'single'}
             />
           </div>
         </div>

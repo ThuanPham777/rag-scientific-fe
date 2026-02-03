@@ -4,6 +4,27 @@
 import api from '../../config/axios';
 import type { ApiResponse, Conversation } from '../../utils/types';
 
+// Extended conversation type with multi-paper support
+export interface ConversationWithPapers extends Conversation {
+  type?: 'SINGLE_PAPER' | 'MULTI_PAPER';
+  papers?: Array<{
+    id: string;
+    ragFileId: string;
+    title?: string;
+    fileName: string;
+    fileUrl?: string;
+    orderIndex: number;
+  }>;
+  messages?: Array<{
+    id: string;
+    role: string;
+    content: string;
+    imageUrl?: string;
+    context?: any;
+    createdAt: string;
+  }>;
+}
+
 /**
  * Create a new conversation for a paper
  */
@@ -16,22 +37,34 @@ export async function createConversation(
 }
 
 /**
- * List conversations, optionally filtered by paper ID
+ * List conversations, optionally filtered by paper ID or type
  */
 export async function listConversations(
   paperId?: string,
+  type?: 'SINGLE_PAPER' | 'MULTI_PAPER',
 ): Promise<ApiResponse<Conversation[]>> {
-  const params = paperId ? { paperId } : {};
+  const params: Record<string, string> = {};
+  if (paperId) params.paperId = paperId;
+  if (type) params.type = type;
   const { data } = await api.get('/conversations', { params });
   return data;
 }
 
 /**
- * Get a single conversation by ID
+ * List only multi-paper conversations
+ */
+export async function listMultiPaperConversations(): Promise<
+  ApiResponse<Conversation[]>
+> {
+  return listConversations(undefined, 'MULTI_PAPER');
+}
+
+/**
+ * Get a single conversation by ID (includes papers for multi-paper)
  */
 export async function getConversation(
   id: string,
-): Promise<{ success: boolean; data: Conversation }> {
+): Promise<{ success: boolean; data: ConversationWithPapers }> {
   const { data } = await api.get(`/conversations/${id}`);
   return data;
 }

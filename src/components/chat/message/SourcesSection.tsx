@@ -8,6 +8,7 @@ import {
   ChevronUp,
   MapPin,
   ExternalLink,
+  FileText,
 } from 'lucide-react';
 import type { Citation } from '../../../utils/types';
 
@@ -17,6 +18,8 @@ interface SourcesSectionProps {
   onToggle: () => void;
   onViewDetails: (index: number) => void;
   onJumpToPage: (citation: Citation) => void;
+  /** Whether this is a multi-paper chat context */
+  isMultiPaper?: boolean;
 }
 
 /**
@@ -28,6 +31,7 @@ function SourcesSectionBase({
   onToggle,
   onViewDetails,
   onJumpToPage,
+  isMultiPaper = false,
 }: SourcesSectionProps) {
   if (!citations?.length) return null;
 
@@ -64,6 +68,7 @@ function SourcesSectionBase({
               index={index}
               onViewDetails={() => onViewDetails(index)}
               onJumpToPage={() => onJumpToPage(citation)}
+              isMultiPaper={isMultiPaper}
             />
           ))}
         </div>
@@ -77,6 +82,7 @@ interface SourceItemProps {
   index: number;
   onViewDetails: () => void;
   onJumpToPage: () => void;
+  isMultiPaper?: boolean;
 }
 
 function SourceItem({
@@ -84,7 +90,11 @@ function SourceItem({
   index,
   onViewDetails,
   onJumpToPage,
+  isMultiPaper = false,
 }: SourceItemProps) {
+  // Check if this citation has multi-paper info
+  const hasMultiPaperInfo = isMultiPaper && citation.sourcePaperTitle;
+
   return (
     <div className='group relative flex flex-col bg-white border border-gray-200 rounded-lg p-2.5 hover:border-orange-300 hover:shadow-sm transition-all w-full min-w-0'>
       <div className='flex items-start gap-3 min-w-0'>
@@ -94,7 +104,20 @@ function SourceItem({
         </div>
 
         <div className='flex-1 min-w-0 overflow-hidden'>
-          {/* Title */}
+          {/* Paper Title (only in multi-paper mode with paper info) */}
+          {hasMultiPaperInfo && (
+            <div className='flex items-center gap-1 text-[10px] text-orange-600 font-medium mb-1'>
+              <FileText size={10} />
+              <span
+                className='truncate'
+                title={citation.sourcePaperTitle}
+              >
+                {citation.sourcePaperTitle}
+              </span>
+            </div>
+          )}
+
+          {/* Section Title */}
           <div
             className='text-xs font-semibold text-gray-800 truncate mb-0.5 pr-2'
             title={citation.title}
@@ -123,9 +146,20 @@ function SourceItem({
               <button
                 className='flex items-center gap-1 text-[10px] font-medium text-gray-500 hover:text-gray-800 transition-colors hover:bg-gray-100 px-1.5 py-0.5 rounded'
                 onClick={onJumpToPage}
+                title={
+                  isMultiPaper && citation.sourceFileUrl
+                    ? 'Opens in new tab'
+                    : 'Jump to page'
+                }
               >
                 <MapPin size={10} />
                 Page {citation.page}
+                {isMultiPaper && citation.sourceFileUrl && (
+                  <ExternalLink
+                    size={8}
+                    className='ml-0.5'
+                  />
+                )}
               </button>
             )}
           </div>

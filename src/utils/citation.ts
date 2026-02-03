@@ -69,8 +69,13 @@ export function parseCitationsFromResponse(
     const pageNum =
       t.pageNumber ?? t.page ?? meta.page_label ?? meta.page_start ?? null;
 
+    // Extract multi-paper source info
+    const sourcePaperId = t.sourcePaperId ?? meta.source_paper_id ?? null;
+    const sourcePaperTitle = t.sourcePaperTitle ?? null;
+    const sourceFileUrl = t.sourceFileUrl ?? null;
+
     return {
-      paperId: activePaperId ?? '',
+      paperId: sourcePaperId ?? activePaperId ?? '',
       page: pageNum,
       title:
         t.sectionTitle ??
@@ -84,6 +89,10 @@ export function parseCitationsFromResponse(
       rawBBox: parsedBBox,
       layoutWidth: layoutW,
       layoutHeight: layoutH,
+      // Multi-paper fields
+      sourcePaperId,
+      sourcePaperTitle,
+      sourceFileUrl,
     };
   });
 }

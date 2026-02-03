@@ -127,3 +127,62 @@ export async function pollMessages(conversationId: string, paperId?: string) {
     nextCursor: undefined,
   };
 }
+
+// ============================
+// 🔹 MULTI-PAPER CHAT API
+// ============================
+
+export interface MultiPaperSource {
+  paperId: string;
+  title: string;
+}
+
+export interface MultiPaperQueryResult {
+  answer: string;
+  citations: any[];
+  sources: MultiPaperSource[];
+  assistantMessageId?: string;
+  userMessageId?: string;
+  conversationId?: string;
+}
+
+/**
+ * Ask a question across multiple papers
+ */
+export async function askMultiPaper(
+  paperIds: string[],
+  question: string,
+  conversationId?: string,
+): Promise<{
+  assistantMsg: ChatMessage;
+  sources: MultiPaperSource[];
+  conversationId: string;
+  raw: any;
+}> {
+  const { data } = await api.post<{
+    success: boolean;
+    message: string;
+    data: MultiPaperQueryResult;
+  }>('/chat/ask-multi', {
+    paperIds,
+    question,
+    conversationId,
+  });
+
+  const citations = parseCitationsFromResponse(data.data.citations || []);
+
+  const assistantMsg: ChatMessage = {
+    id: data.data.assistantMessageId || crypto.randomUUID(),
+    role: 'assistant',
+    content: data.data.answer,
+    citations,
+    createdAt: new Date().toISOString(),
+  };
+
+  return {
+    assistantMsg,
+    sources: data.data.sources || [],
+    conversationId: data.data.conversationId || '',
+    raw: data.data,
+  };
+}

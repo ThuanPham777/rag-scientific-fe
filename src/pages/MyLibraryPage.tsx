@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { Upload, Loader2 } from 'lucide-react';
 import { useFolderStore } from '../store/useFolderStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useMultiPaperChatStore } from '../store/useMultiPaperChatStore';
 import { listPapers } from '../services';
 import { Button } from '../components/ui/button';
 import type { Paper, Folder as FolderType } from '../utils/types';
 import { useUpload } from '../hooks/useUpload';
 import { usePaperActions } from '../hooks/usePaperActions';
+import { useMultiPaperChat } from '../hooks/useMultiPaperChat';
 import {
   FolderSidebar,
   PaperTable,
@@ -18,6 +20,7 @@ import {
   DeletePaperDialog,
   MovePaperDialog,
 } from '../components/library';
+import ChatDock from '../components/chat/ChatDock';
 
 export default function MyLibraryPage() {
   const navigate = useNavigate();
@@ -37,6 +40,16 @@ export default function MyLibraryPage() {
     deleteFolder,
     clearSelectedFolder,
   } = useFolderStore();
+
+  // Multi-paper chat state
+  const { selectedPapers, togglePaper, deselectPaper, clearSelection } =
+    useMultiPaperChatStore();
+
+  const {
+    messages: multiChatMessages,
+    isLoading: isMultiChatLoading,
+    sendMessage: sendMultiMessage,
+  } = useMultiPaperChat();
 
   // All papers state
   const [allPapers, setAllPapers] = useState<Paper[]>([]);
@@ -167,6 +180,27 @@ export default function MyLibraryPage() {
   const currentViewName =
     selectedView === 'all' ? 'All files' : selectedFolder?.name || 'Loading...';
 
+  // Multi-select handlers
+  const selectedPaperIds = selectedPapers.map((p) => p.id);
+
+  const handleSelectAll = () => {
+    displayPapers.forEach((paper) => {
+      if (!selectedPaperIds.includes(paper.id)) {
+        togglePaper(paper);
+      }
+    });
+  };
+
+  const handleDeselectAll = () => {
+    clearSelection();
+  };
+
+  // Prepare selected papers for ChatDock
+  const selectedPapersInfo = selectedPapers.map((p) => ({
+    id: p.id,
+    fileName: p.fileName,
+  }));
+
   return (
     <div className='flex h-[calc(100vh-56px)] bg-white'>
       {/* Left Sidebar */}
@@ -185,9 +219,16 @@ export default function MyLibraryPage() {
       {/* Main Content */}
       <main className='flex-1 flex flex-col overflow-hidden'>
         <header className='flex items-center justify-between px-6 py-4 border-b'>
-          <h2 className='text-xl font-semibold text-gray-900'>
-            My Library - {currentViewName}
-          </h2>
+          <div className='flex items-center gap-4'>
+            <h2 className='text-xl font-semibold text-gray-900'>
+              My Library - {currentViewName}
+            </h2>
+            {selectedPapers.length > 0 && (
+              <span className='px-2 py-1 text-sm bg-orange-100 text-orange-700 rounded-full'>
+                {selectedPapers.length} selected
+              </span>
+            )}
+          </div>
           <Button
             onClick={upload.handleUploadClick}
             className='gap-2'
@@ -214,9 +255,27 @@ export default function MyLibraryPage() {
             onMovePaper={paperActions.openMovePaperDialog}
             onDeletePaper={paperActions.openDeletePaperDialog}
             onUploadClick={upload.handleUploadClick}
+            selectable
+            selectedPaperIds={selectedPaperIds}
+            onToggleSelect={togglePaper}
+            onSelectAll={handleSelectAll}
+            onDeselectAll={handleDeselectAll}
           />
         </div>
       </main>
+
+      {/* Multi-Paper Chat Dock */}
+      <ChatDock
+        mode='multi'
+        messages={multiChatMessages}
+        onSend={(text) => sendMultiMessage(text)}
+        isLoading={isMultiChatLoading}
+        defaultOpen={false}
+        selectedPapers={selectedPapersInfo}
+        onRemovePaper={deselectPaper}
+        showQuickActions={false}
+        showSuggestions={true}
+      />
 
       {/* Folder Dialogs */}
       <CreateFolderDialog
