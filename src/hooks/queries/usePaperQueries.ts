@@ -93,6 +93,8 @@ export function useDeletePaper() {
 
 /**
  * Hook to create a paper record
+ * NOTE: Currently app uses uploadPdf which handles both upload and paper creation.
+ * This hook is available for cases where paper record needs to be created separately.
  */
 export function useCreatePaper() {
   const queryClient = useQueryClient();

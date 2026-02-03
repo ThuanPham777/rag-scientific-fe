@@ -12,7 +12,8 @@ export async function getFolders(): Promise<{
   data: Folder[];
 }> {
   const { data } = await api.get('/folders');
-  return { success: true, data: Array.isArray(data) ? data : data.data || [] };
+  // Backend returns ApiResponseDto: { success, message, data }
+  return { success: data.success ?? true, data: data.data ?? [] };
 }
 
 /**
@@ -33,7 +34,8 @@ export async function getUncategorizedPapers(): Promise<{
   data: Paper[];
 }> {
   const { data } = await api.get('/folders/uncategorized');
-  return { success: true, data: Array.isArray(data) ? data : data.data || [] };
+  // Backend returns ApiResponseDto: { success, message, data }
+  return { success: data.success ?? true, data: data.data ?? [] };
 }
 
 /**

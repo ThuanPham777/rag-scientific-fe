@@ -1,11 +1,16 @@
 import { create } from 'zustand';
-import type { ChatMessage, Paper, Session, Conversation } from '../utils/types';
+import type {
+  ChatMessage,
+  Paper,
+  ChatSession,
+  Conversation,
+} from '../utils/types';
 
 interface PaperState {
   // Current paper being viewed
   paper?: Paper;
   // Current chat session (conversation)
-  session?: Session;
+  session?: ChatSession;
   // List of user's papers
   papers: Paper[];
   // List of conversations for current paper
@@ -26,7 +31,7 @@ interface PaperState {
   removePaper: (id: string) => void;
 
   // Session/Conversation actions
-  setSession: (s: Session) => void;
+  setSession: (s: ChatSession) => void;
   setConversations: (convs: Conversation[]) => void;
   addConversation: (conv: Conversation) => void;
 

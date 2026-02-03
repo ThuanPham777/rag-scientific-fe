@@ -117,17 +117,6 @@ export async function explainRegion(
   };
 }
 
-/**
- * Poll messages (legacy - kept for compatibility)
- */
-export async function pollMessages(conversationId: string, paperId?: string) {
-  const messages = await getMessageHistory(conversationId, paperId);
-  return {
-    messages,
-    nextCursor: undefined,
-  };
-}
-
 // ============================
 // 🔹 MULTI-PAPER CHAT API
 // ============================

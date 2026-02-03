@@ -80,7 +80,8 @@ export async function deleteConversation(
 }
 
 /**
- * Start a new session by creating a conversation
+ * Start a chat session by creating a conversation for a paper
+ * This is a convenience wrapper around createConversation that returns only the conversationId
  */
 export async function startSession(
   paperId: string,

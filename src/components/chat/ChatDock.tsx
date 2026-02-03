@@ -13,7 +13,7 @@ import ChatMessageLoading from './ChatMessageLoading';
 import ChatInput from './ChatInput';
 import ChatQuickActions from './ChatQuickActions';
 import type {
-  Session,
+  ChatSession,
   ChatMessage as ChatMessageType,
 } from '../../utils/types';
 
@@ -26,7 +26,7 @@ interface SelectedPaperInfo {
 
 type Props = {
   // Core props
-  session?: Session;
+  session?: ChatSession;
   messages?: ChatMessageType[];
   onSend: (text: string, opts?: { highQuality: boolean }) => void;
   onClearChatHistory?: (conversationId: string) => void;

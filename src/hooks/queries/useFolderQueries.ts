@@ -1,5 +1,9 @@
 // src/hooks/queries/useFolderQueries.ts
 // React Query hooks for folder operations
+//
+// NOTE: The app currently uses useFolderStore (Zustand) for folder state management.
+// These React Query hooks are provided as an alternative for future migration.
+// To use React Query, replace useFolderStore calls with these hooks.
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {

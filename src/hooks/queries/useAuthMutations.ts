@@ -1,5 +1,9 @@
 // src/hooks/queries/useAuthMutations.ts
 // React Query hooks for authentication operations
+//
+// NOTE: These hooks are available for React Query-based authentication flows.
+// Currently, the app uses direct API calls in AuthModal for login/signup.
+// These hooks are provided for future migration to React Query patterns.
 
 import { useMutation } from '@tanstack/react-query';
 import {
@@ -60,9 +64,10 @@ export function useSignup() {
 }
 
 /**
- * Hook for Google OAuth mutation
+ * Hook for Google OAuth mutation using ID token (legacy flow)
+ * @deprecated Use useGoogleAuth from hooks/useGoogleAuth.ts for PKCE flow instead
  */
-export function useGoogleAuth() {
+export function useGoogleIdTokenAuth() {
   const authLogin = useAuthStore((s) => s.login);
 
   return useMutation({

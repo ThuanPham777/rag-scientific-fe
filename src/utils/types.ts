@@ -112,13 +112,17 @@ export type Message = {
   createdAt: string;
 };
 
-export type Session = {
+export type ChatSession = {
   id: string; // conversationId
   paperId: string;
   ragFileId?: string;
   title?: string;
   messages: ChatMessage[];
 };
+
+// Backward compatibility alias
+/** @deprecated Use ChatSession instead */
+export type Session = ChatSession;
 
 // ============================
 // 🔹 Related Papers Types

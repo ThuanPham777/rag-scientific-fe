@@ -10,7 +10,7 @@ import {
   guestAskQuestion,
   buildGuestAssistantMessage,
 } from '../services';
-import type { ChatMessage, Paper, Session } from '../utils/types';
+import type { ChatMessage, Paper, ChatSession } from '../utils/types';
 import type { GuestSession } from '../store/useGuestStore';
 
 interface UseChatOptions {
@@ -22,7 +22,7 @@ interface UseChatReturn {
   isGuest: boolean;
   isLoading: boolean;
   messages: ChatMessage[];
-  activeSession: Session | GuestSession | null;
+  activeSession: ChatSession | GuestSession | null;
   activePaper: Paper | undefined;
 
   // Actions

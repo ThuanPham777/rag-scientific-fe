@@ -68,6 +68,8 @@ export function useCreateConversation() {
 
 /**
  * Hook to start a new session (creates conversation)
+ * NOTE: Currently app uses startSession directly. This hook is available for
+ * future migration to React Query patterns with proper cache invalidation.
  */
 export function useStartSession() {
   const queryClient = useQueryClient();
