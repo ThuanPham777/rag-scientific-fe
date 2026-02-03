@@ -24,7 +24,7 @@ export default function ChatPage() {
   }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, isInitialized } = useAuthStore();
   const {
     session,
     paper,
@@ -93,6 +93,9 @@ export default function ChatPage() {
 
   // Restore session from URL on mount/reload
   useEffect(() => {
+    // Wait for auth to be initialized before trying to restore session
+    if (!isInitialized) return;
+
     const restoreSession = async () => {
       // Check if guest session exists in localStorage
       const guestStore = useGuestStore.getState();
@@ -194,7 +197,7 @@ export default function ChatPage() {
     };
 
     restoreSession();
-  }, [urlConversationId, isAuthenticated]);
+  }, [urlConversationId, isAuthenticated, isInitialized]);
 
   // Update URL when session changes (after creating new conversation)
   useEffect(() => {
@@ -293,33 +296,12 @@ export default function ChatPage() {
     }
   }, [session?.id, urlConversationId, setMessages, isGuest]);
 
-  // Show loading state during initial restore
-  if (initialLoading) {
-    return (
-      <div className='min-h-[calc(100vh-4rem)] pl-16 pt-16 flex items-center justify-center text-gray-600'>
-        <div className='flex flex-col items-center gap-2'>
-          <div className='w-8 h-8 border-2 border-gray-300 border-t-indigo-600 rounded-full animate-spin' />
-          <span>Loading conversation...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // Check for active session (either guest or authenticated)
-  if (!activeSession) {
-    return (
-      <div className='min-h-[calc(100vh-4rem)] pl-16 pt-16 flex items-center justify-center text-gray-600'>
-        No session. Go back and upload a PDF file.
-      </div>
-    );
-  }
-
   // Get messages from appropriate store
   const messages = isGuest
     ? guestSession?.messages || []
     : session?.messages || [];
 
-  // Handle clear chat history
+  // Handle clear chat history - MUST be defined before early returns (Rules of Hooks)
   const handleClearChatHistory = useCallback(
     async (conversationId: string) => {
       if (!conversationId) return;
@@ -347,140 +329,196 @@ export default function ChatPage() {
     [isGuest, setGuestMessages, setMessages, clearChatHistoryMutation],
   );
 
-  const onSend = async (text: string) => {
-    if (!text.trim() || !activeSession) return;
+  // onSend handler - defined as useCallback to maintain stable reference
+  const onSend = useCallback(
+    async (text: string) => {
+      if (!text.trim() || !activeSession) return;
 
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: text.trim(),
-      createdAt: new Date().toISOString(),
-    };
-
-    // Add user message to appropriate store
-    if (isGuest) {
-      addGuestMessage(userMsg);
-    } else {
-      addMessage(userMsg);
-    }
-
-    // Set loading state on appropriate store
-    const setLoading = isGuest ? setGuestLoading : setChatLoading;
-
-    try {
-      setLoading(true);
-
-      if (isGuest && guestSession) {
-        // Guest: Call guest API
-        const { answer, citations, raw } = await guestAskQuestion(
-          guestSession.ragFileId,
-          text,
-          guestPaper?.id || '',
-        );
-        const assistantMsg = buildGuestAssistantMessage(
-          answer,
-          citations,
-          raw.modelName,
-          raw.tokenCount,
-        );
-        addGuestMessage(assistantMsg);
-      } else if (session) {
-        // Authenticated: Call regular API
-        const { assistantMsg } = await sendQuery(session.id, text, paper?.id);
-        addMessage(assistantMsg);
-      }
-    } catch (err: any) {
-      console.error('❌ Chat error:', err);
-      const errorMsg: ChatMessage = {
+      const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
-        role: 'assistant',
-        content:
-          '⚠️ Sorry, something went wrong while processing your question.',
+        role: 'user',
+        content: text.trim(),
         createdAt: new Date().toISOString(),
       };
+
+      // Add user message to appropriate store
       if (isGuest) {
-        addGuestMessage(errorMsg);
+        addGuestMessage(userMsg);
       } else {
-        addMessage(errorMsg);
+        addMessage(userMsg);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const handlePdfAction = async (
-    action: 'explain' | 'summarize',
-    selectedText: string,
-  ) => {
-    if (!activeSession || !selectedText.trim()) return;
+      // Set loading state on appropriate store
+      const setLoading = isGuest ? setGuestLoading : setChatLoading;
 
-    const queryText =
-      action === 'explain'
-        ? `Explain the following text: "${selectedText}"`
-        : `Summarize the following text: "${selectedText}"`;
+      try {
+        setLoading(true);
 
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: queryText,
-      createdAt: new Date().toISOString(),
-    };
-
-    // Add user message to appropriate store
-    if (isGuest) {
-      addGuestMessage(userMsg);
-    } else {
-      addMessage(userMsg);
-    }
-
-    // Set loading state on appropriate store
-    const setLoadingPdf = isGuest ? setGuestLoading : setChatLoading;
-
-    try {
-      setLoadingPdf(true);
-
-      if (isGuest && guestSession) {
-        // Guest: Call guest API
-        const { answer, citations, raw } = await guestAskQuestion(
-          guestSession.ragFileId,
-          queryText,
-          guestPaper?.id || '',
-        );
-        const assistantMsg = buildGuestAssistantMessage(
-          answer,
-          citations,
-          raw.modelName,
-          raw.tokenCount,
-        );
-        addGuestMessage(assistantMsg);
-      } else if (session) {
-        // Authenticated: Call regular API
-        const { assistantMsg } = await sendQuery(
-          session.id,
-          queryText,
-          paper?.id,
-        );
-        console.log('call api success', assistantMsg);
-        addMessage(assistantMsg);
+        if (isGuest && guestSession) {
+          // Guest: Call guest API
+          const { answer, citations, raw } = await guestAskQuestion(
+            guestSession.ragFileId,
+            text,
+            guestPaper?.id || '',
+          );
+          const assistantMsg = buildGuestAssistantMessage(
+            answer,
+            citations,
+            raw.modelName,
+            raw.tokenCount,
+          );
+          addGuestMessage(assistantMsg);
+        } else if (session) {
+          // Authenticated: Call regular API
+          const { assistantMsg } = await sendQuery(session.id, text, paper?.id);
+          addMessage(assistantMsg);
+        }
+      } catch (err: any) {
+        console.error('❌ Chat error:', err);
+        const errorMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content:
+            '⚠️ Sorry, something went wrong while processing your question.',
+          createdAt: new Date().toISOString(),
+        };
+        if (isGuest) {
+          addGuestMessage(errorMsg);
+        } else {
+          addMessage(errorMsg);
+        }
+      } finally {
+        setLoading(false);
       }
-    } catch (err: any) {
-      console.error('❌ PDF action error:', err);
-      const errorMsg: ChatMessage = {
+    },
+    [
+      activeSession,
+      isGuest,
+      guestSession,
+      guestPaper?.id,
+      session,
+      paper?.id,
+      addGuestMessage,
+      addMessage,
+      setGuestLoading,
+      setChatLoading,
+    ],
+  );
+
+  // handlePdfAction - defined as useCallback to maintain stable reference
+  const handlePdfAction = useCallback(
+    async (action: 'explain' | 'summarize', selectedText: string) => {
+      if (!activeSession || !selectedText.trim()) return;
+
+      const queryText =
+        action === 'explain'
+          ? `Explain the following text: "${selectedText}"`
+          : `Summarize the following text: "${selectedText}"`;
+
+      const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
-        role: 'assistant',
-        content:
-          '⚠️ Sorry, something went wrong while processing your request.',
+        role: 'user',
+        content: queryText,
         createdAt: new Date().toISOString(),
       };
+
+      // Add user message to appropriate store
       if (isGuest) {
-        addGuestMessage(errorMsg);
+        addGuestMessage(userMsg);
       } else {
-        addMessage(errorMsg);
+        addMessage(userMsg);
       }
-    } finally {
-      setLoadingPdf(false);
-    }
-  };
+
+      // Set loading state on appropriate store
+      const setLoadingPdf = isGuest ? setGuestLoading : setChatLoading;
+
+      try {
+        setLoadingPdf(true);
+
+        if (isGuest && guestSession) {
+          // Guest: Call guest API
+          const { answer, citations, raw } = await guestAskQuestion(
+            guestSession.ragFileId,
+            queryText,
+            guestPaper?.id || '',
+          );
+          const assistantMsg = buildGuestAssistantMessage(
+            answer,
+            citations,
+            raw.modelName,
+            raw.tokenCount,
+          );
+          addGuestMessage(assistantMsg);
+        } else if (session) {
+          // Authenticated: Call regular API
+          const { assistantMsg } = await sendQuery(
+            session.id,
+            queryText,
+            paper?.id,
+          );
+          console.log('call api success', assistantMsg);
+          addMessage(assistantMsg);
+        }
+      } catch (err: any) {
+        console.error('❌ PDF action error:', err);
+        const errorMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content:
+            '⚠️ Sorry, something went wrong while processing your request.',
+          createdAt: new Date().toISOString(),
+        };
+        if (isGuest) {
+          addGuestMessage(errorMsg);
+        } else {
+          addMessage(errorMsg);
+        }
+      } finally {
+        setLoadingPdf(false);
+      }
+    },
+    [
+      activeSession,
+      isGuest,
+      guestSession,
+      guestPaper?.id,
+      session,
+      paper?.id,
+      addGuestMessage,
+      addMessage,
+      setGuestLoading,
+      setChatLoading,
+    ],
+  );
+
+  // ============================================
+  // EARLY RETURNS - After all hooks are defined
+  // ============================================
+
+  // Show loading state during initial restore
+  if (initialLoading) {
+    return (
+      <div className='min-h-[calc(100vh-4rem)] pl-16 pt-16 flex items-center justify-center text-gray-600'>
+        <div className='flex flex-col items-center gap-2'>
+          <div className='w-8 h-8 border-2 border-gray-300 border-t-indigo-600 rounded-full animate-spin' />
+          <span>Loading conversation...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Check for active session (either guest or authenticated)
+  if (!activeSession) {
+    return (
+      <div className='min-h-[calc(100vh-4rem)] pl-16 pt-16 flex items-center justify-center text-gray-600'>
+        No session. Go back and upload a PDF file.
+      </div>
+    );
+  }
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className='pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2'>

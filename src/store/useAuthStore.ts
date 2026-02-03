@@ -10,6 +10,7 @@ let inMemoryAccessToken: string | null = null;
 
 type AuthState = {
   isAuthenticated: boolean;
+  isInitialized: boolean; // Has auth been checked on app load?
   user?: User;
   // Only refresh token is persisted (for session restoration)
   refreshToken?: string;
@@ -20,12 +21,14 @@ type AuthState = {
   getRefreshToken: () => string | null;
   setAccessToken: (token: string) => void;
   clearTokens: () => void;
+  setInitialized: (initialized: boolean) => void;
 };
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       isAuthenticated: false,
+      isInitialized: false,
       user: undefined,
       refreshToken: undefined,
 
@@ -35,6 +38,7 @@ export const useAuthStore = create<AuthState>()(
         // Refresh token persisted for session restoration
         set({
           isAuthenticated: true,
+          isInitialized: true,
           user,
           refreshToken: tokens.refreshToken,
         });
@@ -46,6 +50,7 @@ export const useAuthStore = create<AuthState>()(
         // Clear persisted state
         set({
           isAuthenticated: false,
+          isInitialized: true, // Keep initialized as true
           user: undefined,
           refreshToken: undefined,
         });
@@ -55,7 +60,7 @@ export const useAuthStore = create<AuthState>()(
         // Update access token in memory
         inMemoryAccessToken = tokens.accessToken;
         // Update refresh token in persisted state
-        set({ refreshToken: tokens.refreshToken });
+        set({ refreshToken: tokens.refreshToken, isInitialized: true });
       },
 
       setAccessToken: (token) => {
@@ -74,6 +79,10 @@ export const useAuthStore = create<AuthState>()(
         inMemoryAccessToken = null;
         set({ refreshToken: undefined });
       },
+
+      setInitialized: (initialized) => {
+        set({ isInitialized: initialized });
+      },
     }),
     {
       name: 'auth-storage',
@@ -82,6 +91,7 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         // Only persist refresh token, NOT access token
         refreshToken: state.refreshToken,
+        // Don't persist isInitialized - should always start as false
       }),
     },
   ),

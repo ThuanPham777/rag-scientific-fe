@@ -15,10 +15,21 @@ const api = axios.create({
 // Handles concurrent 401s - only one refresh request at a time
 // =====================================================
 let isRefreshing = false;
+let refreshPromise: Promise<any> | null = null;
 let failedQueue: Array<{
   resolve: (token: string) => void;
   reject: (error: any) => void;
 }> = [];
+
+// Export for use in AuthInitializer to coordinate refresh
+export const getRefreshState = () => ({ isRefreshing, refreshPromise });
+export const setRefreshState = (
+  refreshing: boolean,
+  promise: Promise<any> | null = null,
+) => {
+  isRefreshing = refreshing;
+  refreshPromise = promise;
+};
 
 const processQueue = (error: any, token: string | null = null) => {
   failedQueue.forEach((prom) => {
@@ -72,14 +83,23 @@ api.interceptors.response.use(
 
     // Handle 401 - Token expired
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // Check if auth is initialized - if not, let AuthInitializer handle it
+      const { isInitialized } = useAuthStore.getState();
+      if (!isInitialized) {
+        // Auth not initialized yet, don't try to refresh here
+        return Promise.reject(error);
+      }
+
       // If already refreshing, queue this request
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            return api(originalRequest);
+      if (isRefreshing && refreshPromise) {
+        return refreshPromise
+          .then(() => {
+            const token = useAuthStore.getState().getAccessToken();
+            if (token) {
+              originalRequest.headers.Authorization = `Bearer ${token}`;
+              return api(originalRequest);
+            }
+            return Promise.reject(error);
           })
           .catch((err) => Promise.reject(err));
       }
@@ -100,9 +120,11 @@ api.interceptors.response.use(
 
       try {
         // Call refresh endpoint
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+        refreshPromise = axios.post(`${API_BASE_URL}/auth/refresh`, {
           refreshToken,
         });
+
+        const response = await refreshPromise;
 
         const { accessToken, refreshToken: newRefreshToken } = response.data;
 
@@ -125,6 +147,7 @@ api.interceptors.response.use(
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
+        refreshPromise = null;
       }
     }
 
