@@ -32,10 +32,27 @@ export async function login(
 }
 
 /**
- * Login/Register with Google OAuth
+ * Login/Register with Google OAuth (ID Token flow - legacy)
  */
 export async function googleAuth(idToken: string): Promise<LoginResponse> {
   const { data } = await api.post('/auth/google', { idToken });
+  return data;
+}
+
+/**
+ * Login/Register with Google OAuth (Authorization Code flow - recommended)
+ * More secure as the code exchange happens on the backend
+ */
+export async function googleCodeAuth(
+  code: string,
+  redirectUri: string,
+  codeVerifier?: string,
+): Promise<LoginResponse> {
+  const { data } = await api.post('/auth/google/code', {
+    code,
+    redirectUri,
+    codeVerifier,
+  });
   return data;
 }
 

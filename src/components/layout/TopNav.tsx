@@ -33,7 +33,7 @@ export default function TopNav() {
       console.error('Logout API error:', err);
     } finally {
       logout();
-      navigate('/login');
+      navigate('/');
     }
   };
 

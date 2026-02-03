@@ -2,15 +2,24 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, AuthTokens } from '../utils/types';
 
+// =====================================================
+// In-memory access token storage (NOT persisted)
+// This is more secure - access token is never in localStorage
+// =====================================================
+let inMemoryAccessToken: string | null = null;
+
 type AuthState = {
   isAuthenticated: boolean;
   user?: User;
-  tokens?: AuthTokens;
+  // Only refresh token is persisted (for session restoration)
+  refreshToken?: string;
   login: (user: User, tokens: AuthTokens) => void;
   logout: () => void;
   setTokens: (tokens: AuthTokens) => void;
   getAccessToken: () => string | null;
   getRefreshToken: () => string | null;
+  setAccessToken: (token: string) => void;
+  clearTokens: () => void;
 };
 
 export const useAuthStore = create<AuthState>()(
@@ -18,36 +27,52 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       isAuthenticated: false,
       user: undefined,
-      tokens: undefined,
+      refreshToken: undefined,
 
       login: (user, tokens) => {
-        localStorage.setItem('access_token', tokens.accessToken);
-        localStorage.setItem('refresh_token', tokens.refreshToken);
-        set({ isAuthenticated: true, user, tokens });
+        // Access token stored in memory only (more secure)
+        inMemoryAccessToken = tokens.accessToken;
+        // Refresh token persisted for session restoration
+        set({
+          isAuthenticated: true,
+          user,
+          refreshToken: tokens.refreshToken,
+        });
       },
 
       logout: () => {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        set({ isAuthenticated: false, user: undefined, tokens: undefined });
+        // Clear in-memory access token
+        inMemoryAccessToken = null;
+        // Clear persisted state
+        set({
+          isAuthenticated: false,
+          user: undefined,
+          refreshToken: undefined,
+        });
       },
 
       setTokens: (tokens) => {
-        localStorage.setItem('access_token', tokens.accessToken);
-        localStorage.setItem('refresh_token', tokens.refreshToken);
-        set({ tokens });
+        // Update access token in memory
+        inMemoryAccessToken = tokens.accessToken;
+        // Update refresh token in persisted state
+        set({ refreshToken: tokens.refreshToken });
+      },
+
+      setAccessToken: (token) => {
+        inMemoryAccessToken = token;
       },
 
       getAccessToken: () => {
-        return (
-          get().tokens?.accessToken ?? localStorage.getItem('access_token')
-        );
+        return inMemoryAccessToken;
       },
 
       getRefreshToken: () => {
-        return (
-          get().tokens?.refreshToken ?? localStorage.getItem('refresh_token')
-        );
+        return get().refreshToken ?? null;
+      },
+
+      clearTokens: () => {
+        inMemoryAccessToken = null;
+        set({ refreshToken: undefined });
       },
     }),
     {
@@ -55,7 +80,8 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         isAuthenticated: state.isAuthenticated,
         user: state.user,
-        tokens: state.tokens,
+        // Only persist refresh token, NOT access token
+        refreshToken: state.refreshToken,
       }),
     },
   ),
