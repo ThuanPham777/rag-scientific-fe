@@ -186,3 +186,10 @@ export async function askMultiPaper(
     raw: data.data,
   };
 }
+
+export async function clearChatHistory(
+  conversationId: string,
+): Promise<{ success: boolean }> {
+  const { data } = await api.delete(`/chat/history/${conversationId}`);
+  return data;
+}

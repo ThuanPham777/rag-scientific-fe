@@ -5,6 +5,7 @@ import {
   BotMessageSquare,
   X,
   FileText,
+  Trash2,
 } from 'lucide-react';
 import ChatSuggestions from './ChatSuggestions';
 import ChatMessage from './ChatMessage';
@@ -28,6 +29,7 @@ type Props = {
   session?: Session;
   messages?: ChatMessageType[];
   onSend: (text: string, opts?: { highQuality: boolean }) => void;
+  onClearChatHistory?: (conversationId: string) => void;
   isLoading?: boolean;
 
   // Display configuration
@@ -37,6 +39,7 @@ type Props = {
   // Mode configuration
   mode?: ChatMode;
   activePaperId?: string;
+  conversationId?: string; // For multi-paper mode where session doesn't have conversation ID
 
   // Multi-paper mode props
   selectedPapers?: SelectedPaperInfo[];
@@ -58,11 +61,13 @@ export default function ChatDock({
   session,
   messages: messagesProp,
   onSend,
+  onClearChatHistory,
   isLoading = false,
   defaultOpen = true,
   position = 'fixed',
   mode = 'single',
   activePaperId,
+  conversationId,
   selectedPapers = [],
   onRemovePaper,
   showQuickActions = true,
@@ -158,6 +163,26 @@ export default function ChatDock({
               <span>{headerTitle}</span>
             </div>
             <div className='flex items-center gap-2 text-sm text-gray-500'>
+              {/* Only show clear button when there are messages */}
+              {messages.length > 0 && onClearChatHistory && (
+                <button
+                  className='p-1.5 rounded hover:bg-gray-100 transition-colors'
+                  title='Clear chat history'
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Use conversationId prop (for multi-paper) or session.id (for single)
+                    const convId = conversationId || session?.id;
+                    if (convId) {
+                      onClearChatHistory(convId);
+                    }
+                  }}
+                >
+                  <Trash2
+                    size={16}
+                    className='text-gray-500 hover:text-red-500'
+                  />
+                </button>
+              )}
               <button
                 className='p-1.5 rounded hover:bg-gray-100'
                 onClick={(e) => {

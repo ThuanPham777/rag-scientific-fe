@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, Loader2 } from 'lucide-react';
 import { useFolderStore } from '../store/useFolderStore';
@@ -10,6 +10,7 @@ import type { Paper, Folder as FolderType } from '../utils/types';
 import { useUpload } from '../hooks/useUpload';
 import { usePaperActions } from '../hooks/usePaperActions';
 import { useMultiPaperChat } from '../hooks/useMultiPaperChat';
+import { useClearChatHistory } from '../hooks';
 import {
   FolderSidebar,
   PaperTable,
@@ -49,7 +50,34 @@ export default function MyLibraryPage() {
     messages: multiChatMessages,
     isLoading: isMultiChatLoading,
     sendMessage: sendMultiMessage,
+    session: multiChatSession,
+    clearChat: clearMultiChat,
   } = useMultiPaperChat();
+
+  // Clear chat history mutation
+  const clearChatHistoryMutation = useClearChatHistory();
+
+  // Handle clear chat history for multi-paper mode
+  const handleClearMultiChatHistory = useCallback(
+    async (conversationId: string) => {
+      if (!conversationId) return;
+
+      if (!window.confirm('Are you sure you want to clear all chat history?')) {
+        return;
+      }
+
+      try {
+        // Call API to clear on backend
+        await clearChatHistoryMutation.mutateAsync(conversationId);
+        // Clear local state
+        clearMultiChat();
+      } catch (err) {
+        console.error('Failed to clear multi-paper chat history:', err);
+        alert('Failed to clear chat history. Please try again.');
+      }
+    },
+    [clearChatHistoryMutation, clearMultiChat],
+  );
 
   // All papers state
   const [allPapers, setAllPapers] = useState<Paper[]>([]);
@@ -269,6 +297,8 @@ export default function MyLibraryPage() {
         mode='multi'
         messages={multiChatMessages}
         onSend={(text) => sendMultiMessage(text)}
+        onClearChatHistory={handleClearMultiChatHistory}
+        conversationId={multiChatSession?.conversationId}
         isLoading={isMultiChatLoading}
         defaultOpen={false}
         selectedPapers={selectedPapersInfo}

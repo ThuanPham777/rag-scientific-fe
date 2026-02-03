@@ -2,7 +2,12 @@
 // React Query hooks for chat operations
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { sendQuery, getMessageHistory, explainRegion } from '../../services';
+import {
+  sendQuery,
+  getMessageHistory,
+  explainRegion,
+  clearChatHistory,
+} from '../../services';
 import type { ChatMessage } from '../../utils/types';
 
 // Query keys
@@ -83,6 +88,20 @@ export function useExplainRegion() {
           (old) => (old ? [...old, data.assistantMsg] : [data.assistantMsg]),
         );
       }
+    },
+  });
+}
+
+export function useClearChatHistory() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (conversationId: string) => clearChatHistory(conversationId),
+    onSuccess: (_, conversationId) => {
+      queryClient.setQueryData<ChatMessage[]>(
+        chatKeys.messageList(conversationId),
+        () => [],
+      );
     },
   });
 }

@@ -1,9 +1,10 @@
 // src/pages/ChatPage.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useClearChatHistory } from '../hooks';
 import {
   sendQuery,
   getMessageHistory,
@@ -41,9 +42,13 @@ export default function ChatPage() {
     currentSession: guestSession,
     currentPaper: guestPaper,
     addGuestMessage,
+    setGuestMessages,
     isLoading: guestIsLoading,
     setLoading: setGuestLoading,
   } = useGuestStore();
+
+  // Clear chat history mutation (for authenticated users)
+  const clearChatHistoryMutation = useClearChatHistory();
 
   // Determine if this is a guest session by checking localStorage
   const isGuest = urlConversationId
@@ -314,6 +319,34 @@ export default function ChatPage() {
     ? guestSession?.messages || []
     : session?.messages || [];
 
+  // Handle clear chat history
+  const handleClearChatHistory = useCallback(
+    async (conversationId: string) => {
+      if (!conversationId) return;
+
+      // Confirm before clearing
+      if (!window.confirm('Are you sure you want to clear all chat history?')) {
+        return;
+      }
+
+      if (isGuest) {
+        // For guest users, just clear messages from local store
+        setGuestMessages([]);
+      } else {
+        // For authenticated users, call API
+        try {
+          await clearChatHistoryMutation.mutateAsync(conversationId);
+          // Also clear from paper store
+          setMessages([]);
+        } catch (err) {
+          console.error('Failed to clear chat history:', err);
+          alert('Failed to clear chat history. Please try again.');
+        }
+      }
+    },
+    [isGuest, setGuestMessages, setMessages, clearChatHistoryMutation],
+  );
+
   const onSend = async (text: string) => {
     if (!text.trim() || !activeSession) return;
 
@@ -466,6 +499,7 @@ export default function ChatPage() {
         session={activeSession}
         messages={messages}
         onSend={onSend}
+        onClearChatHistory={handleClearChatHistory}
         isLoading={isGuest ? guestIsLoading : isChatLoading}
         defaultOpen={true}
         activePaperId={activePaper?.ragFileId}
