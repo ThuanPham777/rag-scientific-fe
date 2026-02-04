@@ -13,6 +13,7 @@ import AuthModal from '../auth/AuthModal';
 export default function TopNav() {
   const navigate = useNavigate();
   const { isAuthenticated, user, logout, getRefreshToken } = useAuthStore();
+
   const [openMenu, setOpenMenu] = useState(false);
   const [authModal, setAuthModal] = useState<{
     open: boolean;
@@ -21,8 +22,10 @@ export default function TopNav() {
     open: false,
     mode: 'login',
   });
+
   const menuRef = useRef<HTMLDivElement>(null);
 
+  /* ---------------- Logout ---------------- */
   const handleLogout = async () => {
     try {
       const refreshToken = getRefreshToken();
@@ -37,28 +40,40 @@ export default function TopNav() {
     }
   };
 
-  // click outside/ESC để đóng popup
+  /* -------- Click outside + ESC (FIXED) -------- */
   useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (!menuRef.current) return;
-      if (!menuRef.current.contains(e.target as Node)) setOpenMenu(false);
-    };
-    const onKey = (e: KeyboardEvent) =>
-      e.key === 'Escape' && setOpenMenu(false);
-    window.addEventListener('click', onClick);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('click', onClick);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, []);
+    if (!openMenu) return;
 
-  // avatar (fallback chữ cái đầu)
-  const avatar = user?.avatarUrl ? (
+    const onMouseDown = (e: MouseEvent) => {
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target as Node)) {
+        setOpenMenu(false);
+      }
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenMenu(false);
+    };
+
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [openMenu]);
+
+  /* ---------------- Avatar ---------------- */
+  const hasAvatar =
+    typeof user?.avatarUrl === 'string' && user.avatarUrl.trim().length > 0;
+
+  const avatar = hasAvatar ? (
     <img
-      src={user.avatarUrl}
+      src={user!.avatarUrl}
       alt='avatar'
       className='w-8 h-8 rounded-full object-cover'
+      referrerPolicy='no-referrer'
     />
   ) : (
     <div className='w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center'>
@@ -68,6 +83,7 @@ export default function TopNav() {
     </div>
   );
 
+  /* ---------------- Render ---------------- */
   return (
     <header className='fixed top-0 left-0 right-0 z-40 h-14 bg-white/95 backdrop-blur border-b border-b-gray-200'>
       <div className='h-full max-w-screen-2xl mx-auto px-4 flex items-center gap-4'>
@@ -80,13 +96,9 @@ export default function TopNav() {
           <span className='tracking-wide'>CHATPDF</span>
         </Link>
 
-        {/* Papers + Search (input group) */}
+        {/* Search */}
         <div className='hidden md:flex items-stretch flex-1 max-w-3xl'>
-          <button
-            className='shrink-0 inline-flex items-center gap-1 px-3 text-sm border border-r-0 rounded-l-md bg-white hover:bg-gray-50'
-            aria-haspopup='listbox'
-            aria-expanded='false'
-          >
+          <button className='shrink-0 inline-flex items-center gap-1 px-3 text-sm border border-r-0 rounded-l-md bg-white hover:bg-gray-50'>
             Papers <ChevronDown size={16} />
           </button>
 
@@ -102,7 +114,7 @@ export default function TopNav() {
           </div>
         </div>
 
-        {/* Right side */}
+        {/* Right */}
         <nav className='ml-auto flex items-center gap-4'>
           <NavLink
             to='/pricing'
@@ -136,16 +148,13 @@ export default function TopNav() {
                 My Library
               </NavLink>
 
-              {/* Avatar + dropdown */}
+              {/* Avatar */}
               <div
-                className='relative'
                 ref={menuRef}
+                className='relative'
               >
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpenMenu((v) => !v);
-                  }}
+                  onClick={() => setOpenMenu((v) => !v)}
                   className='rounded-full focus:outline-none focus:ring-2 focus:ring-brand-400'
                   aria-haspopup='menu'
                   aria-expanded={openMenu}
@@ -154,10 +163,7 @@ export default function TopNav() {
                 </button>
 
                 {openMenu && (
-                  <div
-                    role='menu'
-                    className='absolute right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-3 z-[100]'
-                  >
+                  <div className='absolute right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-3 z-[100]'>
                     <div className='px-2 pb-1 text-sm font-medium'>
                       My Account
                     </div>
@@ -165,12 +171,8 @@ export default function TopNav() {
                       {user?.email}
                     </div>
                     <button
-                      role='menuitem'
                       className='w-full flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-gray-50'
-                      onClick={() => {
-                        setOpenMenu(false);
-                        handleLogout();
-                      }}
+                      onClick={handleLogout}
                     >
                       <LogOut size={16} />
                       Logout

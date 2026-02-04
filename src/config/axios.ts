@@ -81,6 +81,21 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as any;
 
+    // Skip token refresh for auth endpoints (login, signup, refresh, google)
+    // These should just return the error directly without triggering logout
+    const authEndpoints = [
+      '/auth/login',
+      '/auth/signup',
+      '/auth/refresh',
+      '/auth/google',
+    ];
+    const isAuthEndpoint = authEndpoints.some((ep) =>
+      originalRequest?.url?.includes(ep),
+    );
+    if (isAuthEndpoint) {
+      return Promise.reject(error);
+    }
+
     // Handle 401 - Token expired
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Check if auth is initialized - if not, let AuthInitializer handle it
