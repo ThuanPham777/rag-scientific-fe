@@ -1,5 +1,6 @@
 // src/components/pdf/PdfViewer.tsx
 import { useEffect, useRef, useState } from 'react';
+import { Document, Page } from 'react-pdf';
 import PdfToolbar from './PdfToolbar';
 import PdfPages from './PdfPages';
 
@@ -38,6 +39,11 @@ type Props = {
       imageDataUrl?: string;
     },
   ) => void;
+  // Chat dock integration for fullscreen mode
+  isChatDockOpen?: boolean;
+  chatDockWidth?: number;
+  // Callback when fullscreen state changes
+  onFullscreenChange?: (isFullscreen: boolean) => void;
 };
 
 type PageIndex = {
@@ -50,6 +56,9 @@ export default function PdfViewer({
   jumpToPage,
   jumpHighlight,
   onAction,
+  isChatDockOpen = true,
+  chatDockWidth = 450,
+  onFullscreenChange,
 }: Props) {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1.0);
@@ -87,6 +96,19 @@ export default function PdfViewer({
   >([]);
   const [hitIndex, setHitIndex] = useState(0);
 
+  // === Fullscreen (in-page mode, not browser fullscreen) ======================
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const viewerContainerRef = useRef<HTMLDivElement>(null);
+
+  // === Thumbnails panel =======================================================
+  const [showThumbnails, setShowThumbnails] = useState(false);
+
+  // === Current Page ===========================================================
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // === Rotation ===============================================================
+  const [rotation, setRotation] = useState(0);
+
   // Refs
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const viewerScrollRef = useRef<HTMLDivElement>(null);
@@ -102,7 +124,40 @@ export default function PdfViewer({
     setDragBox(null);
     setHits([]);
     setHitIndex(0);
+    setRotation(0);
+    setCurrentPage(1);
   }, [fileUrl]);
+
+  // Track current page based on scroll position
+  useEffect(() => {
+    const scrollEl = viewerScrollRef.current;
+    if (!scrollEl || numPages === 0) return;
+
+    const handleScroll = () => {
+      const scrollTop = scrollEl.scrollTop;
+      const scrollCenter = scrollTop + scrollEl.clientHeight / 2;
+
+      let foundPage = 1;
+      for (let p = 1; p <= numPages; p++) {
+        const pageEl = pageRefs.current[p];
+        if (pageEl) {
+          const pageTop = pageEl.offsetTop;
+          const pageBottom = pageTop + pageEl.offsetHeight;
+          if (scrollCenter >= pageTop && scrollCenter < pageBottom) {
+            foundPage = p;
+            break;
+          }
+          if (scrollCenter < pageTop) break;
+          foundPage = p;
+        }
+      }
+      setCurrentPage(foundPage);
+    };
+
+    scrollEl.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll(); // Initial check
+    return () => scrollEl.removeEventListener('scroll', handleScroll);
+  }, [numPages]);
 
   // selection text popup
   useEffect(() => {
@@ -180,6 +235,64 @@ export default function PdfViewer({
   // zoom
   const zoomOut = () => setScale((s) => Math.max(0.5, +(s - 0.1).toFixed(2)));
   const zoomIn = () => setScale((s) => Math.min(3, +(s + 0.1).toFixed(2)));
+
+  // === Fullscreen handlers (in-page mode) =====================================
+  const toggleFullscreen = () => {
+    const newState = !isFullscreen;
+    setIsFullscreen(newState);
+    onFullscreenChange?.(newState);
+  };
+
+  // Exit fullscreen on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+        onFullscreenChange?.(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
+  // Disable body scroll when fullscreen
+  useEffect(() => {
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isFullscreen]);
+
+  // === Page jump handler ======================================================
+  const handlePageChange = (page: number) => {
+    if (page < 1 || page > numPages) return;
+    const pageEl = pageRefs.current[page];
+    if (pageEl) {
+      pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    setCurrentPage(page);
+  };
+
+  // === Rotation handlers ======================================================
+  const rotateCw = () => setRotation((r) => (r + 90) % 360);
+  const rotateCcw = () => setRotation((r) => (r - 90 + 360) % 360);
+
+  // === Download handler =======================================================
+  const handleDownload = () => {
+    if (!fileUrl) return;
+
+    const link = document.createElement('a');
+    link.href = fileUrl;
+    link.download = fileUrl.split('/').pop() || 'document.pdf';
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Keyboard shortcuts + global mouse (capture)
   useEffect(() => {
@@ -797,70 +910,152 @@ export default function PdfViewer({
     setSel(null);
   };
 
+  // Calculate fullscreen styles based on chat dock state
+  const fullscreenStyle = isFullscreen
+    ? isChatDockOpen
+      ? { right: `${chatDockWidth}px` } // Leave space for chat dock (no gap)
+      : {}
+    : {};
+
   return (
-    <div className='flex flex-col h-full min-h-0'>
-      <PdfToolbar
-        showSearch={showSearch}
-        onToggleSearch={() =>
-          setShowSearch((v) => {
-            const next = !v;
-            if (v && !next) {
-              setQuery('');
-              clearAllSearchHighlights();
-            }
-            return next;
-          })
-        }
-        query={query}
-        onQueryChange={setQuery}
-        hits={hits}
-        hitIndex={hitIndex}
-        onGotoHit={gotoHit}
-        onRunSearch={runSearch}
-        matchCase={matchCase}
-        onMatchCaseChange={setMatchCase}
-        wholeWords={wholeWords}
-        onWholeWordsChange={setWholeWords}
-        onToggleCapture={toggleCapture}
-        captureMode={captureMode}
-        zoomIn={zoomIn}
-        zoomOut={zoomOut}
-        scale={scale}
-        setScale={setScale}
-      />
+    <>
+      {/* Fullscreen backdrop overlay - blocks ALL interaction with layer below */}
+      {isFullscreen && (
+        <div className='fixed inset-0 z-[60] bg-gray-900/50 backdrop-blur-sm' />
+      )}
 
       <div
-        ref={viewerScrollRef}
-        className={`flex-1 overflow-auto bg-gray-50 min-h-0 ${
-          captureMode ? 'cursor-crosshair' : ''
+        ref={viewerContainerRef}
+        className={`flex flex-col min-h-0 transition-all duration-300 ${
+          isFullscreen
+            ? `fixed top-0 left-0 bottom-0 z-[70] bg-white ${isChatDockOpen ? '' : 'right-0'}`
+            : 'h-full'
         }`}
+        style={fullscreenStyle}
       >
-        <style>{`.textLayer span:hover{font-weight:700}`}</style>
-        {!fileUrl ? (
-          <div className='p-6 text-sm text-gray-500'>No PDF selected.</div>
-        ) : (
-          <PdfPages
-            fileUrl={fileUrl}
-            numPages={numPages}
-            scale={scale}
-            highlights={highlights}
-            selection={sel}
-            captureMode={captureMode}
-            dragBox={dragBox}
-            pageRefs={pageRefs}
-            onPageRender={onPageRender}
-            onStartDrag={onStartDrag}
-            onMoveDrag={onMoveDrag}
-            onEndDrag={onEndDrag}
-            onAction={fire}
-            onAddHighlight={addHighlight}
-            onRemoveHighlight={cancelHighlight}
-            selectedColorDefault={lastColor}
-            onSelectedColorChange={setLastColor}
-            onLoadSuccess={setNumPages}
-          />
-        )}
+        <PdfToolbar
+          showSearch={showSearch}
+          onToggleSearch={() =>
+            setShowSearch((v) => {
+              const next = !v;
+              if (v && !next) {
+                setQuery('');
+                clearAllSearchHighlights();
+              }
+              return next;
+            })
+          }
+          query={query}
+          onQueryChange={setQuery}
+          hits={hits}
+          hitIndex={hitIndex}
+          onGotoHit={gotoHit}
+          onRunSearch={runSearch}
+          matchCase={matchCase}
+          onMatchCaseChange={setMatchCase}
+          wholeWords={wholeWords}
+          onWholeWordsChange={setWholeWords}
+          onToggleCapture={toggleCapture}
+          captureMode={captureMode}
+          zoomIn={zoomIn}
+          zoomOut={zoomOut}
+          scale={scale}
+          setScale={setScale}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={toggleFullscreen}
+          onRotateCw={rotateCw}
+          onRotateCcw={rotateCcw}
+          onDownload={handleDownload}
+          fileUrl={fileUrl}
+          currentPage={currentPage}
+          numPages={numPages}
+          onPageChange={handlePageChange}
+          onToggleThumbnails={() => setShowThumbnails((v) => !v)}
+          showThumbnails={showThumbnails}
+        />
+
+        <div className='flex-1 flex min-h-0'>
+          {/* Thumbnails sidebar - show when thumbnails are enabled */}
+          {isFullscreen && showThumbnails && numPages > 0 && fileUrl && (
+            <div className='w-44 border-r border-gray-200 bg-gray-100 overflow-y-auto flex-shrink-0'>
+              <div className='p-2 space-y-2'>
+                <Document file={fileUrl}>
+                  {Array.from({ length: numPages }, (_, idx) => {
+                    const pageNum = idx + 1;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        className={`w-full p-2 rounded-lg border transition-all ${
+                          currentPage === pageNum
+                            ? 'border-orange-500 bg-orange-50 shadow-sm'
+                            : 'border-gray-300 bg-white hover:border-orange-300 hover:bg-orange-50/50'
+                        }`}
+                      >
+                        <div className='overflow-hidden rounded mb-1 bg-white shadow-sm'>
+                          <Page
+                            pageNumber={pageNum}
+                            width={120}
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
+                          />
+                        </div>
+                        <div className='text-xs text-center text-gray-600'>
+                          {pageNum}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </Document>
+              </div>
+            </div>
+          )}
+
+          {/* Main PDF content */}
+          <div
+            ref={viewerScrollRef}
+            className={`flex-1 overflow-auto bg-gray-50 min-h-0 relative ${
+              captureMode ? 'cursor-crosshair' : ''
+            }`}
+          >
+            <style>{`
+            .textLayer span:hover{font-weight:700}
+            .pdf-pages-container {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+            }
+          `}</style>
+            {!fileUrl ? (
+              <div className='p-6 text-sm text-gray-500'>No PDF selected.</div>
+            ) : (
+              <>
+                <PdfPages
+                  fileUrl={fileUrl}
+                  numPages={numPages}
+                  scale={scale}
+                  rotation={rotation}
+                  highlights={highlights}
+                  selection={sel}
+                  captureMode={captureMode}
+                  dragBox={dragBox}
+                  pageRefs={pageRefs}
+                  onPageRender={onPageRender}
+                  onStartDrag={onStartDrag}
+                  onMoveDrag={onMoveDrag}
+                  onEndDrag={onEndDrag}
+                  onAction={fire}
+                  onAddHighlight={addHighlight}
+                  onRemoveHighlight={cancelHighlight}
+                  selectedColorDefault={lastColor}
+                  onSelectedColorChange={setLastColor}
+                  onLoadSuccess={setNumPages}
+                />
+              </>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

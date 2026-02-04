@@ -48,6 +48,12 @@ type Props = {
   // Feature toggles
   showQuickActions?: boolean;
   showSuggestions?: boolean;
+
+  // Callback for open state changes (for fullscreen PDF viewer integration)
+  onOpenChange?: (isOpen: boolean) => void;
+
+  // Whether PDF viewer is in fullscreen mode (for z-index adjustment)
+  isPdfFullscreen?: boolean;
 };
 
 const LOADING_STEPS = [
@@ -72,6 +78,8 @@ export default function ChatDock({
   onRemovePaper,
   showQuickActions = true,
   showSuggestions = true,
+  onOpenChange,
+  isPdfFullscreen = false,
 }: Props) {
   // Use messages prop if provided, otherwise fall back to session?.messages
   const messages = messagesProp ?? session?.messages ?? [];
@@ -82,6 +90,11 @@ export default function ChatDock({
 
   // Track if user manually closed the dock
   const [userClosed, setUserClosed] = useState(false);
+
+  // Notify parent when open state changes
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
 
   useEffect(() => {
     let intervalId: number | undefined;
@@ -133,9 +146,17 @@ export default function ChatDock({
   }, [open, messages.length, isLoading]);
 
   const WIDTH = position === 'fixed' ? 'w-[450px]' : 'w-full';
-  const HEIGHT = position === 'fixed' ? 'h-[81vh]' : 'h-full';
+  const HEIGHT =
+    position === 'fixed' ? (isPdfFullscreen ? 'h-full' : 'h-[81vh]') : 'h-full';
   const currentStepLabel =
     LOADING_STEPS[Math.min(stepIndex, LOADING_STEPS.length - 1)];
+
+  // Z-index: higher when PDF is fullscreen to appear above the overlay
+  const zIndex = isPdfFullscreen ? 'z-[80]' : 'z-50';
+  // Position adjustments for fullscreen mode
+  const positionClasses = isPdfFullscreen
+    ? `fixed right-0 top-0 bottom-0 ${zIndex} ${WIDTH}`
+    : `fixed right-4 bottom-4 ${zIndex} ${WIDTH} ${HEIGHT}`;
 
   // Determine header title based on mode
   const headerTitle =
@@ -149,9 +170,9 @@ export default function ChatDock({
         <div
           className={`${
             position === 'fixed'
-              ? `fixed right-4 bottom-4 z-50 ${WIDTH} ${HEIGHT}`
+              ? positionClasses
               : `relative ${WIDTH} ${HEIGHT}`
-          } bg-white border border-gray-200 rounded-lg flex flex-col pointer-events-auto overflow-hidden shadow-2xl`}
+          } bg-white border border-gray-200 ${isPdfFullscreen ? 'rounded-none border-l' : 'rounded-lg'} flex flex-col pointer-events-auto overflow-hidden shadow-2xl`}
         >
           {/* Header */}
           <div
@@ -232,7 +253,7 @@ export default function ChatDock({
           )}
 
           {/* Messages Area */}
-          <div className='flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0 bg-gray-50/30 relative'>
+          <div className='flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0 bg-white relative'>
             {messages.length === 0 && showSuggestions && (
               <div className='mb-6'>
                 {mode === 'multi' && selectedPapers.length === 0 ? (
@@ -300,9 +321,11 @@ export default function ChatDock({
       )}
 
       {!open && (
-        <div className={`fixed right-4 bottom-3 z-40 ${WIDTH}`}>
+        <div
+          className={`fixed ${isPdfFullscreen ? 'right-0 bottom-0' : 'right-4 bottom-3'} ${isPdfFullscreen ? 'z-[80]' : 'z-40'} ${WIDTH}`}
+        >
           <button
-            className='w-full bg-white border border-gray-300 rounded-lg flex items-center justify-between px-4 py-3 hover:bg-gray-50 shadow-lg transition-all'
+            className={`w-full bg-white border border-gray-300 ${isPdfFullscreen ? 'rounded-none border-l border-b-0' : 'rounded-lg'} flex items-center justify-between px-4 py-3 hover:bg-gray-50 shadow-lg transition-all`}
             onClick={handleToggle}
           >
             <span className='flex items-center gap-2'>

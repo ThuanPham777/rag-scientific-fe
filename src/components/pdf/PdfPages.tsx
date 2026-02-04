@@ -37,6 +37,7 @@ type Props = {
   fileUrl?: string;
   numPages: number;
   scale: number;
+  rotation?: number;
   highlights: Highlight[];
   selection: SelectionState;
   captureMode: boolean;
@@ -54,7 +55,7 @@ type Props = {
 
   onAction: (
     action: 'explain' | 'summarize' | 'related' | 'highlight' | 'save',
-    payload: { text: string; pageNumber: number; rects: HighlightRect[] }
+    payload: { text: string; pageNumber: number; rects: HighlightRect[] },
   ) => void;
   onAddHighlight: (color?: string) => void;
   onRemoveHighlight: () => void;
@@ -67,6 +68,7 @@ export default function PdfPages({
   fileUrl,
   numPages,
   scale,
+  rotation = 0,
   highlights,
   selection,
   captureMode,
@@ -98,7 +100,7 @@ export default function PdfPages({
   }
 
   return (
-    <div className='flex flex-col items-center py-6'>
+    <div className='flex flex-col items-center py-6 min-w-fit'>
       <Document
         file={fileUrl}
         onLoadSuccess={(d) => onLoadSuccess(d.numPages)}
@@ -118,7 +120,7 @@ export default function PdfPages({
           Array.from({ length: numPages }, (_, idx) => {
             const pageNumber = idx + 1;
             const pageHighlights = highlights.filter(
-              (h) => h.pageNumber === pageNumber
+              (h) => h.pageNumber === pageNumber,
             );
             // Scale selection coordinates from when selection was made to current page size
             let show = null;
@@ -160,7 +162,7 @@ export default function PdfPages({
                     'PdfPages: Mouse down on page',
                     pageNumber,
                     'captureMode:',
-                    captureMode
+                    captureMode,
                   );
                   onStartDrag(e, pageNumber);
                 }}
@@ -173,6 +175,7 @@ export default function PdfPages({
                 <Page
                   pageNumber={pageNumber}
                   scale={scale}
+                  rotate={rotation}
                   renderAnnotationLayer
                   renderTextLayer
                   onRenderSuccess={() => onPageRender(pageNumber)}
@@ -192,25 +195,28 @@ export default function PdfPages({
                     // stored rects may be normalized (0..1) or legacy pixels.
                     const pageEl = pageRefs.current[pageNumber];
                     const textLayer =
-                      (pageEl?.querySelector('.textLayer') as HTMLElement | null) || pageEl;
+                      (pageEl?.querySelector(
+                        '.textLayer',
+                      ) as HTMLElement | null) || pageEl;
 
                     let top = r.top;
                     let left = r.left;
                     let width = r.width;
                     let height = r.height;
-                    
+
                     if (pageEl && textLayer) {
                       const pageBox = pageEl.getBoundingClientRect();
                       const layerBox = textLayer.getBoundingClientRect();
                       const offsetTop = layerBox.top - pageBox.top;
                       const offsetLeft = layerBox.left - pageBox.left;
-                    
+
                       top =
                         (r.top <= 1 ? r.top * textLayer.clientHeight : r.top) +
                         offsetTop;
                       left =
-                        (r.left <= 1 ? r.left * textLayer.clientWidth : r.left) +
-                        offsetLeft;
+                        (r.left <= 1
+                          ? r.left * textLayer.clientWidth
+                          : r.left) + offsetLeft;
                       width =
                         r.width <= 1
                           ? r.width * textLayer.clientWidth
@@ -234,7 +240,7 @@ export default function PdfPages({
                         }}
                       />
                     );
-                  })
+                  }),
                 )}
 
                 {/* popup khi bôi đen */}

@@ -17,6 +17,11 @@ import { useAuthStore } from '../../store/useAuthStore';
 type Props = {
   activePaper?: Paper;
   onPdfAction?: (action: 'explain' | 'summarize', selectedText: string) => void;
+  // Chat dock integration for fullscreen mode
+  isChatDockOpen?: boolean;
+  chatDockWidth?: number;
+  // Callback when fullscreen state changes
+  onFullscreenChange?: (isFullscreen: boolean) => void;
 };
 
 type PendingJump = {
@@ -26,7 +31,13 @@ type PendingJump = {
 
 type ActiveTab = 'pdf' | 'summary' | 'related';
 
-export default function PdfPanel({ activePaper, onPdfAction }: Props) {
+export default function PdfPanel({
+  activePaper,
+  onPdfAction,
+  isChatDockOpen = true,
+  chatDockWidth = 450,
+  onFullscreenChange,
+}: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('pdf');
 
   // Data states
@@ -211,6 +222,10 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                   }
                 : undefined
             }
+            // Chat dock integration for fullscreen mode
+            isChatDockOpen={isChatDockOpen}
+            chatDockWidth={chatDockWidth}
+            onFullscreenChange={onFullscreenChange}
             onAction={(action, payload) => {
               // Check if guest mode (from localStorage) or authenticated
               const isAuthenticated = useAuthStore.getState().isAuthenticated;

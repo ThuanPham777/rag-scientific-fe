@@ -520,12 +520,21 @@ export default function ChatPage() {
   // RENDER
   // ============================================
 
+  // State for ChatDock open status (for fullscreen PDF viewer integration)
+  const [isChatDockOpen, setIsChatDockOpen] = useState(true);
+  // State for PDF fullscreen mode
+  const [isPdfFullscreen, setIsPdfFullscreen] = useState(false);
+  const CHAT_DOCK_WIDTH = 450;
+
   return (
     <div className='pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2'>
       <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3'>
         <PdfPanel
           activePaper={activePaper}
           onPdfAction={handlePdfAction}
+          isChatDockOpen={isChatDockOpen}
+          chatDockWidth={CHAT_DOCK_WIDTH}
+          onFullscreenChange={setIsPdfFullscreen}
         />
         <div
           className='hidden lg:block'
@@ -541,6 +550,8 @@ export default function ChatPage() {
         isLoading={isGuest ? guestIsLoading : isChatLoading}
         defaultOpen={true}
         activePaperId={activePaper?.ragFileId}
+        onOpenChange={setIsChatDockOpen}
+        isPdfFullscreen={isPdfFullscreen}
       />
     </div>
   );
