@@ -175,12 +175,12 @@ export default function PdfPanel({
   useEffect(() => {
     if (activePendingJump && activeTab === 'pdf') {
       // Khi đã ở tab PDF và có pendingJump, chờ để PdfViewer nhận props và scroll/highlight
-      // Tăng lên 5s để đảm bảo PDF có đủ thời gian load (đặc biệt khi mở tab mới)
-      console.log('[PdfPanel] Starting cleanup timer for pendingJump (5s)');
+      // Tăng lên 10s để đảm bảo PDF có đủ thời gian load (đặc biệt khi mở tab mới từ multi-paper chat)
+      console.log('[PdfPanel] Starting cleanup timer for pendingJump (10s)');
       const timer = setTimeout(() => {
         console.log('[PdfPanel] Clearing pendingJump after timeout');
         setPendingJump(null);
-      }, 5000);
+      }, 10000);
       return () => clearTimeout(timer);
     }
   }, [activePendingJump, activeTab, setPendingJump]);

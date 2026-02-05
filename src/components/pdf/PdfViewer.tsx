@@ -137,6 +137,7 @@ export default function PdfViewer({
   // === Jump effects ===
   usePdfJumpEffect(jumpToPageProp, jumpHighlight, {
     pageRefs,
+    viewerScrollRef,
     numPages,
     onAddTemporaryHighlight: addTemporaryHighlight,
   });
