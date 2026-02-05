@@ -165,6 +165,56 @@ export type FolderWithPapers = Folder & {
 };
 
 // ============================
+// 🔹 API Response Highlight
+// ============================
+
+export type HighlightColor =
+  | 'YELLOW'
+  | 'RED'
+  | 'GREEN'
+  | 'BLUE'
+  | 'PURPLE'
+  | 'ORANGE'
+  | 'PINK';
+
+export type SelectionRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type HighlightComment = {
+  id: string;
+  highlightId: string;
+  userId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HighlightItem = {
+  id: string;
+  paperId: string;
+  userId: string;
+  pageNumber: number;
+  selectionRects: SelectionRect[];
+  selectedText: string;
+  textPrefix?: string;
+  textSuffix?: string;
+  color: HighlightColor;
+  createdAt: string;
+  updatedAt: string;
+  _count: {
+    comments: number;
+  };
+};
+
+export type HighlightItemWithComments = HighlightItem & {
+  comments: HighlightComment[];
+};
+
+// ============================
 // 🔹 API Response Types
 // ============================
 export interface ApiResponse<T> {
