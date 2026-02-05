@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import HighlightEditor from './HighlightEditor';
+import { useAuthStore } from '@/store/useAuthStore';
 
 type HighlightRect = {
   top: number;
@@ -64,6 +65,7 @@ export default function SelectionActionMenu({
   onSaveComment,
   pageRef,
 }: Props) {
+  const { isAuthenticated } = useAuthStore();
   const popupRef = useRef<HTMLDivElement>(null);
   const [showColorPopup, setShowColorPopup] = useState(false);
   const [selectedColor, setSelectedColor] = useState<string | undefined>(
@@ -224,7 +226,7 @@ export default function SelectionActionMenu({
           </button>
         </div>
       )}
-      {showColorPopup && (
+      {isAuthenticated && showColorPopup && (
         <HighlightEditor
           onSelectColor={handleSelectColor}
           onRemoveHighlight={handleRemoveHighlight}
