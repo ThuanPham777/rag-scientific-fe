@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Upload, Loader2 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useMultiPaperChatStore } from '../store/useMultiPaperChatStore';
@@ -32,7 +32,11 @@ import ChatDock from '../components/chat/ChatDock';
 
 export default function MyLibraryPage() {
   const navigate = useNavigate();
+  const { folderId: urlFolderId } = useParams<{ folderId?: string }>();
   const { isAuthenticated } = useAuthStore();
+
+  // Determine if we're in folder view mode (via URL)
+  const isInFolderView = !!urlFolderId;
 
   // =========================================
   // React Query hooks (server state)
@@ -87,7 +91,10 @@ export default function MyLibraryPage() {
   );
 
   // View state (UI state)
-  const [selectedView, setSelectedView] = useState<'all' | string>('all');
+  // If URL has folderId, use it; otherwise default to 'all'
+  const [selectedView, setSelectedView] = useState<'all' | string>(
+    urlFolderId || 'all',
+  );
   const [foldersExpanded, setFoldersExpanded] = useState(true);
 
   // Folder dialog states (UI state)
@@ -98,18 +105,43 @@ export default function MyLibraryPage() {
   const [deletingFolder, setDeletingFolder] = useState<FolderType | null>(null);
   const [folderName, setFolderName] = useState('');
 
-  // Sync selectedView with Zustand store
+  // Sync selectedView with URL params when navigating via URL
   useEffect(() => {
-    if (selectedView === 'all') {
-      clearSelectedFolder();
+    if (urlFolderId) {
+      setSelectedView(urlFolderId);
+      selectFolder(urlFolderId);
     } else {
-      selectFolder(selectedView);
+      setSelectedView('all');
+      clearSelectedFolder();
     }
-  }, [selectedView, selectFolder, clearSelectedFolder]);
+  }, [urlFolderId, selectFolder, clearSelectedFolder]);
 
-  // Upload hook
+  // Sync selectedView with Zustand store (for sidebar navigation)
+  useEffect(() => {
+    if (!urlFolderId) {
+      // Only sync with store if not in URL folder view
+      if (selectedView === 'all') {
+        clearSelectedFolder();
+      } else {
+        selectFolder(selectedView);
+      }
+    }
+  }, [selectedView, selectFolder, clearSelectedFolder, urlFolderId]);
+
+  // Get current folder name for auto-assign mode
+  const currentFolderForUpload = useMemo(() => {
+    if (isInFolderView && urlFolderId) {
+      return folders.find((f) => f.id === urlFolderId);
+    }
+    return undefined;
+  }, [isInFolderView, urlFolderId, folders]);
+
+  // Upload hook with folder context awareness
   const upload = useUpload({
     selectedView,
+    // When in folder view (via URL), enable auto-assign mode
+    currentFolderId: isInFolderView ? urlFolderId : undefined,
+    currentFolderName: currentFolderForUpload?.name,
   });
 
   // Paper actions hook
@@ -121,6 +153,19 @@ export default function MyLibraryPage() {
       navigate('/');
     }
   }, [isAuthenticated, navigate]);
+
+  // Handle view change with URL navigation
+  const handleViewChange = useCallback(
+    (view: 'all' | string) => {
+      setSelectedView(view);
+      if (view === 'all') {
+        navigate('/library');
+      } else {
+        navigate(`/library/folder/${view}`);
+      }
+    },
+    [navigate],
+  );
 
   // Folder handlers using React Query mutations
   const handleCreateFolder = async () => {
@@ -156,7 +201,7 @@ export default function MyLibraryPage() {
       setShowDeleteDialog(false);
       setDeletingFolder(null);
       if (selectedView === deletingFolder.id) {
-        setSelectedView('all');
+        handleViewChange('all');
       }
     } catch {
       // Error handled by mutation
@@ -217,7 +262,7 @@ export default function MyLibraryPage() {
         selectedView={selectedView}
         foldersExpanded={foldersExpanded}
         isLoadingFolders={isLoadingFolders}
-        onSelectView={setSelectedView}
+        onSelectView={handleViewChange}
         onToggleFolders={() => setFoldersExpanded(!foldersExpanded)}
         onCreateFolder={openCreateDialog}
         onEditFolder={openEditDialog}

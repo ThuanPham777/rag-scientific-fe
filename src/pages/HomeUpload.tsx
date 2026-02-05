@@ -193,14 +193,16 @@ export default function HomeUpload() {
         <FileDropzone onUpload={onUpload} />
       </div>
 
-      {/* Folder Selection Modal (for logged-in users) */}
-      <FolderSelectModal
-        open={showFolderModal}
-        fileName={pendingFile?.file.name || ''}
-        isUploading={isUploading}
-        onClose={handleFolderModalClose}
-        onConfirm={handleFolderConfirm}
-      />
+      {/* Folder Selection Modal (for logged-in users only) */}
+      {isAuthenticated && (
+        <FolderSelectModal
+          open={showFolderModal}
+          fileName={pendingFile?.file.name || ''}
+          isUploading={isUploading}
+          onClose={handleFolderModalClose}
+          onConfirm={handleFolderConfirm}
+        />
+      )}
     </div>
   );
 }

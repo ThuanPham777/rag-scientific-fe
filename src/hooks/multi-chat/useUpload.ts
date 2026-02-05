@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { validateFile } from '../../utils/file';
@@ -9,11 +9,28 @@ import type { UploadItem } from '../../types/upload';
 interface UseUploadOptions {
   onUploadComplete?: () => void;
   selectedView?: string;
+  /**
+   * When provided, files will be automatically assigned to this folder
+   * without requiring folder selection (folder view context).
+   */
+  currentFolderId?: string;
+  /**
+   * Name of the current folder (for display in auto-assign mode)
+   */
+  currentFolderName?: string;
 }
 
 export function useUpload(options: UseUploadOptions = {}) {
-  const { onUploadComplete, selectedView = 'all' } = options;
+  const {
+    onUploadComplete,
+    selectedView = 'all',
+    currentFolderId,
+    currentFolderName,
+  } = options;
   const queryClient = useQueryClient();
+
+  // Determine if we're in auto-assign mode (folder view context)
+  const isAutoAssignMode = useMemo(() => !!currentFolderId, [currentFolderId]);
 
   const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -30,6 +47,68 @@ export function useUpload(options: UseUploadOptions = {}) {
   const handleUploadClick = useCallback(() => {
     uploadInputRef.current?.click();
   }, []);
+
+  // Helper function to process upload directly without dialog
+  const processDirectUpload = useCallback(
+    async (items: UploadItem[], folderId: string) => {
+      if (isUploading || items.length === 0) return;
+
+      setUploadQueue(items);
+      setIsUploading(true);
+
+      for (const item of items) {
+        // Update status to uploading
+        setUploadQueue((prev) =>
+          prev.map((q) =>
+            q.id === item.id ? { ...q, status: 'uploading' } : q,
+          ),
+        );
+
+        try {
+          await uploadPdf(
+            item.file,
+            (progress) => {
+              setUploadQueue((prev) =>
+                prev.map((q) => (q.id === item.id ? { ...q, progress } : q)),
+              );
+            },
+            folderId,
+          );
+
+          // Success
+          setUploadQueue((prev) =>
+            prev.map((q) =>
+              q.id === item.id ? { ...q, status: 'done', progress: 100 } : q,
+            ),
+          );
+          toast.success(`Uploaded: ${item.file.name}`);
+        } catch (err: any) {
+          // Error
+          setUploadQueue((prev) =>
+            prev.map((q) =>
+              q.id === item.id
+                ? {
+                    ...q,
+                    status: 'error',
+                    error: err.message || 'Upload failed',
+                  }
+                : q,
+            ),
+          );
+          toast.error(`Failed to upload ${item.file.name}`);
+        }
+      }
+
+      // Invalidate React Query caches to refetch data
+      queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: folderKeys.all });
+
+      setIsUploading(false);
+      setUploadQueue([]);
+      onUploadComplete?.();
+    },
+    [isUploading, queryClient, onUploadComplete],
+  );
 
   const onFilesSelected = useCallback(
     (files: FileList | null) => {
@@ -52,21 +131,27 @@ export function useUpload(options: UseUploadOptions = {}) {
       }
 
       if (newItems.length > 0) {
-        setUploadQueue(newItems);
-        // If already in a folder, pre-select it
-        if (selectedView !== 'all') {
-          setUploadFolderId(selectedView);
+        // In auto-assign mode (folder view), upload directly without dialog
+        if (isAutoAssignMode && currentFolderId) {
+          processDirectUpload(newItems, currentFolderId);
         } else {
-          setUploadFolderId('');
+          // Show dialog for folder selection
+          setUploadQueue(newItems);
+          if (selectedView !== 'all') {
+            // Pre-select the current folder from sidebar
+            setUploadFolderId(selectedView);
+          } else {
+            setUploadFolderId('');
+          }
+          setShowUploadDialog(true);
         }
-        setShowUploadDialog(true);
       }
       // Reset input
       if (uploadInputRef.current) {
         uploadInputRef.current.value = '';
       }
     },
-    [selectedView],
+    [selectedView, isAutoAssignMode, currentFolderId, processDirectUpload],
   );
 
   const removeFromQueue = useCallback((id: string) => {
@@ -159,6 +244,10 @@ export function useUpload(options: UseUploadOptions = {}) {
     newFolderName,
     isCreating: createFolderMutation.isPending,
     uploadInputRef,
+
+    // Auto-assign mode (folder view context)
+    isAutoAssignMode,
+    currentFolderName,
 
     // Setters
     setUploadFolderId,

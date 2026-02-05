@@ -26,8 +26,9 @@ export const folderKeys = {
 
 /**
  * Hook to fetch all folders
+ * @param enabled - Whether to enable the query (default: true)
  */
-export function useFolders() {
+export function useFolders(enabled: boolean = true) {
   return useQuery({
     queryKey: folderKeys.lists(),
     queryFn: async () => {
@@ -35,6 +36,7 @@ export function useFolders() {
       return response.data;
     },
     staleTime: 30 * 1000, // 30 seconds
+    enabled,
   });
 }
 

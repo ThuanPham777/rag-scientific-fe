@@ -33,6 +33,16 @@ export default function App() {
           }
         />
 
+        {/* Protected route - Folder View (folder-specific library view) */}
+        <Route
+          path='/library/folder/:folderId'
+          element={
+            <ProtectedRoute>
+              <MyLibraryPage />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Public route - Chat (allows both guest and authenticated users) */}
         <Route
           path='/chat'
