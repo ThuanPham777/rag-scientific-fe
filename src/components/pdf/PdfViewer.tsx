@@ -1,9 +1,10 @@
 // src/components/pdf/PdfViewerRefactored.tsx
 // Refactored PdfViewer with separated logic using custom hooks
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useMemo, useEffect } from 'react';
 import { Document, Page } from 'react-pdf';
 import PdfToolbar from './PdfToolbar';
 import PdfPages from './PdfPages';
+import AuthModal from '../auth/AuthModal';
 
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -12,13 +13,14 @@ import {
   usePdfState,
   usePdfZoom,
   usePdfFullscreen,
-  usePdfSelection,
-  usePdfHighlights,
+  usePdfSelectionActionMenu,
+  usePdfHighlightsSync,
   usePdfSearch,
   usePdfCapture,
   usePdfJumpEffect,
   usePdfKeyboard,
 } from '../../hooks/pdf';
+import { useAuthStore } from '../../store/useAuthStore';
 
 type HighlightRect = {
   top: number;
@@ -34,6 +36,7 @@ type JumpHighlight = {
 
 type Props = {
   fileUrl?: string;
+  paperId?: string;
   jumpToPage?: number;
   jumpHighlight?: JumpHighlight | null;
   onAction?: (
@@ -52,6 +55,7 @@ type Props = {
 
 export default function PdfViewer({
   fileUrl,
+  paperId,
   jumpToPage: jumpToPageProp,
   jumpHighlight,
   onAction,
@@ -85,23 +89,90 @@ export default function PdfViewer({
   // === Thumbnails ===
   const [showThumbnails, setShowThumbnails] = useState(false);
 
+  // === Auth state ===
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
   // === Selection ===
   const { selection, clearSelection, scaleSelectionToCurrent } =
-    usePdfSelection({
+    usePdfSelectionActionMenu({
       pageRefs,
       viewerScrollRef,
       disabled: false,
     });
 
-  // === Highlights ===
-  const {
-    highlights,
-    lastColor,
-    setLastColor,
-    addHighlight: addHighlightToStore,
-    removeHighlight,
-    addTemporaryHighlight,
-  } = usePdfHighlights({ pageRefs });
+  // === Highlights (synced with server) ===
+  const serverHighlights = usePdfHighlightsSync({
+    paperId,
+    pageRefs,
+    enabled: !!paperId && isAuthenticated,
+  });
+
+  // === Temporary highlights (for jump/citation features - local state only) ===
+  const [tempHighlights, setTempHighlights] = useState<
+    Array<{
+      id: string;
+      pageNumber: number;
+      rects: HighlightRect[];
+      text: string;
+      color?: string;
+      isFading?: boolean; // For fade animation
+    }>
+  >([]);
+
+  // Add temporary highlight (for jump/citation features)
+  const addTemporaryHighlight = useCallback(
+    (pageNumber: number, rect: HighlightRect) => {
+      const tempId = `jump-${Date.now()}`;
+      setTempHighlights((prev) => [
+        ...prev.filter((h) => !h.id.startsWith('jump-')), // Remove old jump highlights
+        {
+          id: tempId,
+          pageNumber,
+          rects: [rect],
+          text: '',
+          color: '#ffc107', // Amber color for jump highlights
+          isFading: false,
+        },
+      ]);
+
+      // Start fade animation after 2 seconds
+      setTimeout(() => {
+        setTempHighlights((prev) =>
+          prev.map((h) => (h.id === tempId ? { ...h, isFading: true } : h)),
+        );
+      }, 2000);
+
+      // Remove after fade completes (3 seconds total)
+      setTimeout(() => {
+        setTempHighlights((prev) => prev.filter((h) => h.id !== tempId));
+      }, 3000);
+    },
+    [],
+  );
+
+  // Use last color from local state
+  const [lastColor, setLastColor] = useState<string | undefined>('#ffd700');
+
+  // Merge server highlights with temporary highlights
+  // Note: No local storage - highlights only exist on server or as temporary jump highlights
+  const highlights = useMemo(() => {
+    // Add isFading property to temp highlights for type compatibility
+    const typedTempHighlights = tempHighlights.map((h) => ({
+      ...h,
+      isFading: h.isFading ?? false,
+    }));
+
+    // Server highlights are only available for authenticated users with paperId
+    if (paperId && isAuthenticated && serverHighlights.highlights) {
+      return [
+        ...serverHighlights.highlights.map((h) => ({ ...h, isFading: false })),
+        ...typedTempHighlights,
+      ];
+    }
+    // For unauthenticated users or no paperId, only show temp highlights (for jump/citation)
+    return typedTempHighlights;
+  }, [paperId, isAuthenticated, serverHighlights.highlights, tempHighlights]);
 
   // === Search ===
   const search = usePdfSearch({
@@ -153,39 +224,144 @@ export default function PdfViewer({
   });
 
   // === Action handlers ===
-  const handleAddHighlight = useCallback(
-    (color?: string) => {
-      if (!selection) return;
-      const scaled = scaleSelectionToCurrent(selection);
-      if (!scaled) return;
-
-      addHighlightToStore(
-        selection.pageNumber,
-        selection.text,
-        scaled.rects,
-        color,
-      );
-
-      onAction?.('highlight', {
-        text: selection.text,
-        pageNumber: selection.pageNumber,
-        rects: scaled.rects,
-      });
-    },
-    [selection, scaleSelectionToCurrent, addHighlightToStore, onAction],
+  // Track created highlight for subsequent updates
+  const [activeHighlightId, setActiveHighlightId] = useState<string | null>(
+    null,
   );
 
-  const handleRemoveHighlight = useCallback(() => {
+  // Reset activeHighlightId when selection changes (new text selected = new highlight)
+  useEffect(() => {
+    // When selection changes, we're dealing with a new highlight, not updating an existing one
+    setActiveHighlightId(null);
+  }, [selection?.text, selection?.pageNumber]);
+
+  const handleAddHighlight = useCallback(
+    async (color?: string, comment?: string, shouldClose = true) => {
+      if (!selection) return;
+
+      // Require authentication for highlighting
+      if (!isAuthenticated) {
+        setShowAuthModal(true);
+        return;
+      }
+
+      // Require paperId for server storage
+      if (!paperId) {
+        console.warn('Cannot create highlight: paperId is missing');
+        clearSelection();
+        return;
+      }
+
+      const highlightColor = color || lastColor || '#ffd700';
+
+      try {
+        // If we already have an active highlight, update its color and add comment
+        if (activeHighlightId) {
+          // Update color
+          await serverHighlights.updateHighlightColor(
+            activeHighlightId,
+            highlightColor,
+          );
+
+          // Add comment if provided
+          if (comment && comment.trim()) {
+            await serverHighlights.addComment(activeHighlightId, comment.trim());
+          }
+
+          // Update last used color
+          if (color) {
+            setLastColor(color);
+          }
+        } else {
+          // Create new highlight
+          const scaled = scaleSelectionToCurrent(selection);
+          if (!scaled) return;
+
+          const result = await serverHighlights.addHighlight(
+            selection.pageNumber,
+            selection.text,
+            scaled.rects,
+            highlightColor,
+            comment,
+          );
+
+          // Store the created highlight ID for potential updates
+          if (result?.id) {
+            setActiveHighlightId(result.id);
+          }
+
+          // Update last used color
+          if (color) {
+            setLastColor(color);
+          }
+
+          onAction?.('highlight', {
+            text: selection.text,
+            pageNumber: selection.pageNumber,
+            rects: scaled.rects,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to save highlight to server:', error);
+      }
+
+      // Only clear selection if explicitly requested
+      if (shouldClose) {
+        setActiveHighlightId(null);
+        clearSelection();
+      }
+    },
+    [
+      selection,
+      scaleSelectionToCurrent,
+      paperId,
+      isAuthenticated,
+      serverHighlights,
+      lastColor,
+      onAction,
+      clearSelection,
+      activeHighlightId,
+    ],
+  );
+
+  // Handler to finalize highlight editing (close the editor)
+  const handleFinalizeHighlight = useCallback(() => {
+    setActiveHighlightId(null);
+    clearSelection();
+  }, [clearSelection]);
+
+  const handleRemoveHighlight = useCallback(async () => {
     if (!selection) {
       clearSelection();
       return;
     }
+
+    // Require authentication for highlight removal
+    if (!isAuthenticated || !paperId) {
+      clearSelection();
+      return;
+    }
+
     const scaled = scaleSelectionToCurrent(selection);
     if (scaled) {
-      removeHighlight(selection.pageNumber, scaled.rects);
+      try {
+        await serverHighlights.removeHighlightByRects(
+          selection.pageNumber,
+          scaled.rects,
+        );
+      } catch (error) {
+        console.error('Failed to remove highlight from server:', error);
+      }
     }
     clearSelection();
-  }, [selection, scaleSelectionToCurrent, removeHighlight, clearSelection]);
+  }, [
+    selection,
+    scaleSelectionToCurrent,
+    paperId,
+    isAuthenticated,
+    serverHighlights,
+    clearSelection,
+  ]);
 
   const fireAction = useCallback(
     (type: 'explain' | 'summarize' | 'related' | 'highlight' | 'save') => {
@@ -314,7 +490,18 @@ export default function PdfViewer({
             }`}
           >
             <style>{`
-              .textLayer span:hover{font-weight:700}
+              /* Remove font-weight change that causes rendering issues */
+              .textLayer {
+                /* Ensure text layer is above highlight layer */
+                z-index: 2 !important;
+              }
+              .textLayer span {
+                /* Prevent font rendering issues */
+                -webkit-font-smoothing: antialiased;
+              }
+              .textLayer ::selection {
+                background-color: rgba(59, 130, 246, 0.3);
+              }
               .pdf-pages-container {
                 display: flex;
                 flex-direction: column;
@@ -342,14 +529,24 @@ export default function PdfViewer({
                 onAction={fireAction}
                 onAddHighlight={handleAddHighlight}
                 onRemoveHighlight={handleRemoveHighlight}
+                onFinalizeHighlight={handleFinalizeHighlight}
                 selectedColorDefault={lastColor}
                 onSelectedColorChange={setLastColor}
                 onLoadSuccess={setNumPages}
+                isAuthenticated={isAuthenticated}
+                paperId={paperId}
               />
             )}
           </div>
         </div>
       </div>
+
+      {/* Auth Modal for unauthenticated highlight attempts */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        initialMode='login'
+      />
     </>
   );
 }

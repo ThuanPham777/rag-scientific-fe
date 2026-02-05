@@ -39,3 +39,18 @@ export {
   useDeleteFolder,
   useMovePaper,
 } from './useFolderQueries';
+
+// Highlight queries and keys
+export {
+  highlightKeys,
+  useHighlights,
+  useHighlightWithComments,
+  useHighlightComments,
+  useCreateHighlight,
+  useUpdateHighlight,
+  useDeleteHighlight,
+  useAddComment,
+} from './useHighlightQueries';
+
+// Comment queries and keys
+export { useUpdateComment, useDeleteComment } from './useCommentQueries';

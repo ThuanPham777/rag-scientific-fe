@@ -218,6 +218,7 @@ export default function PdfPanel({
         >
           <PdfViewer
             fileUrl={activePaper?.localUrl || activePaper?.fileUrl}
+            paperId={activePaper?.id}
             // Truyền pendingJump vào component con
             jumpToPage={activePendingJump?.pageNumber}
             jumpHighlight={

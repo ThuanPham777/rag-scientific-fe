@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Highlighter,
   ListTree,
@@ -11,7 +12,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import ColorPopup from './ColorPopup';
+import HighlightEditor from './HighlightEditor';
+import { useAuthStore } from '@/store/useAuthStore';
 
 type HighlightRect = {
   top: number;
@@ -35,29 +37,57 @@ type Props = {
       pageNumber: number;
       rects: HighlightRect[];
       color?: string;
+      comment?: string;
     },
   ) => void;
-  onAddHighlight: (color?: string) => void;
+  onAddHighlight: (
+    color?: string,
+    comment?: string,
+    shouldClose?: boolean,
+  ) => void;
   onRemoveHighlight?: () => void;
+  onFinalizeHighlight?: () => void; // Called when user clicks Save to close editor
   selectedColorDefault?: string;
   onSelectedColorChange?: (color: string | undefined) => void;
+  onSaveComment?: (comment: string) => void;
+  pageRef?: HTMLDivElement | null;
 };
 
-export default function SelectionPopup({
+export default function SelectionActionMenu({
   selection,
   scale,
   onAction,
   onAddHighlight,
   onRemoveHighlight,
+  onFinalizeHighlight,
   selectedColorDefault,
   onSelectedColorChange,
+  onSaveComment,
+  pageRef,
 }: Props) {
+  const { isAuthenticated } = useAuthStore();
   const popupRef = useRef<HTMLDivElement>(null);
   const [showColorPopup, setShowColorPopup] = useState(false);
   const [selectedColor, setSelectedColor] = useState<string | undefined>(
     selectedColorDefault,
   );
   const [showMainPopup, setShowMainPopup] = useState(true);
+  const [currentComment, setCurrentComment] = useState('');
+  const [fixedPosition, setFixedPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+
+  // Calculate fixed position for portal
+  useEffect(() => {
+    if (pageRef) {
+      const pageRect = pageRef.getBoundingClientRect();
+      setFixedPosition({
+        top: pageRect.top + selection.anchor.y,
+        left: pageRect.left + selection.anchor.x,
+      });
+    }
+  }, [pageRef, selection.anchor.x, selection.anchor.y]);
 
   // Tính toán kích thước popup dựa trên scale
   const popupWidth = Math.max(200, Math.min(320, 200 + (scale - 1) * 50));
@@ -73,35 +103,64 @@ export default function SelectionPopup({
     });
   };
 
-  const handleSelectColor = (color: string) => {
-    setSelectedColor(color);
-    onSelectedColorChange?.(color);
-    onAddHighlight(color);
-  };
+  const handleSelectColor = useCallback(
+    (color: string) => {
+      setSelectedColor(color);
+      onSelectedColorChange?.(color);
+      // Update the highlight color but keep editor open
+      onAddHighlight(color, currentComment, false);
+    },
+    [onSelectedColorChange, onAddHighlight, currentComment],
+  );
 
-  const handleRemoveHighlight = () => {
+  const handleRemoveHighlight = useCallback(() => {
     if (onRemoveHighlight) {
       onRemoveHighlight();
       setShowColorPopup(false);
       setSelectedColor(undefined);
       onSelectedColorChange?.(undefined);
       setShowMainPopup(true);
+      setCurrentComment('');
     }
-  };
+  }, [onRemoveHighlight, onSelectedColorChange]);
+
+  const handleSaveComment = useCallback(
+    (comment: string) => {
+      setCurrentComment(comment);
+      onSaveComment?.(comment);
+      if (selectedColor) {
+        // Save final highlight with comment and close editor
+        onAddHighlight(selectedColor, comment, true);
+      }
+      // Finalize and close
+      onFinalizeHighlight?.();
+    },
+    [onSaveComment, selectedColor, onAddHighlight, onFinalizeHighlight],
+  );
 
   if (!showMainPopup && !showColorPopup) {
     return null;
   }
 
-  return (
+  const stopPropagation = (e: React.MouseEvent) => {
+    e.stopPropagation();
+  };
+
+  // Use portal for proper layering above PDF viewer
+  const popupContent = (
     <div
       ref={popupRef}
-      className='absolute z-20'
+      className='fixed'
       style={{
-        left: selection.anchor.x,
-        top: selection.anchor.y,
+        left: fixedPosition?.left ?? selection.anchor.x,
+        top: fixedPosition?.top ?? selection.anchor.y,
         width: `${popupWidth}px`,
+        zIndex: 99999,
       }}
+      onClick={stopPropagation}
+      onMouseDown={stopPropagation}
+      onMouseUp={stopPropagation}
+      data-selection-popup='true'
     >
       {showMainPopup && !showColorPopup && (
         <div
@@ -148,8 +207,13 @@ export default function SelectionPopup({
           <button
             className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left relative'
             onClick={() => {
+              // Immediately create highlight with default color, keep editor open
+              const defaultColor = selectedColorDefault || '#ffd700';
+              setSelectedColor(defaultColor);
               setShowColorPopup(true);
               setShowMainPopup(false);
+              // Create the highlight immediately but don't close the selection
+              onAddHighlight(defaultColor, undefined, false);
             }}
           >
             <Highlighter size={16} /> Highlight
@@ -162,13 +226,20 @@ export default function SelectionPopup({
           </button>
         </div>
       )}
-      {showColorPopup && (
-        <ColorPopup
+      {isAuthenticated && showColorPopup && (
+        <HighlightEditor
           onSelectColor={handleSelectColor}
           onRemoveHighlight={handleRemoveHighlight}
           selectedColor={selectedColor}
+          onSaveComment={handleSaveComment}
+          initialComment={currentComment}
+          position={fixedPosition ?? undefined}
+          usePortal={false}
         />
       )}
     </div>
   );
+
+  // Render via portal to escape overflow clipping
+  return createPortal(popupContent, document.body);
 }

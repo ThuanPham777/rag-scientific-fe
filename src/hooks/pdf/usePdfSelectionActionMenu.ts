@@ -23,7 +23,7 @@ export interface UseSelectionOptions {
   disabled?: boolean;
 }
 
-export function usePdfSelection(options: UseSelectionOptions) {
+export function usePdfSelectionActionMenu(options: UseSelectionOptions) {
   const { pageRefs, viewerScrollRef, disabled = false } = options;
   const [selection, setSelection] = useState<Selection>(null);
   const popupRef = useRef<HTMLDivElement>(null);
@@ -103,11 +103,26 @@ export function usePdfSelection(options: UseSelectionOptions) {
   // Close on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (!popupRef.current) return;
-      if (!popupRef.current.contains(e.target as Node)) {
-        setSelection(null);
-        window.getSelection()?.removeAllRanges?.();
+      const target = e.target as HTMLElement;
+
+      // Check if click is inside any popup (SelectionPopup, ColorPopup, or HighlightPopup)
+      const isInsidePopup =
+        target.closest('[data-selection-popup="true"]') ||
+        target.closest('[data-color-popup="true"]') ||
+        target.closest('[data-highlight-popup="true"]') ||
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA';
+
+      if (isInsidePopup) {
+        return; // Don't close if clicking inside popup or form elements
       }
+
+      if (popupRef.current && popupRef.current.contains(target)) {
+        return; // Don't close if clicking inside the local popup ref
+      }
+
+      setSelection(null);
+      window.getSelection()?.removeAllRanges?.();
     };
 
     document.addEventListener('mousedown', handleClickOutside);

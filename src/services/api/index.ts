@@ -21,3 +21,9 @@ export * from './guest.api';
 
 // Folder API
 export * from './folder.api';
+
+// Highlight API
+export * from './highlight.api';
+
+// Comment API
+export * from './comment.api';
