@@ -1,9 +1,9 @@
 // src/hooks/useGoogleAuth.ts
 // Google OAuth 2.0 Authorization Code Flow with PKCE
 import { useState, useCallback } from 'react';
-import { GOOGLE_CLIENT_ID, GOOGLE_REDIRECT_URI } from '../config/env';
-import { googleCodeAuth } from '../services/api/auth.api';
-import { useAuthStore } from '../store/useAuthStore';
+import { GOOGLE_CLIENT_ID, GOOGLE_REDIRECT_URI } from '../../config/env';
+import { googleCodeAuth } from '../../services/api/auth.api';
+import { useAuthStore } from '../../store/useAuthStore';
 
 // =====================================================
 // PKCE Helper Functions

@@ -1,10 +1,10 @@
 import { useState, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
-import { validateFile } from '../utils/file';
-import { uploadPdf } from '../services';
-import { usePaperStore } from '../store/usePaperStore';
-import { useFolderStore } from '../store/useFolderStore';
-import type { UploadItem } from '../types/upload';
+import { useQueryClient } from '@tanstack/react-query';
+import { validateFile } from '../../utils/file';
+import { uploadPdf } from '../../services';
+import { useCreateFolder, paperKeys, folderKeys } from '../queries';
+import type { UploadItem } from '../../types/upload';
 
 interface UseUploadOptions {
   onUploadComplete?: () => void;
@@ -13,6 +13,7 @@ interface UseUploadOptions {
 
 export function useUpload(options: UseUploadOptions = {}) {
   const { onUploadComplete, selectedView = 'all' } = options;
+  const queryClient = useQueryClient();
 
   const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -22,8 +23,9 @@ export function useUpload(options: UseUploadOptions = {}) {
   const [newFolderName, setNewFolderName] = useState('');
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const { addPaper } = usePaperStore();
-  const { createFolder, isCreating } = useFolderStore();
+
+  // React Query mutation for folder creation
+  const createFolderMutation = useCreateFolder();
 
   const handleUploadClick = useCallback(() => {
     uploadInputRef.current?.click();
@@ -86,14 +88,17 @@ export function useUpload(options: UseUploadOptions = {}) {
       );
 
       try {
-        const { paper } = await uploadPdf(item.file, (progress) => {
-          setUploadQueue((prev) =>
-            prev.map((q) => (q.id === item.id ? { ...q, progress } : q)),
-          );
-        });
+        await uploadPdf(
+          item.file,
+          (progress) => {
+            setUploadQueue((prev) =>
+              prev.map((q) => (q.id === item.id ? { ...q, progress } : q)),
+            );
+          },
+          uploadFolderId || undefined,
+        );
 
         // Success
-        addPaper(paper);
         setUploadQueue((prev) =>
           prev.map((q) =>
             q.id === item.id ? { ...q, status: 'done', progress: 100 } : q,
@@ -111,9 +116,13 @@ export function useUpload(options: UseUploadOptions = {}) {
       }
     }
 
+    // Invalidate React Query caches to refetch data
+    queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
+    queryClient.invalidateQueries({ queryKey: folderKeys.all });
+
     setIsUploading(false);
     onUploadComplete?.();
-  }, [isUploading, uploadQueue, addPaper, onUploadComplete]);
+  }, [isUploading, uploadQueue, uploadFolderId, queryClient, onUploadComplete]);
 
   const closeUploadDialog = useCallback(() => {
     if (isUploading) return;
@@ -126,13 +135,19 @@ export function useUpload(options: UseUploadOptions = {}) {
 
   const handleCreateFolderInUpload = useCallback(async () => {
     if (!newFolderName.trim()) return;
-    const result = await createFolder({ name: newFolderName.trim() });
-    if (result) {
-      setUploadFolderId(result.id);
-      setShowNewFolderInput(false);
-      setNewFolderName('');
+    try {
+      const result = await createFolderMutation.mutateAsync({
+        name: newFolderName.trim(),
+      });
+      if (result.data) {
+        setUploadFolderId(result.data.id);
+        setShowNewFolderInput(false);
+        setNewFolderName('');
+      }
+    } catch {
+      // Error handled by mutation
     }
-  }, [newFolderName, createFolder]);
+  }, [newFolderName, createFolderMutation]);
 
   return {
     // State
@@ -142,7 +157,7 @@ export function useUpload(options: UseUploadOptions = {}) {
     uploadFolderId,
     showNewFolderInput,
     newFolderName,
-    isCreating,
+    isCreating: createFolderMutation.isPending,
     uploadInputRef,
 
     // Setters

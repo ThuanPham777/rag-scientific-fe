@@ -1,12 +1,15 @@
 // src/hooks/queries/useChatQueries.ts
 // React Query hooks for chat operations
+// This is the primary source of truth for message data (server state)
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   sendQuery,
   getMessageHistory,
   explainRegion,
   clearChatHistory,
+  askMultiPaper,
 } from '../../services';
 import type { ChatMessage } from '../../utils/types';
 
@@ -29,11 +32,13 @@ export function useMessageHistory(
     queryKey: chatKeys.messageList(conversationId!),
     queryFn: () => getMessageHistory(conversationId!, paperId),
     enabled: !!conversationId,
+    staleTime: 60 * 1000, // 1 minute
   });
 }
 
 /**
  * Hook to send a chat message
+ * Supports optimistic updates for better UX
  */
 export function useSendMessage() {
   const queryClient = useQueryClient();
@@ -56,6 +61,44 @@ export function useSendMessage() {
         chatKeys.messageList(variables.conversationId),
         (old) => (old ? [...old, data.assistantMsg] : [data.assistantMsg]),
       );
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to send message';
+      toast.error(msg);
+    },
+  });
+}
+
+/**
+ * Hook to send a multi-paper chat message
+ */
+export function useSendMultiPaperMessage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      paperIds,
+      question,
+      conversationId,
+    }: {
+      paperIds: string[];
+      question: string;
+      conversationId?: string;
+    }) => {
+      return askMultiPaper(paperIds, question, conversationId);
+    },
+    onSuccess: (data) => {
+      if (data.conversationId) {
+        // Update the message cache
+        queryClient.setQueryData<ChatMessage[]>(
+          chatKeys.messageList(data.conversationId),
+          (old) => (old ? [...old, data.assistantMsg] : [data.assistantMsg]),
+        );
+      }
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to send message';
+      toast.error(msg);
     },
   });
 }
@@ -89,9 +132,16 @@ export function useExplainRegion() {
         );
       }
     },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to explain region';
+      toast.error(msg);
+    },
   });
 }
 
+/**
+ * Hook to clear chat history
+ */
 export function useClearChatHistory() {
   const queryClient = useQueryClient();
 
@@ -102,6 +152,12 @@ export function useClearChatHistory() {
         chatKeys.messageList(conversationId),
         () => [],
       );
+      toast.success('Chat history cleared');
+    },
+    onError: (error: any) => {
+      const msg =
+        error.response?.data?.message || 'Failed to clear chat history';
+      toast.error(msg);
     },
   });
 }

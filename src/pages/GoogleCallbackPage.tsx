@@ -3,7 +3,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useGoogleAuth } from '../hooks/useGoogleAuth';
+import { useGoogleAuth } from '../hooks/auth/useGoogleAuth';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 // Module-level flag to prevent double processing in React Strict Mode

@@ -1,11 +1,9 @@
 // src/hooks/queries/useFolderQueries.ts
 // React Query hooks for folder operations
-//
-// NOTE: The app currently uses useFolderStore (Zustand) for folder state management.
-// These React Query hooks are provided as an alternative for future migration.
-// To use React Query, replace useFolderStore calls with these hooks.
+// This is the primary source of truth for folder data (server state)
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   getFolders,
   getFolder,
@@ -36,6 +34,7 @@ export function useFolders() {
       const response = await getFolders();
       return response.data;
     },
+    staleTime: 30 * 1000, // 30 seconds
   });
 }
 
@@ -63,6 +62,7 @@ export function useUncategorizedPapers() {
       const response = await getUncategorizedPapers();
       return response.data;
     },
+    staleTime: 30 * 1000, // 30 seconds
   });
 }
 
@@ -76,6 +76,11 @@ export function useCreateFolder() {
     mutationFn: (params: { name: string }) => createFolder(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: folderKeys.lists() });
+      toast.success('Folder created');
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to create folder';
+      toast.error(msg);
     },
   });
 }
@@ -99,6 +104,11 @@ export function useUpdateFolder() {
       queryClient.invalidateQueries({
         queryKey: folderKeys.detail(variables.id),
       });
+      toast.success('Folder updated');
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to update folder';
+      toast.error(msg);
     },
   });
 }
@@ -115,6 +125,12 @@ export function useDeleteFolder() {
       queryClient.removeQueries({ queryKey: folderKeys.detail(deletedId) });
       queryClient.invalidateQueries({ queryKey: folderKeys.lists() });
       queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: folderKeys.uncategorized() });
+      toast.success('Folder deleted');
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to delete folder';
+      toast.error(msg);
     },
   });
 }
@@ -134,8 +150,14 @@ export function useMovePaper() {
       folderId: string | null;
     }) => movePaperToFolder(paperId, folderId),
     onSuccess: () => {
+      // Invalidate all folder-related queries
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
+      toast.success('Paper moved');
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to move paper';
+      toast.error(msg);
     },
   });
 }

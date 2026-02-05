@@ -50,17 +50,23 @@ export default function PdfPanel({
   const [summaryFetched, setSummaryFetched] = useState(false);
   const [relatedFetched, setRelatedFetched] = useState(false);
 
-  const {
-    session,
-    paper,
-    pendingJump: paperPendingJump,
-    setPendingJump: paperSetPendingJump,
-  } = usePaperStore() as {
-    session: any;
-    paper: { id: string; ragFileId?: string } | null;
-    pendingJump: PendingJump | null;
-    setPendingJump: (val: PendingJump | null) => void;
-  };
+  const currentPaper = usePaperStore((s) => s.currentPaper);
+  const currentConversationId = usePaperStore((s) => s.currentConversationId);
+  const sessionMeta = usePaperStore((s) => s.sessionMeta);
+  const pendingJump: PendingJump | null = usePaperStore((s) => s.pendingJump);
+  const paperSetPendingJump = usePaperStore((s) => s.setPendingJump);
+
+  // Build session object from store state for compatibility
+  const session = currentConversationId
+    ? {
+        id: currentConversationId,
+        paperId: sessionMeta?.paperId,
+        ragFileId: sessionMeta?.ragFileId,
+      }
+    : null;
+
+  // Use currentPaper as the paper reference
+  const paper = currentPaper;
 
   // Guest store for pendingJump
   const guestPendingJump = useGuestStore((s) => s.pendingJump);
@@ -73,7 +79,7 @@ export default function PdfPanel({
     !isAuthenticated && guestSession?.id && isGuestSession(guestSession.id);
 
   // Use appropriate pendingJump based on mode
-  const pendingJump = isGuest ? guestPendingJump : paperPendingJump;
+  const activePendingJump = isGuest ? guestPendingJump : pendingJump;
   const setPendingJump = isGuest ? guestSetPendingJump : paperSetPendingJump;
 
   // --- Logic 1: Summary ---
@@ -156,18 +162,18 @@ export default function PdfPanel({
   useEffect(() => {
     // Nếu store có pendingJump mà đang KHÔNG ở tab PDF
     // -> Chuyển ngay về tab PDF để PdfViewer nhận được props và thực hiện scroll
-    if (pendingJump) {
-      console.log('[PdfPanel] pendingJump detected:', pendingJump);
+    if (activePendingJump) {
+      console.log('[PdfPanel] pendingJump detected:', activePendingJump);
     }
-    if (pendingJump && activeTab !== 'pdf') {
+    if (activePendingJump && activeTab !== 'pdf') {
       console.log('[PdfPanel] Switching to PDF tab due to pendingJump');
       setActiveTab('pdf');
     }
-  }, [pendingJump, activeTab]);
+  }, [activePendingJump, activeTab]);
 
   // --- FIX 2: Cleanup Pending Jump ---
   useEffect(() => {
-    if (pendingJump && activeTab === 'pdf') {
+    if (activePendingJump && activeTab === 'pdf') {
       // Khi đã ở tab PDF và có pendingJump, chờ để PdfViewer nhận props và scroll/highlight
       // Tăng lên 5s để đảm bảo PDF có đủ thời gian load (đặc biệt khi mở tab mới)
       console.log('[PdfPanel] Starting cleanup timer for pendingJump (5s)');
@@ -177,7 +183,7 @@ export default function PdfPanel({
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [pendingJump, activeTab, setPendingJump]);
+  }, [activePendingJump, activeTab, setPendingJump]);
 
   const renderTabBtn = (tabName: ActiveTab, label: string) => (
     <button
@@ -213,12 +219,12 @@ export default function PdfPanel({
           <PdfViewer
             fileUrl={activePaper?.localUrl || activePaper?.fileUrl}
             // Truyền pendingJump vào component con
-            jumpToPage={pendingJump?.pageNumber}
+            jumpToPage={activePendingJump?.pageNumber}
             jumpHighlight={
-              pendingJump?.rect && pendingJump.pageNumber
+              activePendingJump?.rect && activePendingJump.pageNumber
                 ? {
-                    pageNumber: pendingJump.pageNumber,
-                    rect: pendingJump.rect,
+                    pageNumber: activePendingJump.pageNumber,
+                    rect: activePendingJump.rect,
                   }
                 : undefined
             }
@@ -289,7 +295,7 @@ export default function PdfPanel({
                 // Authenticated mode: use explainRegion
                 const fileId = paper?.id;
 
-                usePaperStore.getState().addMessage({
+                usePaperStore.getState().addOptimisticMessage({
                   id: crypto.randomUUID(),
                   role: 'user',
                   content: 'Explain this region',
@@ -306,11 +312,11 @@ export default function PdfPanel({
                   pageNumber,
                 })
                   .then(({ assistantMsg }) => {
-                    usePaperStore.getState().addMessage(assistantMsg);
+                    usePaperStore.getState().addOptimisticMessage(assistantMsg);
                   })
                   .catch((err) => {
                     console.error('❌ Explain error:', err);
-                    usePaperStore.getState().addMessage({
+                    usePaperStore.getState().addOptimisticMessage({
                       id: crypto.randomUUID(),
                       role: 'assistant',
                       content: '⚠️ Sorry, something went wrong.',

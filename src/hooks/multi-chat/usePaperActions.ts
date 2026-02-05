@@ -1,36 +1,34 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import {
-  listConversations,
-  startSession,
-  deletePaper,
-  movePaperToFolder,
-} from '../services';
-import { usePaperStore } from '../store/usePaperStore';
-import type { Paper } from '../utils/types';
+import { usePaperStore } from '../../store/usePaperStore';
+import { useDeletePaper, useMovePaper } from '../queries';
+import type { Paper } from '../../utils/types';
 
 interface UsePaperActionsOptions {
   onActionComplete?: () => void;
-  selectedView?: string;
-  fetchFolder?: (id: string) => void;
 }
 
 export function usePaperActions(options: UsePaperActionsOptions = {}) {
-  const { onActionComplete, selectedView = 'all', fetchFolder } = options;
+  const { onActionComplete } = options;
   const navigate = useNavigate();
-  const { setPaper, setSession } = usePaperStore();
+
+  // Use new API from usePaperStore
+  const setCurrentPaper = usePaperStore((s) => s.setCurrentPaper);
+  const setSession = usePaperStore((s) => s.setSession);
+
+  // React Query mutations
+  const deletePaperMutation = useDeletePaper();
+  const movePaperMutation = useMovePaper();
 
   // Delete paper state
   const [showDeletePaperDialog, setShowDeletePaperDialog] = useState(false);
   const [deletingPaper, setDeletingPaper] = useState<Paper | null>(null);
-  const [isDeletingPaper, setIsDeletingPaper] = useState(false);
 
   // Move paper state
   const [showMovePaperDialog, setShowMovePaperDialog] = useState(false);
   const [movingPaper, setMovingPaper] = useState<Paper | null>(null);
   const [targetFolderId, setTargetFolderId] = useState<string>('');
-  const [isMovingPaper, setIsMovingPaper] = useState(false);
 
   // Navigation state
   const [isNavigating, setIsNavigating] = useState(false);
@@ -56,61 +54,44 @@ export function usePaperActions(options: UsePaperActionsOptions = {}) {
 
   const handleDeletePaper = useCallback(async () => {
     if (!deletingPaper) return;
-    setIsDeletingPaper(true);
     try {
-      await deletePaper(deletingPaper.id);
-      toast.success('Paper deleted');
+      await deletePaperMutation.mutateAsync(deletingPaper.id);
       setShowDeletePaperDialog(false);
       setDeletingPaper(null);
       onActionComplete?.();
-      if (selectedView !== 'all' && fetchFolder) {
-        fetchFolder(selectedView);
-      }
-    } catch (err) {
-      toast.error('Failed to delete paper');
-    } finally {
-      setIsDeletingPaper(false);
+    } catch {
+      // Error handled by mutation
     }
-  }, [deletingPaper, onActionComplete, selectedView, fetchFolder]);
+  }, [deletingPaper, deletePaperMutation, onActionComplete]);
 
   const handleMovePaper = useCallback(async () => {
     if (!movingPaper || !targetFolderId) return;
-    setIsMovingPaper(true);
     try {
-      await movePaperToFolder(
-        movingPaper.id,
-        targetFolderId === 'none' ? null : targetFolderId,
-      );
-      toast.success('Paper moved');
+      await movePaperMutation.mutateAsync({
+        paperId: movingPaper.id,
+        folderId: targetFolderId === 'none' ? null : targetFolderId,
+      });
       setShowMovePaperDialog(false);
       setMovingPaper(null);
       setTargetFolderId('');
       onActionComplete?.();
-      if (selectedView !== 'all' && fetchFolder) {
-        fetchFolder(selectedView);
-      }
-    } catch (err) {
-      toast.error('Failed to move paper');
-    } finally {
-      setIsMovingPaper(false);
+    } catch {
+      // Error handled by mutation
     }
-  }, [
-    movingPaper,
-    targetFolderId,
-    onActionComplete,
-    selectedView,
-    fetchFolder,
-  ]);
+  }, [movingPaper, targetFolderId, movePaperMutation, onActionComplete]);
 
   const handlePaperClick = useCallback(
     async (paper: Paper) => {
       setIsNavigating(true);
+
       try {
+        // Use direct API call for navigation flow
+        const { listConversations, startSession } = await import('../../services');
         const convResponse = await listConversations(paper.id);
 
         if (convResponse.success && convResponse.data.length > 0) {
           const latestConv = convResponse.data[0];
-          setPaper(paper);
+          setCurrentPaper(paper);
           setSession({
             id: latestConv.id,
             paperId: paper.id,
@@ -124,7 +105,7 @@ export function usePaperActions(options: UsePaperActionsOptions = {}) {
             paper.id,
             paper.ragFileId,
           );
-          setPaper(paper);
+          setCurrentPaper(paper);
           setSession({
             id: conversationId,
             paperId: paper.id,
@@ -140,7 +121,7 @@ export function usePaperActions(options: UsePaperActionsOptions = {}) {
         setIsNavigating(false);
       }
     },
-    [navigate, setPaper, setSession],
+    [navigate, setCurrentPaper, setSession],
   );
 
   return {
@@ -148,7 +129,7 @@ export function usePaperActions(options: UsePaperActionsOptions = {}) {
     showDeletePaperDialog,
     setShowDeletePaperDialog,
     deletingPaper,
-    isDeletingPaper,
+    isDeletingPaper: deletePaperMutation.isPending,
 
     // Move paper state
     showMovePaperDialog,
@@ -156,7 +137,7 @@ export function usePaperActions(options: UsePaperActionsOptions = {}) {
     movingPaper,
     targetFolderId,
     setTargetFolderId,
-    isMovingPaper,
+    isMovingPaper: movePaperMutation.isPending,
 
     // Navigation state
     isNavigating,
