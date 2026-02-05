@@ -1,5 +1,6 @@
-// src/components/pdf/PdfViewer.tsx
-import { useEffect, useRef, useState } from 'react';
+// src/components/pdf/PdfViewerRefactored.tsx
+// Refactored PdfViewer with separated logic using custom hooks
+import { useCallback, useState } from 'react';
 import { Document, Page } from 'react-pdf';
 import PdfToolbar from './PdfToolbar';
 import PdfPages from './PdfPages';
@@ -7,18 +8,23 @@ import PdfPages from './PdfPages';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
+import {
+  usePdfState,
+  usePdfZoom,
+  usePdfFullscreen,
+  usePdfSelection,
+  usePdfHighlights,
+  usePdfSearch,
+  usePdfCapture,
+  usePdfJumpEffect,
+  usePdfKeyboard,
+} from '../../hooks/pdf';
+
 type HighlightRect = {
   top: number;
   left: number;
   width: number;
   height: number;
-};
-type Highlight = {
-  id: string;
-  pageNumber: number;
-  rects: HighlightRect[];
-  text: string;
-  color?: string;
 };
 
 type JumpHighlight = {
@@ -39,252 +45,164 @@ type Props = {
       imageDataUrl?: string;
     },
   ) => void;
-  // Chat dock integration for fullscreen mode
   isChatDockOpen?: boolean;
   chatDockWidth?: number;
-  // Callback when fullscreen state changes
   onFullscreenChange?: (isFullscreen: boolean) => void;
-};
-
-type PageIndex = {
-  text: string;
-  spans: { start: number; end: number; el: HTMLSpanElement }[];
 };
 
 export default function PdfViewer({
   fileUrl,
-  jumpToPage,
+  jumpToPage: jumpToPageProp,
   jumpHighlight,
   onAction,
   isChatDockOpen = true,
   chatDockWidth = 450,
   onFullscreenChange,
 }: Props) {
-  const [numPages, setNumPages] = useState(0);
-  const [scale, setScale] = useState(1.0);
+  // === Core state ===
+  const pdfState = usePdfState(fileUrl);
+  const {
+    numPages,
+    setNumPages,
+    currentPage,
+    rotation,
+    pageRefs,
+    viewerScrollRef,
+    pageIndexRef,
+    goToPage,
+    rotateCw,
+    rotateCcw,
+  } = pdfState;
 
-  // === Highlight + Selection =================================================
-  const [highlights, setHighlights] = useState<Highlight[]>([]);
-  const [lastColor, setLastColor] = useState<string | undefined>('#ffd700');
-  const [sel, setSel] = useState<{
-    pageNumber: number;
-    text: string;
-    rects: HighlightRect[];
-    anchor: { x: number; y: number };
-    pageClientWidth?: number;
-    pageClientHeight?: number;
-  } | null>(null);
+  // === Zoom ===
+  const { scale, setScale, zoomIn, zoomOut } = usePdfZoom();
 
-  // === Capture (ảnh) mode ====================================================
-  const [captureMode, setCaptureMode] = useState(false);
-  const [dragBox, setDragBox] = useState<{
-    active: boolean;
-    pageNumber: number;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null>(null);
+  // === Fullscreen ===
+  const { isFullscreen, containerRef, toggleFullscreen } = usePdfFullscreen({
+    onFullscreenChange,
+  });
 
-  // === Search ================================================================
-  const [showSearch, setShowSearch] = useState(false);
-  const [query, setQuery] = useState('');
-  const [matchCase, setMatchCase] = useState(false);
-  const [wholeWords, setWholeWords] = useState(false);
-  const [hits, setHits] = useState<
-    { pageNumber: number; rects: HighlightRect[] }[]
-  >([]);
-  const [hitIndex, setHitIndex] = useState(0);
-
-  // === Fullscreen (in-page mode, not browser fullscreen) ======================
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const viewerContainerRef = useRef<HTMLDivElement>(null);
-
-  // === Thumbnails panel =======================================================
+  // === Thumbnails ===
   const [showThumbnails, setShowThumbnails] = useState(false);
 
-  // === Current Page ===========================================================
-  const [currentPage, setCurrentPage] = useState(1);
+  // === Selection ===
+  const { selection, clearSelection, scaleSelectionToCurrent } =
+    usePdfSelection({
+      pageRefs,
+      viewerScrollRef,
+      disabled: false,
+    });
 
-  // === Rotation ===============================================================
-  const [rotation, setRotation] = useState(0);
+  // === Highlights ===
+  const {
+    highlights,
+    lastColor,
+    setLastColor,
+    addHighlight: addHighlightToStore,
+    removeHighlight,
+    addTemporaryHighlight,
+  } = usePdfHighlights({ pageRefs });
 
-  // Refs
-  const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const viewerScrollRef = useRef<HTMLDivElement>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
-  const pageIndexRef = useRef<Record<number, PageIndex>>({});
+  // === Search ===
+  const search = usePdfSearch({
+    pageRefs,
+    pageIndexRef,
+    viewerScrollRef,
+    numPages,
+    scale,
+  });
 
-  // reset khi đổi file
-  useEffect(() => {
-    setNumPages(0);
-    setHighlights([]);
-    setSel(null);
-    setCaptureMode(false);
-    setDragBox(null);
-    setHits([]);
-    setHitIndex(0);
-    setRotation(0);
-    setCurrentPage(1);
-  }, [fileUrl]);
-
-  // Track current page based on scroll position
-  useEffect(() => {
-    const scrollEl = viewerScrollRef.current;
-    if (!scrollEl || numPages === 0) return;
-
-    const handleScroll = () => {
-      const scrollTop = scrollEl.scrollTop;
-      const scrollCenter = scrollTop + scrollEl.clientHeight / 2;
-
-      let foundPage = 1;
-      for (let p = 1; p <= numPages; p++) {
-        const pageEl = pageRefs.current[p];
-        if (pageEl) {
-          const pageTop = pageEl.offsetTop;
-          const pageBottom = pageTop + pageEl.offsetHeight;
-          if (scrollCenter >= pageTop && scrollCenter < pageBottom) {
-            foundPage = p;
-            break;
-          }
-          if (scrollCenter < pageTop) break;
-          foundPage = p;
-        }
-      }
-      setCurrentPage(foundPage);
-    };
-
-    scrollEl.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll(); // Initial check
-    return () => scrollEl.removeEventListener('scroll', handleScroll);
-  }, [numPages]);
-
-  // selection text popup
-  useEffect(() => {
-    const handleMouseUp = () => {
-      if (captureMode) return;
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) {
-        setSel(null);
-        return;
-      }
-      const text = selection.toString().trim();
-      if (!text) {
-        setSel(null);
-        return;
-      }
-      const anchorNode = selection.anchorNode as Node | null;
-      const pageEl = (
-        anchorNode instanceof HTMLElement
-          ? anchorNode
-          : (anchorNode?.parentElement as HTMLElement)
-      )?.closest('[data-page]') as HTMLElement | null;
-
-      if (!pageEl) return;
-
-      // Bám theo textLayer để tọa độ trùng sát chữ
-      const textLayer =
-        (pageEl.querySelector('.textLayer') as HTMLElement | null) || pageEl;
-
-      const pageNumber = Number(pageEl.getAttribute('data-page') || 1);
-      const pageBounds = textLayer.getBoundingClientRect();
-      const range = selection.getRangeAt(0);
-      const rectsDom = Array.from(range.getClientRects());
-
-      const rects: HighlightRect[] = rectsDom.map((r) => ({
-        top: r.top - pageBounds.top,
-        left: r.left - pageBounds.left,
-        width: r.width,
-        height: r.height,
-      }));
-
-      if (!rects.length) {
-        setSel(null);
-        return;
-      }
-
-      const first = rects[0];
-      const anchor = { x: first.left + first.width + 12, y: first.top };
-
-      const pageClientWidth = textLayer.clientWidth;
-      const pageClientHeight = textLayer.clientHeight;
-
-      setSel({
+  // === Capture ===
+  const handleCapture = useCallback(
+    (
+      pageNumber: number,
+      imageDataUrl: string,
+      rect: { top: number; left: number; width: number; height: number },
+    ) => {
+      onAction?.('explain', {
+        text: '',
         pageNumber,
-        text,
-        rects,
-        anchor,
-        pageClientWidth,
-        pageClientHeight,
+        rects: [rect],
+        imageDataUrl,
       });
-    };
+    },
+    [onAction],
+  );
 
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, [captureMode]);
+  const capture = usePdfCapture({
+    pageRefs,
+    onCapture: handleCapture,
+  });
 
-  // cuộn viewer ⇒ ẩn popup
-  useEffect(() => {
-    const el = viewerScrollRef.current;
-    if (!el) return;
-    const h = () => setSel(null);
-    el.addEventListener('scroll', h, { passive: true });
-    return () => el.removeEventListener('scroll', h);
-  }, []);
+  // === Jump effects ===
+  usePdfJumpEffect(jumpToPageProp, jumpHighlight, {
+    pageRefs,
+    numPages,
+    onAddTemporaryHighlight: addTemporaryHighlight,
+  });
 
-  // zoom
-  const zoomOut = () => setScale((s) => Math.max(0.5, +(s - 0.1).toFixed(2)));
-  const zoomIn = () => setScale((s) => Math.min(3, +(s + 0.1).toFixed(2)));
+  // === Keyboard shortcuts ===
+  usePdfKeyboard({
+    onZoomIn: zoomIn,
+    onZoomOut: zoomOut,
+    onEscape: () => {
+      clearSelection();
+      capture.exitCapture();
+    },
+  });
 
-  // === Fullscreen handlers (in-page mode) =====================================
-  const toggleFullscreen = () => {
-    const newState = !isFullscreen;
-    setIsFullscreen(newState);
-    onFullscreenChange?.(newState);
-  };
+  // === Action handlers ===
+  const handleAddHighlight = useCallback(
+    (color?: string) => {
+      if (!selection) return;
+      const scaled = scaleSelectionToCurrent(selection);
+      if (!scaled) return;
 
-  // Exit fullscreen on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullscreen) {
-        setIsFullscreen(false);
-        onFullscreenChange?.(false);
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreen]);
+      addHighlightToStore(
+        selection.pageNumber,
+        selection.text,
+        scaled.rects,
+        color,
+      );
 
-  // Disable body scroll when fullscreen
-  useEffect(() => {
-    if (isFullscreen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+      onAction?.('highlight', {
+        text: selection.text,
+        pageNumber: selection.pageNumber,
+        rects: scaled.rects,
+      });
+    },
+    [selection, scaleSelectionToCurrent, addHighlightToStore, onAction],
+  );
+
+  const handleRemoveHighlight = useCallback(() => {
+    if (!selection) {
+      clearSelection();
+      return;
     }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isFullscreen]);
-
-  // === Page jump handler ======================================================
-  const handlePageChange = (page: number) => {
-    if (page < 1 || page > numPages) return;
-    const pageEl = pageRefs.current[page];
-    if (pageEl) {
-      pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const scaled = scaleSelectionToCurrent(selection);
+    if (scaled) {
+      removeHighlight(selection.pageNumber, scaled.rects);
     }
-    setCurrentPage(page);
-  };
+    clearSelection();
+  }, [selection, scaleSelectionToCurrent, removeHighlight, clearSelection]);
 
-  // === Rotation handlers ======================================================
-  const rotateCw = () => setRotation((r) => (r + 90) % 360);
-  const rotateCcw = () => setRotation((r) => (r - 90 + 360) % 360);
+  const fireAction = useCallback(
+    (type: 'explain' | 'summarize' | 'related' | 'highlight' | 'save') => {
+      if (!selection) return;
+      const scaled = scaleSelectionToCurrent(selection);
+      onAction?.(type, {
+        text: selection.text,
+        pageNumber: selection.pageNumber,
+        rects: scaled?.rects || selection.rects,
+      });
+      clearSelection();
+    },
+    [selection, scaleSelectionToCurrent, onAction, clearSelection],
+  );
 
-  // === Download handler =======================================================
-  const handleDownload = () => {
+  // === Download ===
+  const handleDownload = useCallback(() => {
     if (!fileUrl) return;
-
     const link = document.createElement('a');
     link.href = fileUrl;
     link.download = fileUrl.split('/').pop() || 'document.pdf';
@@ -292,640 +210,25 @@ export default function PdfViewer({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, [fileUrl]);
 
-  // Keyboard shortcuts + global mouse (capture)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSel(null);
-        setCaptureMode(false);
-      } else if (e.key === '+' || e.key === '=') {
-        e.preventDefault();
-        zoomIn();
-      } else if (e.key === '-') {
-        e.preventDefault();
-        zoomOut();
-      }
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!captureMode || !dragBox?.active) return;
-      const pageEl = pageRefs.current[dragBox.pageNumber];
-      if (!pageEl) return;
-
-      const box = pageEl.getBoundingClientRect();
-      const curX = e.clientX - box.left;
-      const curY = e.clientY - box.top;
-      const w = Math.abs(curX - dragBox.x);
-      const h = Math.abs(curY - dragBox.y);
-      const nx = Math.min(dragBox.x, curX);
-      const ny = Math.min(dragBox.y, curY);
-      setDragBox({
-        active: true,
-        pageNumber: dragBox.pageNumber,
-        x: nx,
-        y: ny,
-        w,
-        h,
-      });
-    };
-
-    const handleMouseUp = () => {
-      if (!captureMode || !dragBox?.active) return;
-      onEndDrag(dragBox.pageNumber);
-    };
-
-    const closeOnClickOutside = (e: MouseEvent) => {
-      if (!popupRef.current) return;
-      if (!popupRef.current.contains(e.target as Node)) {
-        setSel(null);
-        window.getSelection()?.removeAllRanges?.();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('mousedown', closeOnClickOutside);
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('mousedown', closeOnClickOutside);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [zoomIn, zoomOut, captureMode, dragBox]);
-
-  // Jump tới page - with retry logic for when PDF isn't fully loaded yet
-  useEffect(() => {
-    if (!jumpToPage) return;
-    console.log('[PdfViewer] jumpToPage effect triggered:', jumpToPage);
-
-    let retryCount = 0;
-    const maxRetries = 30; // Try for up to 3 seconds (30 * 100ms)
-
-    const attemptJump = () => {
-      const pageEl = pageRefs.current[jumpToPage];
-      console.log(
-        `[PdfViewer] Attempt ${retryCount + 1}: pageEl exists =`,
-        !!pageEl,
-        'numPages =',
-        numPages,
-      );
-      if (pageEl) {
-        console.log(
-          '[PdfViewer] Found page element, scrolling to page',
-          jumpToPage,
-        );
-        pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        return true;
-      }
-      return false;
-    };
-
-    // Try immediately first
-    if (attemptJump()) return;
-
-    // If page not ready, retry with interval
-    const interval = setInterval(() => {
-      retryCount++;
-      if (attemptJump() || retryCount >= maxRetries) {
-        if (retryCount >= maxRetries) {
-          console.log(
-            '[PdfViewer] Max retries reached, giving up on page jump',
-          );
-        }
-        clearInterval(interval);
-      }
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [jumpToPage, numPages]);
-
-  // 🔥 Jump + flash highlight từ Summary - with retry logic
-  useEffect(() => {
-    if (!jumpHighlight) return;
-    const { pageNumber } = jumpHighlight;
-    console.log(
-      '[PdfViewer] jumpHighlight scroll effect triggered:',
-      pageNumber,
-    );
-
-    let retryCount = 0;
-    const maxRetries = 30;
-
-    const attemptJump = () => {
-      const pageEl = pageRefs.current[pageNumber];
-      console.log(
-        `[PdfViewer] Highlight scroll attempt ${retryCount + 1}: pageEl exists =`,
-        !!pageEl,
-      );
-      if (pageEl) {
-        console.log(
-          '[PdfViewer] Found page element, scrolling to center for highlight',
-        );
-        pageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return true;
-      }
-      return false;
-    };
-
-    // Try immediately first
-    if (attemptJump()) return;
-
-    // If page not ready, retry with interval
-    const interval = setInterval(() => {
-      retryCount++;
-      if (attemptJump() || retryCount >= maxRetries) {
-        clearInterval(interval);
-      }
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [jumpHighlight]);
-
-  // tạo temporary highlight overlay cho jumpHighlight - with retry for page load
-  useEffect(() => {
-    if (!jumpHighlight) return;
-    const { pageNumber, rect } = jumpHighlight;
-    const id = `jump-${pageNumber}-${Date.now()}`;
-    console.log('[PdfViewer] jumpHighlight overlay effect triggered:', {
-      pageNumber,
-      rect,
-    });
-
-    // Function to add highlight when page is ready
-    const addHighlightWhenReady = () => {
-      console.log('[PdfViewer] Adding highlight overlay for page', pageNumber);
-      // Clear any existing jump highlights before adding new one
-      setHighlights((prev) => [
-        ...prev.filter((x) => !x.id.startsWith('jump-')),
-        {
-          id,
-          pageNumber,
-          rects: [rect],
-          text: '',
-          color: '#fff3b0',
-        },
-      ]);
-    };
-
-    // Try immediately if page exists, otherwise wait for it
-    const pageEl = pageRefs.current[pageNumber];
-    if (pageEl) {
-      addHighlightWhenReady();
-    } else {
-      // Wait for page to be ready
-      let retryCount = 0;
-      const maxRetries = 30;
-      const interval = setInterval(() => {
-        retryCount++;
-        const el = pageRefs.current[pageNumber];
-        console.log(
-          `[PdfViewer] Highlight overlay retry ${retryCount}: pageEl exists =`,
-          !!el,
-        );
-        if (el || retryCount >= maxRetries) {
-          clearInterval(interval);
-          if (el) {
-            addHighlightWhenReady();
-          } else {
-            console.log(
-              '[PdfViewer] Max retries reached for highlight overlay',
-            );
-          }
-        }
-      }, 100);
-
-      // Cleanup interval on unmount
-      const cleanup = () => clearInterval(interval);
-
-      // Set timeout to clear highlight after 5 seconds (even if added late)
-      const timeout = setTimeout(() => {
-        setHighlights((prev) => prev.filter((x) => !x.id.startsWith('jump-')));
-      }, 5000);
-
-      return () => {
-        cleanup();
-        clearTimeout(timeout);
-      };
-    }
-
-    // If page was ready, just set the timeout to clear highlight
-    const timeout = setTimeout(() => {
-      setHighlights((prev) => prev.filter((x) => !x.id.startsWith('jump-')));
-    }, 5000);
-
-    return () => clearTimeout(timeout);
-  }, [jumpHighlight]);
-
-  // =================== EXPLAIN (capture ảnh) ================================
-  const toggleCapture = () => {
-    setCaptureMode((v) => !v);
-    setSel(null);
-  };
-
-  const onStartDrag = (e: React.MouseEvent, pageNumber: number) => {
-    if (!captureMode) return;
-    const pageEl = pageRefs.current[pageNumber]!;
-    const box = pageEl.getBoundingClientRect();
-    const x = e.clientX - box.left;
-    const y = e.clientY - box.top;
-    setDragBox({ active: true, pageNumber, x, y, w: 0, h: 0 });
-  };
-
-  const onMoveDrag = (e: React.MouseEvent, pageNumber: number) => {
-    if (!captureMode || !dragBox?.active || dragBox.pageNumber !== pageNumber)
-      return;
-    const pageEl = pageRefs.current[pageNumber]!;
-    const box = pageEl.getBoundingClientRect();
-    const curX = e.clientX - box.left;
-    const curY = e.clientY - box.top;
-    const w = Math.abs(curX - dragBox.x);
-    const h = Math.abs(curY - dragBox.y);
-    const nx = Math.min(dragBox.x, curX);
-    const ny = Math.min(dragBox.y, curY);
-    setDragBox({ active: true, pageNumber, x: nx, y: ny, w, h });
-  };
-
-  const onEndDrag = (pageNumber: number) => {
-    if (!captureMode || !dragBox) return;
-
-    const pageEl = pageRefs.current[pageNumber]!;
-    const canvas = pageEl.querySelector('canvas') as HTMLCanvasElement | null;
-    if (canvas && dragBox.w > 3 && dragBox.h > 3) {
-      const scaleX = canvas.width / pageEl.clientWidth;
-      const scaleY = canvas.height / pageEl.clientHeight;
-
-      const sx = Math.round(dragBox.x * scaleX);
-      const sy = Math.round(dragBox.y * scaleY);
-      const sw = Math.round(dragBox.w * scaleX);
-      const sh = Math.round(dragBox.h * scaleY);
-
-      const out = document.createElement('canvas');
-      out.width = sw;
-      out.height = sh;
-      const octx = out.getContext('2d')!;
-      octx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-      const dataUrl = out.toDataURL('image/png');
-
-      onAction?.('explain', {
-        text: '',
-        pageNumber,
-        rects: [
-          {
-            top: dragBox.y,
-            left: dragBox.x,
-            width: dragBox.w,
-            height: dragBox.h,
-          },
-        ],
-        imageDataUrl: dataUrl,
-      });
-    }
-    setDragBox(null);
-    setCaptureMode(false);
-  };
-
-  // =================== SEARCH =================================================
-  const onPageRender = (pageNumber: number) => {
-    const pageEl = pageRefs.current[pageNumber];
-    if (!pageEl) return;
-    let textLayer = pageEl.querySelector('.textLayer') as HTMLElement | null;
-    if (!textLayer) {
-      setTimeout(() => onPageRender(pageNumber), 60);
-      return;
-    }
-
-    const spans = Array.from(
-      textLayer.querySelectorAll('span'),
-    ) as HTMLSpanElement[];
-    let text = '';
-    let cursor = 0;
-    const entries: PageIndex['spans'] = [];
-
-    spans.forEach((s) => {
-      const t = s.textContent ?? '';
-      const start = cursor;
-      const end = cursor + t.length;
-      cursor = end;
-      text += t;
-      entries.push({ start, end, el: s });
-    });
-
-    pageIndexRef.current[pageNumber] = { text, spans: entries };
-  };
-
-  const buildRegex = () => {
-    if (!query.trim()) return null;
-    const esc = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = wholeWords ? `\\b${esc}\\b` : esc;
-    return new RegExp(pattern, matchCase ? 'g' : 'gi');
-  };
-
-  const clearSearchOverlays = (pageNumber: number) => {
-    const pageEl = pageRefs.current[pageNumber];
-    if (!pageEl) return;
-    pageEl.querySelectorAll('.pdf-search-hit').forEach((el) => el.remove());
-  };
-
-  const overlayForRange = (range: Range, pageEl: HTMLElement) => {
-    const textLayer =
-      (pageEl.querySelector('.textLayer') as HTMLElement | null) || pageEl;
-    const pageBox = textLayer.getBoundingClientRect();
-    const rects = Array.from(range.getClientRects()).map((r) => ({
-      top: r.top - pageBox.top,
-      left: r.left - pageBox.left,
-      width: r.width,
-      height: r.height,
-    }));
-    rects.forEach((r) => {
-      const div = document.createElement('div');
-      div.className =
-        'pdf-search-hit absolute bg-yellow-300/40 rounded-[2px] pointer-events-none';
-      Object.assign(div.style, {
-        top: `${r.top}px`,
-        left: `${r.left}px`,
-        width: `${r.width}px`,
-        height: `${r.height}px`,
-      });
-      textLayer.appendChild(div);
-    });
-    return rects;
-  };
-
-  const clearAllSearchHighlights = () => {
-    for (let p = 1; p <= numPages; p++) clearSearchOverlays(p);
-    setHits([]);
-    setHitIndex(0);
-  };
-
-  const runSearch = () => {
-    if (!query.trim()) {
-      clearAllSearchHighlights();
-      return;
-    }
-    const re = buildRegex();
-    if (!re) return;
-
-    const allHits: { pageNumber: number; rects: HighlightRect[] }[] = [];
-
-    for (let p = 1; p <= numPages; p++) {
-      clearSearchOverlays(p);
-      const idx = pageIndexRef.current[p];
-      const pageEl = pageRefs.current[p];
-      if (!idx || !pageEl) continue;
-
-      const { text, spans } = idx;
-      const rectsPage: HighlightRect[] = [];
-
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(text))) {
-        const start = m.index;
-        const end = start + m[0].length;
-
-        const spanStart = spans.find((s) => start >= s.start && start < s.end);
-        const spanEnd =
-          spans.find((s) => end > s.start && end <= s.end) ||
-          spans[spans.length - 1];
-        if (!spanStart || !spanEnd) continue;
-
-        const r = document.createRange();
-        r.setStart(
-          spanStart.el.firstChild || spanStart.el,
-          start - spanStart.start,
-        );
-        r.setEnd(spanEnd.el.firstChild || spanEnd.el, end - spanEnd.start);
-
-        const rs = overlayForRange(r, pageEl);
-        rectsPage.push(...rs);
-      }
-
-      if (rectsPage.length) allHits.push({ pageNumber: p, rects: rectsPage });
-    }
-
-    setHits(allHits);
-    setHitIndex(0);
-    if (allHits.length) {
-      const first = allHits[0].rects[0];
-      pageRefs.current[allHits[0].pageNumber]?.scrollIntoView({
-        block: 'center',
-      });
-      viewerScrollRef.current?.scrollBy({
-        top: Math.max(0, first.top - 80),
-        behavior: 'smooth',
-      });
-    }
-  };
-
-  useEffect(() => {
-    const t = setTimeout(runSearch, 140);
-    return () => clearTimeout(t);
-  }, [query, matchCase, wholeWords, numPages, scale]);
-
-  const gotoHit = (dir: 1 | -1) => {
-    if (!hits.length) return;
-    const total = hits.reduce((s, h) => s + h.rects.length, 0);
-    let next = (hitIndex + (dir === 1 ? 1 : total - 1)) % total;
-    setHitIndex(next);
-
-    let k = 0;
-    for (const h of hits) {
-      for (const r of h.rects) {
-        if (k === next) {
-          pageRefs.current[h.pageNumber]?.scrollIntoView({ block: 'center' });
-          viewerScrollRef.current?.scrollBy({
-            top: Math.max(0, r.top - 80),
-            behavior: 'smooth',
-          });
-          return;
-        }
-        k++;
-      }
-    }
-  };
-
-  // === helpers ===============================================================
-  const getBBox = (rects: HighlightRect[]) => {
-    const left = Math.min(...rects.map((r) => r.left));
-    const top = Math.min(...rects.map((r) => r.top));
-    const right = Math.max(...rects.map((r) => r.left + r.width));
-    const bottom = Math.max(...rects.map((r) => r.top + r.height));
-    return {
-      left,
-      top,
-      right,
-      bottom,
-      width: right - left,
-      height: bottom - top,
-    };
-  };
-
-  const scaleSelectionToCurrent = (s: typeof sel) => {
-    if (!s) return s;
-    const pageEl = pageRefs.current[s.pageNumber];
-    if (!pageEl) return s;
-    const textLayer =
-      (pageEl.querySelector('.textLayer') as HTMLElement | null) || pageEl;
-    const baseW = s.pageClientWidth || textLayer.clientWidth;
-    const baseH = s.pageClientHeight || textLayer.clientHeight;
-    const fx = textLayer.clientWidth / baseW;
-    const fy = textLayer.clientHeight / baseH;
-    const rects = s.rects.map((r) => ({
-      top: r.top * fy,
-      left: r.left * fx,
-      width: r.width * fx,
-      height: r.height * fy,
-    }));
-    const anchor = { x: s.anchor.x * fx, y: s.anchor.y * fy };
-    return { ...s, rects, anchor } as typeof sel;
-  };
-
-  const overlapRatio = (
-    a: { left: number; top: number; right: number; bottom: number },
-    b: { left: number; top: number; right: number; bottom: number },
-  ) => {
-    const x1 = Math.max(a.left, b.left);
-    const y1 = Math.max(a.top, b.top);
-    const x2 = Math.min(a.right, b.right);
-    const y2 = Math.min(a.bottom, b.bottom);
-    if (x2 <= x1 || y2 <= y1) return 0;
-    const inter = (x2 - x1) * (y2 - y1);
-    const areaA = (a.right - a.left) * (a.bottom - a.top);
-    const areaB = (b.right - b.left) * (b.bottom - b.top);
-    return inter / Math.min(areaA, areaB);
-  };
-
-  const addHighlight = (color?: string) => {
-    if (!sel) return;
-    const scaled = scaleSelectionToCurrent(sel);
-    const pageEl = pageRefs.current[scaled!.pageNumber];
-    const textLayer =
-      (pageEl?.querySelector('.textLayer') as HTMLElement | null) || pageEl;
-
-    let normalized = scaled!.rects;
-    if (textLayer) {
-      const pw = textLayer.clientWidth;
-      const ph = textLayer.clientHeight;
-      normalized = scaled!.rects.map((r) => ({
-        top: r.top / ph,
-        left: r.left / pw,
-        width: r.width / pw,
-        height: r.height / ph,
-      }));
-    }
-
-    setHighlights((hs) => {
-      const page = scaled!.pageNumber;
-      const pw = textLayer?.clientWidth || 1;
-      const ph = textLayer?.clientHeight || 1;
-      const newBox = getBBox(scaled!.rects);
-      const filtered = hs.filter((h) => {
-        if (h.pageNumber !== page) return true;
-        const oldRectsPx = h.rects.map((r) => {
-          if (r.left <= 1 && r.width <= 1 && r.top <= 1 && r.height <= 1) {
-            return {
-              top: r.top * ph,
-              left: r.left * pw,
-              width: r.width * pw,
-              height: r.height * ph,
-            };
-          }
-          return r as HighlightRect;
-        });
-        const oldBox = getBBox(oldRectsPx);
-        const ratio = overlapRatio(newBox, oldBox);
-        const areaNew = newBox.width * newBox.height;
-        const areaOld = oldBox.width * oldBox.height;
-        if (ratio > 0.85 && areaNew >= areaOld * 0.9) {
-          return false;
-        }
-        return true;
-      });
-      return [
-        ...filtered,
-        {
-          id: crypto.randomUUID(),
-          pageNumber: sel.pageNumber,
-          rects: normalized,
-          text: sel.text,
-          color,
-        },
-      ];
-    });
-
-    onAction?.('highlight', {
-      text: sel.text,
-      pageNumber: sel.pageNumber,
-      rects: scaled!.rects,
-    });
-  };
-
-  const cancelHighlight = () => {
-    if (!sel) {
-      setSel(null);
-      return;
-    }
-    const scaled = scaleSelectionToCurrent(sel);
-    setHighlights((hs) => {
-      const page = scaled!.pageNumber;
-      const pageEl = pageRefs.current[page];
-      const textLayer =
-        (pageEl?.querySelector('.textLayer') as HTMLElement | null) || pageEl;
-      const pw = textLayer?.clientWidth || 1;
-      const ph = textLayer?.clientHeight || 1;
-      const curBox = getBBox(scaled!.rects);
-      return hs.filter((h) => {
-        if (h.pageNumber !== page) return true;
-        const oldRectsPx = h.rects.map((r) => {
-          if (r.left <= 1 && r.width <= 1 && r.top <= 1 && r.height <= 1) {
-            return {
-              top: r.top * ph,
-              left: r.left * pw,
-              width: r.width * pw,
-              height: r.height * ph,
-            };
-          }
-          return r as HighlightRect;
-        });
-        const oldBox = getBBox(oldRectsPx);
-        const ratio = overlapRatio(curBox, oldBox);
-        return ratio < 0.85;
-      });
-    });
-    setSel(null);
-  };
-
-  const fire = (
-    type: NonNullable<Parameters<NonNullable<Props['onAction']>>[0]>,
-  ) => {
-    if (!sel) return;
-    const scaled = scaleSelectionToCurrent(sel);
-    onAction?.(type, {
-      text: sel.text,
-      pageNumber: sel.pageNumber,
-      rects: scaled!.rects,
-    });
-    setSel(null);
-  };
-
-  // Calculate fullscreen styles based on chat dock state
+  // === Styles ===
   const fullscreenStyle = isFullscreen
     ? isChatDockOpen
-      ? { right: `${chatDockWidth}px` } // Leave space for chat dock (no gap)
+      ? { right: `${chatDockWidth}px` }
       : {}
     : {};
 
+  // === Render ===
   return (
     <>
-      {/* Fullscreen backdrop overlay - blocks ALL interaction with layer below */}
+      {/* Fullscreen backdrop */}
       {isFullscreen && (
         <div className='fixed inset-0 z-[60] bg-gray-900/50 backdrop-blur-sm' />
       )}
 
       <div
-        ref={viewerContainerRef}
+        ref={containerRef}
         className={`flex flex-col min-h-0 transition-all duration-300 ${
           isFullscreen
             ? `fixed top-0 left-0 bottom-0 z-[70] bg-white ${isChatDockOpen ? '' : 'right-0'}`
@@ -934,29 +237,20 @@ export default function PdfViewer({
         style={fullscreenStyle}
       >
         <PdfToolbar
-          showSearch={showSearch}
-          onToggleSearch={() =>
-            setShowSearch((v) => {
-              const next = !v;
-              if (v && !next) {
-                setQuery('');
-                clearAllSearchHighlights();
-              }
-              return next;
-            })
-          }
-          query={query}
-          onQueryChange={setQuery}
-          hits={hits}
-          hitIndex={hitIndex}
-          onGotoHit={gotoHit}
-          onRunSearch={runSearch}
-          matchCase={matchCase}
-          onMatchCaseChange={setMatchCase}
-          wholeWords={wholeWords}
-          onWholeWordsChange={setWholeWords}
-          onToggleCapture={toggleCapture}
-          captureMode={captureMode}
+          showSearch={search.showSearch}
+          onToggleSearch={search.toggleSearch}
+          query={search.query}
+          onQueryChange={search.setQuery}
+          hits={search.hits}
+          hitIndex={search.hitIndex}
+          onGotoHit={search.gotoHit}
+          onRunSearch={search.runSearch}
+          matchCase={search.matchCase}
+          onMatchCaseChange={search.setMatchCase}
+          wholeWords={search.wholeWords}
+          onWholeWordsChange={search.setWholeWords}
+          onToggleCapture={capture.toggleCapture}
+          captureMode={capture.captureMode}
           zoomIn={zoomIn}
           zoomOut={zoomOut}
           scale={scale}
@@ -969,13 +263,13 @@ export default function PdfViewer({
           fileUrl={fileUrl}
           currentPage={currentPage}
           numPages={numPages}
-          onPageChange={handlePageChange}
+          onPageChange={goToPage}
           onToggleThumbnails={() => setShowThumbnails((v) => !v)}
           showThumbnails={showThumbnails}
         />
 
         <div className='flex-1 flex min-h-0'>
-          {/* Thumbnails sidebar - show when thumbnails are enabled */}
+          {/* Thumbnails sidebar */}
           {isFullscreen && showThumbnails && numPages > 0 && fileUrl && (
             <div className='w-44 border-r border-gray-200 bg-gray-100 overflow-y-auto flex-shrink-0'>
               <div className='p-2 space-y-2'>
@@ -985,7 +279,7 @@ export default function PdfViewer({
                     return (
                       <button
                         key={pageNum}
-                        onClick={() => handlePageChange(pageNum)}
+                        onClick={() => goToPage(pageNum)}
                         className={`w-full p-2 rounded-lg border transition-all ${
                           currentPage === pageNum
                             ? 'border-orange-500 bg-orange-50 shadow-sm'
@@ -1015,43 +309,42 @@ export default function PdfViewer({
           <div
             ref={viewerScrollRef}
             className={`flex-1 overflow-auto bg-gray-50 min-h-0 relative ${
-              captureMode ? 'cursor-crosshair' : ''
+              capture.captureMode ? 'cursor-crosshair' : ''
             }`}
           >
             <style>{`
-            .textLayer span:hover{font-weight:700}
-            .pdf-pages-container {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-            }
-          `}</style>
+              .textLayer span:hover{font-weight:700}
+              .pdf-pages-container {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+              }
+            `}</style>
+
             {!fileUrl ? (
               <div className='p-6 text-sm text-gray-500'>No PDF selected.</div>
             ) : (
-              <>
-                <PdfPages
-                  fileUrl={fileUrl}
-                  numPages={numPages}
-                  scale={scale}
-                  rotation={rotation}
-                  highlights={highlights}
-                  selection={sel}
-                  captureMode={captureMode}
-                  dragBox={dragBox}
-                  pageRefs={pageRefs}
-                  onPageRender={onPageRender}
-                  onStartDrag={onStartDrag}
-                  onMoveDrag={onMoveDrag}
-                  onEndDrag={onEndDrag}
-                  onAction={fire}
-                  onAddHighlight={addHighlight}
-                  onRemoveHighlight={cancelHighlight}
-                  selectedColorDefault={lastColor}
-                  onSelectedColorChange={setLastColor}
-                  onLoadSuccess={setNumPages}
-                />
-              </>
+              <PdfPages
+                fileUrl={fileUrl}
+                numPages={numPages}
+                scale={scale}
+                rotation={rotation}
+                highlights={highlights}
+                selection={selection}
+                captureMode={capture.captureMode}
+                dragBox={capture.dragBox}
+                pageRefs={pageRefs}
+                onPageRender={search.onPageRender}
+                onStartDrag={capture.onStartDrag}
+                onMoveDrag={capture.onMoveDrag}
+                onEndDrag={capture.onEndDrag}
+                onAction={fireAction}
+                onAddHighlight={handleAddHighlight}
+                onRemoveHighlight={handleRemoveHighlight}
+                selectedColorDefault={lastColor}
+                onSelectedColorChange={setLastColor}
+                onLoadSuccess={setNumPages}
+              />
             )}
           </div>
         </div>

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import PdfViewer from './PdfViewer';
 import SummaryView from './SummaryView';
 import RelatedPapersView from './RelatedPapersView';
 import type { Paper, RelatedPapersResponse } from '../../utils/types';
@@ -13,6 +12,7 @@ import {
 import { usePaperStore } from '../../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../../store/useGuestStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import PdfViewer from './PdfViewer';
 
 type Props = {
   activePaper?: Paper;

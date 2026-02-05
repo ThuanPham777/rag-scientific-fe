@@ -91,6 +91,13 @@ export default function ChatPage() {
     return true; // Need to restore
   });
 
+  // State for ChatDock open status (for fullscreen PDF viewer integration)
+  // MUST be defined before any early returns to follow Rules of Hooks
+  const [isChatDockOpen, setIsChatDockOpen] = useState(true);
+  // State for PDF fullscreen mode
+  const [isPdfFullscreen, setIsPdfFullscreen] = useState(false);
+  const CHAT_DOCK_WIDTH = 450;
+
   // Restore session from URL on mount/reload
   useEffect(() => {
     // Wait for auth to be initialized before trying to restore session
@@ -519,12 +526,6 @@ export default function ChatPage() {
   // ============================================
   // RENDER
   // ============================================
-
-  // State for ChatDock open status (for fullscreen PDF viewer integration)
-  const [isChatDockOpen, setIsChatDockOpen] = useState(true);
-  // State for PDF fullscreen mode
-  const [isPdfFullscreen, setIsPdfFullscreen] = useState(false);
-  const CHAT_DOCK_WIDTH = 450;
 
   return (
     <div className='pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2'>
