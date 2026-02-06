@@ -127,6 +127,9 @@ function MarkdownContentBase({
       strict: false, // Be lenient with parsing
       trust: false, // Don't trust HTML in LaTeX
       output: 'htmlAndMathml' as const, // Better accessibility
+      displayMode: false, // Allow automatic display mode detection
+      fleqn: false, // Left-align equations
+      leqno: false, // Number equations on the left
       macros: {
         // Common macros that might be missing
         '\\R': '\\mathbb{R}',
@@ -260,6 +263,50 @@ function MarkdownContentBase({
       key={errorKey}
       className='text-sm leading-relaxed markdown-content w-full min-w-0'
     >
+      <style>{`
+        /* KaTeX math formula overflow handling */
+        .katex-display {
+          overflow-x: auto !important;
+          overflow-y: hidden !important;
+          max-width: 100% !important;
+          padding: 0.5em 0 !important;
+          margin: 0.5em 0 !important;
+        }
+
+        .katex {
+          font-size: 1em !important;
+        }
+
+        .katex-display > .katex {
+          white-space: nowrap !important;
+          text-align: left !important;
+        }
+
+        /* Inline math handling */
+        .katex-inline {
+          word-break: break-all !important;
+          overflow-wrap: anywhere !important;
+        }
+
+        /* Scrollbar styling for math formulas */
+        .katex-display::-webkit-scrollbar {
+          height: 6px;
+        }
+
+        .katex-display::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 3px;
+        }
+
+        .katex-display::-webkit-scrollbar-thumb {
+          background: #c1c1c1;
+          border-radius: 3px;
+        }
+
+        .katex-display::-webkit-scrollbar-thumb:hover {
+          background: #a8a8a8;
+        }
+      `}</style>
       <ErrorBoundary
         onError={() => setHasError(true)}
         fallback={<RenderingFallback content={content} />}

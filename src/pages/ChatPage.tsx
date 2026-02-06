@@ -111,7 +111,7 @@ export default function ChatPage() {
   const [isChatDockOpen, setIsChatDockOpen] = useState(true);
   // State for PDF fullscreen mode
   const [isPdfFullscreen, setIsPdfFullscreen] = useState(false);
-  const CHAT_DOCK_WIDTH = 450;
+  const CHAT_DOCK_WIDTH = 500;
 
   // Capture function - will be set by PdfPanel
   const captureToggleRef = useRef<(() => void) | null>(null);
@@ -562,7 +562,7 @@ export default function ChatPage() {
 
   return (
     <div className='pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2'>
-      <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3'>
+      <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_500px] gap-2'>
         <PdfPanel
           activePaper={activePaper}
           onPdfAction={handlePdfAction}
@@ -586,6 +586,7 @@ export default function ChatPage() {
         onClearChatHistory={handleClearChatHistory}
         isLoading={isGuest ? guestIsLoading : isChatLoading}
         defaultOpen={true}
+        chatDockWidth={CHAT_DOCK_WIDTH}
         activePaperId={activePaper?.ragFileId}
         onOpenChange={setIsChatDockOpen}
         isPdfFullscreen={isPdfFullscreen}

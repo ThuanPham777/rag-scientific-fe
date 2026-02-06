@@ -37,7 +37,7 @@ export default function PdfPanel({
   activePaper,
   onPdfAction,
   isChatDockOpen = true,
-  chatDockWidth = 450,
+  chatDockWidth = 500,
   onFullscreenChange,
   onCaptureRefChange,
 }: Props) {
