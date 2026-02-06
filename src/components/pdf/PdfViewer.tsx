@@ -220,7 +220,13 @@ export default function PdfViewer({
   usePdfKeyboard({
     onZoomIn: zoomIn,
     onZoomOut: zoomOut,
+    onToggleSearch: search.toggleSearch,
+    onNextMatch: () => search.gotoHit(1),
+    onPrevMatch: () => search.gotoHit(-1),
     onEscape: () => {
+      if (search.showSearch) {
+        search.toggleSearch();
+      }
       clearSelection();
       capture.exitCapture();
     },
@@ -424,8 +430,8 @@ export default function PdfViewer({
           onToggleSearch={search.toggleSearch}
           query={search.query}
           onQueryChange={search.setQuery}
-          hits={search.hits}
           hitIndex={search.hitIndex}
+          totalMatches={search.totalMatches}
           onGotoHit={search.gotoHit}
           onRunSearch={search.runSearch}
           matchCase={search.matchCase}

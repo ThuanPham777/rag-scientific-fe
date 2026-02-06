@@ -13,6 +13,8 @@ import {
   ChevronUp,
   ChevronDown,
   Menu,
+  ArrowDown,
+  ArrowUp,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -28,8 +30,8 @@ type Props = {
   onToggleSearch: () => void;
   query: string;
   onQueryChange: (query: string) => void;
-  hits: { pageNumber: number; rects: any[] }[];
   hitIndex: number;
+  totalMatches: number;
   onGotoHit: (dir: 1 | -1) => void;
   onRunSearch: () => void;
   matchCase: boolean;
@@ -64,8 +66,8 @@ export default function PdfToolbar({
   onToggleSearch,
   query,
   onQueryChange,
-  hits,
   hitIndex,
+  totalMatches,
   onGotoHit,
   onRunSearch,
   matchCase,
@@ -96,7 +98,6 @@ export default function PdfToolbar({
   const [showZoomDropdown, setShowZoomDropdown] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [pageInputValue, setPageInputValue] = useState(String(currentPage));
-  const totalHits = hits.reduce((s, h) => s + h.rects.length, 0);
 
   // Sync page input when currentPage changes
   useEffect(() => {
@@ -436,8 +437,8 @@ export default function PdfToolbar({
               onKeyDown={(e) => e.key === 'Enter' && onRunSearch()}
               autoFocus
             />
-            <div className='text-xs text-muted-foreground w-10 text-right'>
-              {hits.length ? `${hitIndex + 1}/${totalHits}` : `0/0`}
+            <div className='text-xs text-muted-foreground w-12 text-right whitespace-nowrap'>
+              {totalMatches > 0 ? `${hitIndex + 1}/${totalMatches}` : `0/0`}
             </div>
           </div>
 
@@ -468,15 +469,17 @@ export default function PdfToolbar({
                 variant='outline'
                 size='sm'
                 onClick={() => onGotoHit(-1)}
+                disabled={totalMatches === 0}
               >
-                ↑
+                <ArrowUp />
               </Button>
               <Button
                 variant='outline'
                 size='sm'
                 onClick={() => onGotoHit(1)}
+                disabled={totalMatches === 0}
               >
-                ↓
+                <ArrowDown />
               </Button>
             </div>
             <Button
