@@ -1,5 +1,5 @@
 // src/pages/ChatPage.tsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
@@ -112,6 +112,9 @@ export default function ChatPage() {
   // State for PDF fullscreen mode
   const [isPdfFullscreen, setIsPdfFullscreen] = useState(false);
   const CHAT_DOCK_WIDTH = 450;
+
+  // Capture function - will be set by PdfPanel
+  const captureToggleRef = useRef<(() => void) | null>(null);
 
   // Restore session from URL on mount/reload
   useEffect(() => {
@@ -566,6 +569,9 @@ export default function ChatPage() {
           isChatDockOpen={isChatDockOpen}
           chatDockWidth={CHAT_DOCK_WIDTH}
           onFullscreenChange={setIsPdfFullscreen}
+          onCaptureRefChange={(toggleCapture) => {
+            captureToggleRef.current = toggleCapture;
+          }}
         />
         <div
           className='hidden lg:block'
@@ -583,6 +589,7 @@ export default function ChatPage() {
         activePaperId={activePaper?.ragFileId}
         onOpenChange={setIsChatDockOpen}
         isPdfFullscreen={isPdfFullscreen}
+        onExplainMath={() => captureToggleRef.current?.()}
       />
     </div>
   );

@@ -54,6 +54,9 @@ type Props = {
 
   // Whether PDF viewer is in fullscreen mode (for z-index adjustment)
   isPdfFullscreen?: boolean;
+
+  // Capture functionality
+  onExplainMath?: () => void;
 };
 
 const LOADING_STEPS = [
@@ -80,6 +83,7 @@ export default function ChatDock({
   showSuggestions = true,
   onOpenChange,
   isPdfFullscreen = false,
+  onExplainMath,
 }: Props) {
   // Use messages prop if provided, otherwise fall back to session?.messages
   const messages = messagesProp ?? session?.messages ?? [];
@@ -306,6 +310,7 @@ export default function ChatDock({
 
             <ChatInput
               onSend={onSend}
+              onExplainMath={onExplainMath}
               disabled={
                 isLoading || (mode === 'multi' && selectedPapers.length === 0)
               }

@@ -4,7 +4,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Sigma } from 'lucide-react';
+import { Send, Sigma } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '@radix-ui/react-switch';
 
@@ -60,6 +60,10 @@ export default function ChatInput({
     }
   };
 
+  const handleOnSendClick = () => {
+    send();
+  };
+
   return (
     <div className='px-3 pb-3 bg-white'>
       <div className='rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm'>
@@ -84,30 +88,45 @@ export default function ChatInput({
             />
             <span>High Quality</span>
           </label>
-
-          {showSigmaButton && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type='button'
-                  onClick={onExplainMath}
-                  disabled={disabled}
-                  className='w-8 h-8 grid place-items-center rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed'
-                >
-                  <Sigma size={16} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent
-                side='top'
-                className='max-w-xs'
+          {
+            // Nếu mà user có đánh chứ thì hiên nút send
+            text.trim() ? (
+              <button
+                type='button'
+                onClick={handleOnSendClick}
+                disabled={disabled}
+                className='p-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition'
               >
-                <p>
-                  Select and drag the cursor over an area containing formulas,
-                  equations or tables
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          )}
+                <Send size={14} />
+              </button>
+            ) : (
+              <>
+                {showSigmaButton && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type='button'
+                        onClick={onExplainMath}
+                        disabled={disabled}
+                        className='w-8 h-8 grid place-items-center rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed'
+                      >
+                        <Sigma size={16} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side='top'
+                      className='max-w-xs'
+                    >
+                      <p>
+                        Select and drag the cursor over an area containing
+                        formulas, equations or tables
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </>
+            )
+          }
         </div>
       </div>
     </div>

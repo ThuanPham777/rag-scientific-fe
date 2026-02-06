@@ -46,6 +46,14 @@ type DragBox = {
   h: number;
 } | null;
 
+type CapturedRegion = {
+  pageNumber: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} | null;
+
 type Props = {
   fileUrl?: string;
   numPages: number;
@@ -55,6 +63,8 @@ type Props = {
   selection: SelectionState;
   captureMode: boolean;
   dragBox: DragBox;
+  isProcessing?: boolean;
+  capturedRegion?: CapturedRegion;
 
   /** map ref dùng CHUNG với parent */
   pageRefs: React.MutableRefObject<Record<number, HTMLDivElement | null>>;
@@ -104,6 +114,8 @@ export default function PdfPages({
   selection,
   captureMode,
   dragBox,
+  isProcessing = false,
+  capturedRegion,
   pageRefs,
   onPageRender,
   onStartDrag,
@@ -200,7 +212,7 @@ export default function PdfPages({
   }
 
   return (
-    <div className='flex flex-col items-center py-6 min-w-fit'>
+    <div className='relative flex flex-col items-center py-6 min-w-fit'>
       <Document
         file={fileUrl}
         onLoadSuccess={(d) => onLoadSuccess(d.numPages)}
@@ -396,18 +408,45 @@ export default function PdfPages({
                   />
                 )}
 
-                {/* khung chọn khi capture */}
+                {/* khung chọn khi capture - during active dragging */}
                 {captureMode &&
                   dragBox &&
                   dragBox.pageNumber === pageNumber &&
                   dragBox.active && (
                     <div
-                      className='absolute border-2 border-orange-400/80 bg-orange-300/20'
+                      className='absolute border-2 border-dashed border-orange-500 shadow-xl'
                       style={{
                         left: dragBox.x,
                         top: dragBox.y,
                         width: dragBox.w,
                         height: dragBox.h,
+                        zIndex: 15, // Above the dimmed overlay
+                        // Use backdrop to brighten the region
+                        backdropFilter: 'brightness(1.4) contrast(1.1)',
+                        WebkitBackdropFilter: 'brightness(1.4) contrast(1.1)',
+                        boxShadow:
+                          '0 0 20px rgba(251, 146, 60, 0.6), 0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                      }}
+                    />
+                  )}
+
+                {/* captured region during processing - with dimmed background highlight */}
+                {isProcessing &&
+                  capturedRegion &&
+                  capturedRegion.pageNumber === pageNumber && (
+                    <div
+                      className='absolute border-2 border-dashed border-orange-500 shadow-xl'
+                      style={{
+                        left: capturedRegion.x,
+                        top: capturedRegion.y,
+                        width: capturedRegion.w,
+                        height: capturedRegion.h,
+                        zIndex: 15, // Above the dimmed overlay
+                        // Use backdrop to brighten the region
+                        backdropFilter: 'brightness(1.4) contrast(1.1)',
+                        WebkitBackdropFilter: 'brightness(1.4) contrast(1.1)',
+                        boxShadow:
+                          '0 0 20px rgba(251, 146, 60, 0.6), 0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                       }}
                     />
                   )}
@@ -415,6 +454,14 @@ export default function PdfPages({
             );
           })}
       </Document>
+
+      {/* Dimmed overlay - show during dragging OR processing */}
+      {(isProcessing || (captureMode && dragBox?.active)) && (
+        <div
+          className='absolute inset-0 bg-black/30 pointer-events-none'
+          style={{ zIndex: 10 }}
+        />
+      )}
 
       {/* Highlight popup for viewing/editing comments - show HighlightPopup if has comments, else HighlightEditor */}
       {clickedHighlight &&

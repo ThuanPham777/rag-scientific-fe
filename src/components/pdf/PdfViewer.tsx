@@ -51,6 +51,8 @@ type Props = {
   isChatDockOpen?: boolean;
   chatDockWidth?: number;
   onFullscreenChange?: (isFullscreen: boolean) => void;
+  // Callback to expose capture toggle function
+  onCaptureRefChange?: (toggleCapture: () => void) => void;
 };
 
 export default function PdfViewer({
@@ -62,6 +64,7 @@ export default function PdfViewer({
   isChatDockOpen = true,
   chatDockWidth = 450,
   onFullscreenChange,
+  onCaptureRefChange,
 }: Props) {
   // === Core state ===
   const pdfState = usePdfState(fileUrl);
@@ -184,26 +187,26 @@ export default function PdfViewer({
   });
 
   // === Capture ===
-  const handleCapture = useCallback(
-    (
-      pageNumber: number,
-      imageDataUrl: string,
-      rect: { top: number; left: number; width: number; height: number },
-    ) => {
+  // === Capture ===
+  const capture = usePdfCapture({
+    pageRefs,
+    // We'll set the onCapture after the hook is initialized
+    onCapture: (pageNumber, imageDataUrl, rect) => {
       onAction?.('explain', {
         text: '',
         pageNumber,
         rects: [rect],
         imageDataUrl,
-      });
+        // Pass completion function to the API caller
+        __completeProcessing: capture.completeProcessing,
+      } as any);
     },
-    [onAction],
-  );
-
-  const capture = usePdfCapture({
-    pageRefs,
-    onCapture: handleCapture,
   });
+
+  // Expose capture toggle function to parent
+  useEffect(() => {
+    onCaptureRefChange?.(capture.toggleCapture);
+  }, [onCaptureRefChange, capture.toggleCapture]);
 
   // === Jump effects ===
   usePdfJumpEffect(jumpToPageProp, jumpHighlight, {
@@ -265,7 +268,10 @@ export default function PdfViewer({
 
           // Add comment if provided
           if (comment && comment.trim()) {
-            await serverHighlights.addComment(activeHighlightId, comment.trim());
+            await serverHighlights.addComment(
+              activeHighlightId,
+              comment.trim(),
+            );
           }
 
           // Update last used color
@@ -485,8 +491,18 @@ export default function PdfViewer({
           {/* Main PDF content */}
           <div
             ref={viewerScrollRef}
-            className={`flex-1 overflow-auto bg-gray-50 min-h-0 relative ${
+            className={`flex-1 bg-gray-50 min-h-0 relative ${
               capture.captureMode ? 'cursor-crosshair' : ''
+            } ${
+              capture.captureMode &&
+              !capture.isProcessing &&
+              !capture.dragBox?.active
+                ? 'ring-2 ring-orange-400 ring-offset-2 shadow-[0_0_15px_rgba(251,146,60,0.5)]'
+                : ''
+            } ${
+              capture.isProcessing || capture.dragBox?.active
+                ? 'overflow-hidden'
+                : 'overflow-auto'
             }`}
           >
             <style>{`
@@ -521,6 +537,8 @@ export default function PdfViewer({
                 selection={selection}
                 captureMode={capture.captureMode}
                 dragBox={capture.dragBox}
+                isProcessing={capture.isProcessing}
+                capturedRegion={capture.capturedRegion}
                 pageRefs={pageRefs}
                 onPageRender={search.onPageRender}
                 onStartDrag={capture.onStartDrag}

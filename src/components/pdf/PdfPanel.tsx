@@ -22,6 +22,8 @@ type Props = {
   chatDockWidth?: number;
   // Callback when fullscreen state changes
   onFullscreenChange?: (isFullscreen: boolean) => void;
+  // Callback to expose capture toggle function to parent
+  onCaptureRefChange?: (toggleCapture: () => void) => void;
 };
 
 type PendingJump = {
@@ -37,6 +39,7 @@ export default function PdfPanel({
   isChatDockOpen = true,
   chatDockWidth = 450,
   onFullscreenChange,
+  onCaptureRefChange,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('pdf');
 
@@ -233,6 +236,8 @@ export default function PdfPanel({
             isChatDockOpen={isChatDockOpen}
             chatDockWidth={chatDockWidth}
             onFullscreenChange={onFullscreenChange}
+            // Expose capture toggle function to parent
+            onCaptureRefChange={onCaptureRefChange}
             onAction={(action, payload) => {
               // Check if guest mode (from localStorage) or authenticated
               const isAuthenticated = useAuthStore.getState().isAuthenticated;
@@ -249,6 +254,8 @@ export default function PdfPanel({
               if (action === 'explain' && (payload as any).imageDataUrl) {
                 const imageDataUrl = (payload as any).imageDataUrl as string;
                 const pageNumber = (payload as any).pageNumber as number;
+                const completeProcessing = (payload as any)
+                  .__completeProcessing as (() => void) | undefined;
 
                 if (isGuest && guestPaper?.ragFileId) {
                   // Guest mode: use guestExplainRegion
@@ -289,6 +296,7 @@ export default function PdfPanel({
                     })
                     .finally(() => {
                       guestStore.setLoading(false);
+                      completeProcessing?.();
                     });
                   return;
                 }
@@ -326,6 +334,7 @@ export default function PdfPanel({
                   })
                   .finally(() => {
                     usePaperStore.getState().setChatLoading(false);
+                    completeProcessing?.();
                   });
                 return;
               }

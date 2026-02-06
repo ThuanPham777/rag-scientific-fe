@@ -24,15 +24,51 @@ export function usePdfCapture(options: UseCaptureOptions) {
 
   const [captureMode, setCaptureMode] = useState(false);
   const [dragBox, setDragBox] = useState<DragBox>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  // Store the captured region for display during processing
+  const [capturedRegion, setCapturedRegion] = useState<{
+    pageNumber: number;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
 
   const toggleCapture = useCallback(() => {
     setCaptureMode((v) => !v);
     setDragBox(null);
+    setIsProcessing(false);
+    setCapturedRegion(null);
   }, []);
 
   const exitCapture = useCallback(() => {
     setCaptureMode(false);
     setDragBox(null);
+    setIsProcessing(false);
+    setCapturedRegion(null);
+  }, []);
+
+  // New function to start processing after capture
+  const startProcessing = useCallback(
+    (region: {
+      pageNumber: number;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+    }) => {
+      setIsProcessing(true);
+      setCapturedRegion(region);
+      setDragBox(null);
+    },
+    [],
+  );
+
+  // New function to complete processing and exit capture
+  const completeProcessing = useCallback(() => {
+    setIsProcessing(false);
+    setCaptureMode(false);
+    setCapturedRegion(null);
   }, []);
 
   const onStartDrag = useCallback(
@@ -96,18 +132,27 @@ export function usePdfCapture(options: UseCaptureOptions) {
         octx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
         const dataUrl = out.toDataURL('image/png');
 
+        // Start processing state instead of exiting capture immediately
+        startProcessing({
+          pageNumber: dragBox.pageNumber,
+          x: dragBox.x,
+          y: dragBox.y,
+          w: dragBox.w,
+          h: dragBox.h,
+        });
+
         onCapture?.(pageNumber, dataUrl, {
           top: dragBox.y,
           left: dragBox.x,
           width: dragBox.w,
           height: dragBox.h,
         });
+      } else {
+        setDragBox(null);
+        setCaptureMode(false);
       }
-
-      setDragBox(null);
-      setCaptureMode(false);
     },
-    [captureMode, dragBox, pageRefs, onCapture],
+    [captureMode, dragBox, pageRefs, onCapture, startProcessing],
   );
 
   // Global mouse events for drag
@@ -162,8 +207,12 @@ export function usePdfCapture(options: UseCaptureOptions) {
   return {
     captureMode,
     dragBox,
+    isProcessing,
+    capturedRegion,
     toggleCapture,
     exitCapture,
+    startProcessing,
+    completeProcessing,
     onStartDrag,
     onMoveDrag,
     onEndDrag,
