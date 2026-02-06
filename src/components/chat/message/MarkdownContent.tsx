@@ -1,11 +1,15 @@
 // src/components/chat/message/MarkdownContent.tsx
-// Markdown content renderer with citation support
+// Markdown content renderer with citation support and LaTeX math
 
-import { memo, useMemo, useCallback } from 'react';
+import React, { memo, useMemo, useCallback, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { CitationLink } from './CitationLink';
+import { sanitizeLatex } from '../../../utils/latexSanitizer';
 import type { Citation } from '../../../utils/types';
 
 interface MarkdownContentProps {
@@ -15,12 +19,44 @@ interface MarkdownContentProps {
 }
 
 /**
+ * Error boundary fallback for rendering failures
+ */
+function RenderingFallback({ content }: { content: string }) {
+  return (
+    <div className='text-sm leading-relaxed whitespace-pre-wrap text-gray-800'>
+      {content}
+    </div>
+  );
+}
+
+/**
  * Renders markdown content with inline citation links
  */
 function MarkdownContentBase({
   content,
   onJumpToCitation,
 }: MarkdownContentProps) {
+  const [hasError, setHasError] = useState(false);
+  const [errorKey, setErrorKey] = useState(0);
+
+  // Reset error state when content changes
+  useEffect(() => {
+    setHasError(false);
+    setErrorKey((k) => k + 1);
+  }, [content]);
+
+  /**
+   * Sanitize content before rendering
+   */
+  const sanitizedContent = useMemo(() => {
+    try {
+      return sanitizeLatex(content);
+    } catch {
+      // If sanitization fails, return original content
+      return content;
+    }
+  }, [content]);
+
   /**
    * Render text with inline citation links
    */
@@ -79,6 +115,28 @@ function MarkdownContentBase({
       return children;
     },
     [renderTextWithCitations],
+  );
+
+  /**
+   * rehype-katex options for error handling
+   */
+  const katexOptions = useMemo(
+    () => ({
+      throwOnError: false, // Don't throw - render error message instead
+      errorColor: '#cc0000',
+      strict: false, // Be lenient with parsing
+      trust: false, // Don't trust HTML in LaTeX
+      output: 'htmlAndMathml' as const, // Better accessibility
+      macros: {
+        // Common macros that might be missing
+        '\\R': '\\mathbb{R}',
+        '\\N': '\\mathbb{N}',
+        '\\Z': '\\mathbb{Z}',
+        '\\Q': '\\mathbb{Q}',
+        '\\C': '\\mathbb{C}',
+      },
+    }),
+    [],
   );
 
   /**
@@ -165,20 +223,96 @@ function MarkdownContentBase({
           </pre>
         );
       },
+      // Custom error handling for math rendering
+      span: ({ className, children, ...props }: any) => {
+        // Check if this is a katex error
+        if (className?.includes('katex-error')) {
+          return (
+            <span
+              className='inline-block px-1 py-0.5 bg-red-50 text-red-600 text-xs rounded border border-red-200'
+              title='LaTeX rendering failed'
+              {...props}
+            >
+              {children}
+            </span>
+          );
+        }
+        return (
+          <span
+            className={className}
+            {...props}
+          >
+            {children}
+          </span>
+        );
+      },
     }),
     [processChildren],
   );
 
+  // If there was a render error, show fallback
+  if (hasError) {
+    return <RenderingFallback content={content} />;
+  }
+
   return (
-    <div className='text-sm leading-relaxed markdown-content w-full min-w-0'>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={markdownComponents}
+    <div
+      key={errorKey}
+      className='text-sm leading-relaxed markdown-content w-full min-w-0'
+    >
+      <ErrorBoundary
+        onError={() => setHasError(true)}
+        fallback={<RenderingFallback content={content} />}
       >
-        {content}
-      </ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[[rehypeKatex, katexOptions]]}
+          components={markdownComponents}
+        >
+          {sanitizedContent}
+        </ReactMarkdown>
+      </ErrorBoundary>
     </div>
   );
+}
+
+/**
+ * Simple error boundary component
+ */
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback: ReactNode;
+  onError?: () => void;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends React.Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('MarkdownContent render error:', error);
+    this.props.onError?.();
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
 }
 
 export const MarkdownContent = memo(MarkdownContentBase);
