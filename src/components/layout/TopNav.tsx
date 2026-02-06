@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
@@ -151,7 +152,7 @@ export default function TopNav() {
               {/* Avatar */}
               <div
                 ref={menuRef}
-                className='relative'
+                className='relative z-[9999999]'
               >
                 <button
                   onClick={() => setOpenMenu((v) => !v)}
@@ -162,23 +163,25 @@ export default function TopNav() {
                   {avatar}
                 </button>
 
-                {openMenu && (
-                  <div className='absolute right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-3 z-[100]'>
-                    <div className='px-2 pb-1 text-sm font-medium'>
-                      My Account
-                    </div>
-                    <div className='px-2 pb-3 text-xs text-gray-600 break-all'>
-                      {user?.email}
-                    </div>
-                    <button
-                      className='w-full flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-gray-50'
-                      onClick={handleLogout}
-                    >
-                      <LogOut size={16} />
-                      Logout
-                    </button>
-                  </div>
-                )}
+                {openMenu &&
+                  createPortal(
+                    <div className='fixed top-[56px] right-4 w-64 rounded-md border bg-white shadow-lg p-3 z-[99999]'>
+                      <div className='px-2 pb-1 text-sm font-medium'>
+                        My Account
+                      </div>
+                      <div className='px-2 pb-3 text-xs text-gray-600 break-all'>
+                        {user?.email}
+                      </div>
+                      <button
+                        className='w-full flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-gray-50'
+                        onClick={handleLogout}
+                      >
+                        <LogOut size={16} />
+                        Logout
+                      </button>
+                    </div>,
+                    document.body,
+                  )}
               </div>
             </>
           )}

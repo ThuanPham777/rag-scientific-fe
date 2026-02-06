@@ -128,7 +128,12 @@ export default function HighlightEditor({
             </button>
           </TooltipTrigger>
 
-          <TooltipContent side='top'>Remove highlight</TooltipContent>
+          <TooltipContent
+            side='top'
+            className='z-[99999]'
+          >
+            Remove highlight
+          </TooltipContent>
         </Tooltip>
       </div>
 

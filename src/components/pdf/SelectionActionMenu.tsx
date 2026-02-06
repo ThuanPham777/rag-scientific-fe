@@ -192,7 +192,7 @@ export default function SelectionActionMenu({
               </TooltipTrigger>
               <TooltipContent
                 side='top'
-                className='max-w-xs'
+                className='max-w-xs z-[99999]'
               >
                 <p>Select at least 50 words to summarize ({wordCount}/50)</p>
               </TooltipContent>
