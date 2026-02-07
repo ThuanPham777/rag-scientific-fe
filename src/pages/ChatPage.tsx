@@ -586,7 +586,6 @@ export default function ChatPage() {
         onClearChatHistory={handleClearChatHistory}
         isLoading={isGuest ? guestIsLoading : isChatLoading}
         defaultOpen={true}
-        chatDockWidth={CHAT_DOCK_WIDTH}
         activePaperId={activePaper?.ragFileId}
         onOpenChange={setIsChatDockOpen}
         isPdfFullscreen={isPdfFullscreen}

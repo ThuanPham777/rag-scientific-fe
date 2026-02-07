@@ -34,7 +34,6 @@ type Props = {
 
   // Display configuration
   defaultOpen?: boolean;
-  chatDockWidth?: number;
   position?: 'fixed' | 'static';
 
   // Mode configuration
@@ -74,7 +73,6 @@ export default function ChatDock({
   onClearChatHistory,
   isLoading = false,
   defaultOpen = true,
-  chatDockWidth = 500,
   position = 'fixed',
   mode = 'single',
   activePaperId,
@@ -151,7 +149,7 @@ export default function ChatDock({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [open, messages.length, isLoading]);
 
-  const WIDTH = position === 'fixed' ? `w-[${chatDockWidth}px]` : 'w-full';
+  const WIDTH = position === 'fixed' ? `w-[500px]` : 'w-full';
   const HEIGHT =
     position === 'fixed' ? (isPdfFullscreen ? 'h-full' : 'h-[81vh]') : 'h-full';
   const currentStepLabel =
