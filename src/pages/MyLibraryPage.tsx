@@ -1,16 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Upload, Loader2 } from 'lucide-react';
-import { useFolderStore } from '../store/useFolderStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useMultiPaperChatStore } from '../store/useMultiPaperChatStore';
-import { listPapers } from '../services';
+import { useFolderStore } from '../store/useFolderStore';
 import { Button } from '../components/ui/button';
 import type { Paper, Folder as FolderType } from '../utils/types';
-import { useUpload } from '../hooks/useUpload';
-import { usePaperActions } from '../hooks/usePaperActions';
-import { useMultiPaperChat } from '../hooks/useMultiPaperChat';
-import { useClearChatHistory } from '../hooks';
+import {
+  useUpload,
+  usePaperActions,
+  useMultiPaperChat,
+  useFolders,
+  useFolder,
+  useCreateFolder,
+  useUpdateFolder,
+  useDeleteFolder,
+  usePapers,
+  useClearChatHistory,
+} from '../hooks';
 import {
   FolderSidebar,
   PaperTable,
@@ -25,24 +32,34 @@ import ChatDock from '../components/chat/ChatDock';
 
 export default function MyLibraryPage() {
   const navigate = useNavigate();
+  const { folderId: urlFolderId } = useParams<{ folderId?: string }>();
   const { isAuthenticated } = useAuthStore();
-  const {
-    folders,
-    selectedFolder,
-    isLoadingFolders,
-    isLoadingPapers,
-    isCreating,
-    isDeleting,
-    fetchFolders,
-    fetchFolder,
-    fetchUncategorized,
-    createFolder,
-    updateFolder,
-    deleteFolder,
-    clearSelectedFolder,
-  } = useFolderStore();
 
-  // Multi-paper chat state
+  // Determine if we're in folder view mode (via URL)
+  const isInFolderView = !!urlFolderId;
+
+  // =========================================
+  // React Query hooks (server state)
+  // =========================================
+  const { data: folders = [], isLoading: isLoadingFolders } = useFolders();
+  const { data: allPapers = [], isLoading: isLoadingAllPapers } = usePapers();
+
+  // Zustand UI state for selected folder
+  const { selectedFolderId, selectFolder, clearSelectedFolder } =
+    useFolderStore();
+
+  // Fetch folder details when selected
+  const { data: selectedFolder, isLoading: isLoadingFolderPapers } = useFolder(
+    selectedFolderId ?? undefined,
+  );
+
+  // React Query mutations
+  const createFolderMutation = useCreateFolder();
+  const updateFolderMutation = useUpdateFolder();
+  const deleteFolderMutation = useDeleteFolder();
+  const clearChatHistoryMutation = useClearChatHistory();
+
+  // Multi-paper chat state (UI state in Zustand)
   const { selectedPapers, togglePaper, deselectPaper, clearSelection } =
     useMultiPaperChatStore();
 
@@ -50,12 +67,9 @@ export default function MyLibraryPage() {
     messages: multiChatMessages,
     isLoading: isMultiChatLoading,
     sendMessage: sendMultiMessage,
-    session: multiChatSession,
+    currentConversationId: multiChatConversationId,
     clearChat: clearMultiChat,
   } = useMultiPaperChat();
-
-  // Clear chat history mutation
-  const clearChatHistoryMutation = useClearChatHistory();
 
   // Handle clear chat history for multi-paper mode
   const handleClearMultiChatHistory = useCallback(
@@ -67,27 +81,23 @@ export default function MyLibraryPage() {
       }
 
       try {
-        // Call API to clear on backend
         await clearChatHistoryMutation.mutateAsync(conversationId);
-        // Clear local state
         clearMultiChat();
       } catch (err) {
         console.error('Failed to clear multi-paper chat history:', err);
-        alert('Failed to clear chat history. Please try again.');
       }
     },
     [clearChatHistoryMutation, clearMultiChat],
   );
 
-  // All papers state
-  const [allPapers, setAllPapers] = useState<Paper[]>([]);
-  const [isLoadingAllPapers, setIsLoadingAllPapers] = useState(false);
-
-  // View state
-  const [selectedView, setSelectedView] = useState<'all' | string>('all');
+  // View state (UI state)
+  // If URL has folderId, use it; otherwise default to 'all'
+  const [selectedView, setSelectedView] = useState<'all' | string>(
+    urlFolderId || 'all',
+  );
   const [foldersExpanded, setFoldersExpanded] = useState(true);
 
-  // Folder dialog states
+  // Folder dialog states (UI state)
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -95,33 +105,47 @@ export default function MyLibraryPage() {
   const [deletingFolder, setDeletingFolder] = useState<FolderType | null>(null);
   const [folderName, setFolderName] = useState('');
 
-  // Fetch all papers
-  const fetchAllPapers = async () => {
-    setIsLoadingAllPapers(true);
-    try {
-      const res = await listPapers();
-      if (res.success) {
-        setAllPapers(res.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch papers:', err);
-    } finally {
-      setIsLoadingAllPapers(false);
+  // Sync selectedView with URL params when navigating via URL
+  useEffect(() => {
+    if (urlFolderId) {
+      setSelectedView(urlFolderId);
+      selectFolder(urlFolderId);
+    } else {
+      setSelectedView('all');
+      clearSelectedFolder();
     }
-  };
+  }, [urlFolderId, selectFolder, clearSelectedFolder]);
 
-  // Upload hook
+  // Sync selectedView with Zustand store (for sidebar navigation)
+  useEffect(() => {
+    if (!urlFolderId) {
+      // Only sync with store if not in URL folder view
+      if (selectedView === 'all') {
+        clearSelectedFolder();
+      } else {
+        selectFolder(selectedView);
+      }
+    }
+  }, [selectedView, selectFolder, clearSelectedFolder, urlFolderId]);
+
+  // Get current folder name for auto-assign mode
+  const currentFolderForUpload = useMemo(() => {
+    if (isInFolderView && urlFolderId) {
+      return folders.find((f) => f.id === urlFolderId);
+    }
+    return undefined;
+  }, [isInFolderView, urlFolderId, folders]);
+
+  // Upload hook with folder context awareness
   const upload = useUpload({
-    onUploadComplete: fetchAllPapers,
     selectedView,
+    // When in folder view (via URL), enable auto-assign mode
+    currentFolderId: isInFolderView ? urlFolderId : undefined,
+    currentFolderName: currentFolderForUpload?.name,
   });
 
   // Paper actions hook
-  const paperActions = usePaperActions({
-    onActionComplete: fetchAllPapers,
-    selectedView,
-    fetchFolder,
-  });
+  const paperActions = usePaperActions({});
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -130,56 +154,57 @@ export default function MyLibraryPage() {
     }
   }, [isAuthenticated, navigate]);
 
-  // Initial fetch
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchFolders();
-      fetchUncategorized();
-      fetchAllPapers();
-    }
-  }, [isAuthenticated]);
+  // Handle view change with URL navigation
+  const handleViewChange = useCallback(
+    (view: 'all' | string) => {
+      setSelectedView(view);
+      if (view === 'all') {
+        navigate('/library');
+      } else {
+        navigate(`/library/folder/${view}`);
+      }
+    },
+    [navigate],
+  );
 
-  // Fetch folder when selected
-  useEffect(() => {
-    if (selectedView !== 'all') {
-      fetchFolder(selectedView);
-    } else {
-      clearSelectedFolder();
-    }
-  }, [selectedView]);
-
-  // Folder handlers
+  // Folder handlers using React Query mutations
   const handleCreateFolder = async () => {
     if (!folderName.trim()) return;
-    const result = await createFolder({ name: folderName.trim() });
-    if (result) {
+    try {
+      await createFolderMutation.mutateAsync({ name: folderName.trim() });
       setShowCreateDialog(false);
       setFolderName('');
+    } catch {
+      // Error handled by mutation
     }
   };
 
   const handleEditFolder = async () => {
     if (!editingFolder || !folderName.trim()) return;
-    const result = await updateFolder(editingFolder.id, {
-      name: folderName.trim(),
-    });
-    if (result) {
+    try {
+      await updateFolderMutation.mutateAsync({
+        id: editingFolder.id,
+        data: { name: folderName.trim() },
+      });
       setShowEditDialog(false);
       setEditingFolder(null);
       setFolderName('');
+    } catch {
+      // Error handled by mutation
     }
   };
 
   const handleDeleteFolder = async () => {
     if (!deletingFolder) return;
-    const success = await deleteFolder(deletingFolder.id);
-    if (success) {
+    try {
+      await deleteFolderMutation.mutateAsync(deletingFolder.id);
       setShowDeleteDialog(false);
       setDeletingFolder(null);
       if (selectedView === deletingFolder.id) {
-        setSelectedView('all');
+        handleViewChange('all');
       }
-      fetchAllPapers();
+    } catch {
+      // Error handled by mutation
     }
   };
 
@@ -201,7 +226,7 @@ export default function MyLibraryPage() {
     setShowCreateDialog(true);
   };
 
-  // Determine what papers to show
+  // Determine what papers to show (from React Query data)
   const displayPapers: Paper[] =
     selectedView === 'all' ? allPapers : selectedFolder?.papers || [];
 
@@ -237,7 +262,7 @@ export default function MyLibraryPage() {
         selectedView={selectedView}
         foldersExpanded={foldersExpanded}
         isLoadingFolders={isLoadingFolders}
-        onSelectView={setSelectedView}
+        onSelectView={handleViewChange}
         onToggleFolders={() => setFoldersExpanded(!foldersExpanded)}
         onCreateFolder={openCreateDialog}
         onEditFolder={openEditDialog}
@@ -278,7 +303,7 @@ export default function MyLibraryPage() {
           <PaperTable
             papers={displayPapers}
             totalPapers={allPapers.length}
-            isLoading={isLoadingAllPapers || isLoadingPapers}
+            isLoading={isLoadingAllPapers || isLoadingFolderPapers}
             onPaperClick={paperActions.handlePaperClick}
             onMovePaper={paperActions.openMovePaperDialog}
             onDeletePaper={paperActions.openDeletePaperDialog}
@@ -298,7 +323,7 @@ export default function MyLibraryPage() {
         messages={multiChatMessages}
         onSend={(text) => sendMultiMessage(text)}
         onClearChatHistory={handleClearMultiChatHistory}
-        conversationId={multiChatSession?.conversationId}
+        conversationId={multiChatConversationId ?? undefined}
         isLoading={isMultiChatLoading}
         defaultOpen={false}
         selectedPapers={selectedPapersInfo}
@@ -311,7 +336,7 @@ export default function MyLibraryPage() {
       <CreateFolderDialog
         open={showCreateDialog}
         folderName={folderName}
-        isCreating={isCreating}
+        isCreating={createFolderMutation.isPending}
         onOpenChange={setShowCreateDialog}
         onFolderNameChange={setFolderName}
         onCreate={handleCreateFolder}
@@ -328,7 +353,7 @@ export default function MyLibraryPage() {
       <DeleteFolderDialog
         open={showDeleteDialog}
         folder={deletingFolder}
-        isDeleting={isDeleting}
+        isDeleting={deleteFolderMutation.isPending}
         onOpenChange={setShowDeleteDialog}
         onDelete={handleDeleteFolder}
       />

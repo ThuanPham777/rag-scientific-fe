@@ -3,25 +3,35 @@
 // ONE persistent conversation for all multi-paper chats
 
 import { useCallback, useEffect, useState } from 'react';
-import { useMultiPaperChatStore } from '../store/useMultiPaperChatStore';
+import { useMultiPaperChatStore } from '../../store/useMultiPaperChatStore';
 import {
   askMultiPaper,
   getMessageHistory,
   listMultiPaperConversations,
-} from '../services';
-import type { ChatMessage } from '../utils/types';
+} from '../../services';
+import type { ChatMessage } from '../../utils/types';
 
 export function useMultiPaperChat() {
-  const {
-    selectedPapers,
-    session,
-    isLoading,
-    addMessage,
-    setLoading,
-    clearSession,
-    setConversationId,
-    setSession,
-  } = useMultiPaperChatStore();
+  // Use new API from useMultiPaperChatStore
+  const selectedPapers = useMultiPaperChatStore((s) => s.selectedPapers);
+  const currentConversationId = useMultiPaperChatStore(
+    (s) => s.currentConversationId,
+  );
+  const optimisticMessages = useMultiPaperChatStore(
+    (s) => s.optimisticMessages,
+  );
+  const isLoading = useMultiPaperChatStore((s) => s.isLoading);
+  const addOptimisticMessage = useMultiPaperChatStore(
+    (s) => s.addOptimisticMessage,
+  );
+  const setOptimisticMessages = useMultiPaperChatStore(
+    (s) => s.setOptimisticMessages,
+  );
+  const setCurrentConversationId = useMultiPaperChatStore(
+    (s) => s.setCurrentConversationId,
+  );
+  const setLoading = useMultiPaperChatStore((s) => s.setLoading);
+  const reset = useMultiPaperChatStore((s) => s.reset);
 
   // Track if we've loaded the multi-paper conversation
   const [hasLoadedConversation, setHasLoadedConversation] = useState(false);
@@ -54,20 +64,15 @@ export function useMultiPaperChat() {
         citations: m.citations ? m.citations : undefined,
       }));
 
-      // Set session with loaded data - papers are current selection, messages are from DB
-      setSession({
-        id: crypto.randomUUID(),
-        conversationId: conv.id,
-        paperIds: selectedPapers.map((p) => p.id),
-        papers: selectedPapers,
-        messages: chatMessages,
-      });
+      // Set conversation ID and messages
+      setCurrentConversationId(conv.id);
+      setOptimisticMessages(chatMessages);
     } catch (err) {
       console.error('Failed to load multi-paper conversation:', err);
     } finally {
       setHasLoadedConversation(true);
     }
-  }, [hasLoadedConversation, setSession, selectedPapers]);
+  }, [hasLoadedConversation, setCurrentConversationId, setOptimisticMessages]);
 
   // Load conversation on mount (only once)
   // Messages persist across paper selection changes
@@ -77,19 +82,9 @@ export function useMultiPaperChat() {
     }
   }, [hasLoadedConversation, loadExistingConversation]);
 
-  // When papers change, just update the session's paper list
-  // DO NOT reset the conversation or messages
-  useEffect(() => {
-    if (session && selectedPapers.length > 0) {
-      // Update papers in session without clearing messages
-      setSession({
-        ...session,
-        paperIds: selectedPapers.map((p) => p.id),
-        papers: selectedPapers,
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPapers]);
+  // When papers change, no need to update session anymore
+  // The selectedPapers are already in the store
+  // Messages persist across paper selection changes
 
   /**
    * Send a message to the multi-paper chat
@@ -105,22 +100,26 @@ export function useMultiPaperChat() {
         content: text,
         createdAt: new Date().toISOString(),
       };
-      addMessage(userMsg);
+      addOptimisticMessage(userMsg);
 
       try {
         setLoading(true);
 
         const paperIds = selectedPapers.map((p) => p.id);
-        // Use the backend conversationId if we have one, NOT the local session.id
+        // Use the backend conversationId if we have one
         const { assistantMsg, conversationId: returnedConvId } =
-          await askMultiPaper(paperIds, text, session?.conversationId);
+          await askMultiPaper(
+            paperIds,
+            text,
+            currentConversationId ?? undefined,
+          );
 
         // Store the backend conversation ID for subsequent messages
-        if (returnedConvId && !session?.conversationId) {
-          setConversationId(returnedConvId);
+        if (returnedConvId && !currentConversationId) {
+          setCurrentConversationId(returnedConvId);
         }
 
-        addMessage(assistantMsg);
+        addOptimisticMessage(assistantMsg);
       } catch (err) {
         console.error('❌ Multi-paper chat error:', err);
         const errorMsg: ChatMessage = {
@@ -130,27 +129,33 @@ export function useMultiPaperChat() {
             '⚠️ Sorry, something went wrong while processing your question.',
           createdAt: new Date().toISOString(),
         };
-        addMessage(errorMsg);
+        addOptimisticMessage(errorMsg);
       } finally {
         setLoading(false);
       }
     },
-    [selectedPapers, session, addMessage, setLoading, setConversationId],
+    [
+      selectedPapers,
+      currentConversationId,
+      addOptimisticMessage,
+      setLoading,
+      setCurrentConversationId,
+    ],
   );
 
   /**
    * Clear the chat session
    */
   const clearChat = useCallback(() => {
-    clearSession();
+    reset();
     setHasLoadedConversation(false);
-  }, [clearSession]);
+  }, [reset]);
 
   return {
     selectedPapers,
-    session,
+    currentConversationId,
     isLoading,
-    messages: session?.messages || [],
+    messages: optimisticMessages,
     sendMessage,
     clearChat,
     hasSelectedPapers: selectedPapers.length > 0,

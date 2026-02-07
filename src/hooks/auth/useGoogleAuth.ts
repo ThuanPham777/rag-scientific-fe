@@ -1,9 +1,9 @@
 // src/hooks/useGoogleAuth.ts
 // Google OAuth 2.0 Authorization Code Flow with PKCE
 import { useState, useCallback } from 'react';
-import { GOOGLE_CLIENT_ID, GOOGLE_REDIRECT_URI } from '../config/env';
-import { googleCodeAuth } from '../services/api/auth.api';
-import { useAuthStore } from '../store/useAuthStore';
+import { GOOGLE_CLIENT_ID, GOOGLE_REDIRECT_URI } from '../../config/env';
+import { googleCodeAuth } from '../../services/api/auth.api';
+import { useAuthStore } from '../../store/useAuthStore';
 
 // =====================================================
 // PKCE Helper Functions
@@ -37,7 +37,7 @@ function base64UrlEncode(buffer: Uint8Array): string {
 }
 
 // =====================================================
-// Google Auth State Keys (sessionStorage)
+// Google Auth State Keys (localStorage for persistence across redirects)
 // =====================================================
 const OAUTH_STATE_KEY = 'google_oauth_state';
 const CODE_VERIFIER_KEY = 'google_code_verifier';
@@ -94,9 +94,9 @@ export function useGoogleAuth(): UseGoogleAuthReturn {
       // Generate state for CSRF protection
       const state = generateState();
 
-      // Store verifier and state in sessionStorage (cleared on browser close)
-      sessionStorage.setItem(CODE_VERIFIER_KEY, codeVerifier);
-      sessionStorage.setItem(OAUTH_STATE_KEY, state);
+      // Store verifier and state in localStorage (persists across redirects)
+      localStorage.setItem(CODE_VERIFIER_KEY, codeVerifier);
+      localStorage.setItem(OAUTH_STATE_KEY, state);
 
       // Build Google OAuth URL
       const params = new URLSearchParams({
@@ -132,20 +132,27 @@ export function useGoogleAuth(): UseGoogleAuthReturn {
 
       try {
         // Verify state to prevent CSRF
-        const savedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+        const savedState = localStorage.getItem(OAUTH_STATE_KEY);
         if (!savedState || savedState !== state) {
-          throw new Error('Invalid state parameter - possible CSRF attack');
+          // If state doesn't match, it might be a stale callback - redirect to home
+          console.warn(
+            'OAuth state mismatch. Saved:',
+            savedState,
+            'Received:',
+            state,
+          );
+          throw new Error('Session expired. Please try logging in again.');
         }
 
         // Get code verifier for PKCE
-        const codeVerifier = sessionStorage.getItem(CODE_VERIFIER_KEY);
+        const codeVerifier = localStorage.getItem(CODE_VERIFIER_KEY);
         if (!codeVerifier) {
-          throw new Error('Code verifier not found');
+          throw new Error('Session expired. Please try logging in again.');
         }
 
-        // Clean up sessionStorage
-        sessionStorage.removeItem(OAUTH_STATE_KEY);
-        sessionStorage.removeItem(CODE_VERIFIER_KEY);
+        // Clean up localStorage
+        localStorage.removeItem(OAUTH_STATE_KEY);
+        localStorage.removeItem(CODE_VERIFIER_KEY);
 
         // Exchange code for tokens via backend
         const response = await googleCodeAuth(
@@ -174,8 +181,8 @@ export function useGoogleAuth(): UseGoogleAuthReturn {
         );
         setStatus('error');
         // Clean up on error
-        sessionStorage.removeItem(OAUTH_STATE_KEY);
-        sessionStorage.removeItem(CODE_VERIFIER_KEY);
+        localStorage.removeItem(OAUTH_STATE_KEY);
+        localStorage.removeItem(CODE_VERIFIER_KEY);
         return false;
       }
     },

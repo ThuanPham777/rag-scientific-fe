@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, AuthTokens } from '../utils/types';
+import { useGuestStore } from './useGuestStore';
 
 // =====================================================
 // In-memory access token storage (NOT persisted)
@@ -35,6 +36,8 @@ export const useAuthStore = create<AuthState>()(
       login: (user, tokens) => {
         // Access token stored in memory only (more secure)
         inMemoryAccessToken = tokens.accessToken;
+        // Clear guest data when user logs in
+        useGuestStore.getState().clearGuestData();
         // Refresh token persisted for session restoration
         set({
           isAuthenticated: true,

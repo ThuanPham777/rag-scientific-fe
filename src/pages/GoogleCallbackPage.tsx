@@ -1,20 +1,23 @@
 // src/pages/GoogleCallbackPage.tsx
 // Handle Google OAuth callback and exchange code for tokens
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useGoogleAuth } from '../hooks/useGoogleAuth';
+import { useGoogleAuth } from '../hooks/auth/useGoogleAuth';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
+
+// Module-level flag to prevent double processing in React Strict Mode
+let isProcessingCallback = false;
 
 export default function GoogleCallbackPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { status, error, handleCallback } = useGoogleAuth();
-  const [processed, setProcessed] = useState(false);
+  const processedRef = useRef(false);
 
   useEffect(() => {
-    // Prevent double processing
-    if (processed) return;
+    // Prevent double processing using both ref and module-level flag
+    if (processedRef.current || isProcessingCallback) return;
 
     const code = searchParams.get('code');
     const state = searchParams.get('state');
@@ -34,10 +37,21 @@ export default function GoogleCallbackPage() {
       return;
     }
 
-    setProcessed(true);
+    // Check if OAuth state exists in localStorage before processing
+    // This prevents processing if state was already consumed
+    const savedState = localStorage.getItem('google_oauth_state');
+    if (!savedState) {
+      console.log('OAuth state already consumed, skipping duplicate callback');
+      return;
+    }
+
+    // Mark as processing
+    processedRef.current = true;
+    isProcessingCallback = true;
 
     // Process the callback
     handleCallback(code, state).then((success) => {
+      isProcessingCallback = false;
       if (success) {
         // Wait a moment to show success state, then redirect
         setTimeout(() => {
@@ -50,7 +64,12 @@ export default function GoogleCallbackPage() {
         }, 2000);
       }
     });
-  }, [searchParams, handleCallback, navigate, processed]);
+
+    // Cleanup on unmount
+    return () => {
+      // Don't reset isProcessingCallback here as we want to prevent re-processing
+    };
+  }, [searchParams, handleCallback, navigate]);
 
   return (
     <div className='min-h-screen flex items-center justify-center bg-gray-50'>

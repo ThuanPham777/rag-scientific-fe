@@ -1,18 +1,22 @@
 // src/pages/HomeUpload.tsx
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import FileDropzone from '../components/uploader/FileDropzone';
 import { FolderSelectModal } from '../components/uploader/FolderSelectModal';
 import { startSession, uploadPdf, guestUploadPdf } from '../services';
 import { usePaperStore } from '../store/usePaperStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useGuestStore, generateGuestSessionId } from '../store/useGuestStore';
+import { paperKeys } from '../hooks/queries';
 
 export default function HomeUpload() {
   const nav = useNavigate();
+  const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthStore();
-  const setPaper = usePaperStore((s) => s.setPaper);
-  const addPaper = usePaperStore((s) => s.addPaper);
+
+  // Use new API from usePaperStore
+  const setCurrentPaper = usePaperStore((s) => s.setCurrentPaper);
   const setSession = usePaperStore((s) => s.setSession);
 
   // Guest store
@@ -46,8 +50,10 @@ export default function HomeUpload() {
 
       // Store paper with local URL for PDF preview
       const paperWithLocalUrl = { ...paper, localUrl };
-      setPaper(paperWithLocalUrl);
-      addPaper(paperWithLocalUrl);
+      setCurrentPaper(paperWithLocalUrl);
+
+      // Invalidate papers cache to refresh list
+      queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
 
       // Create a new conversation/session for this paper
       const { conversationId } = await startSession(paper.id, paper.ragFileId);
@@ -108,7 +114,7 @@ export default function HomeUpload() {
       });
 
       // Also set in paper store for PDF viewer compatibility
-      setPaper({
+      setCurrentPaper({
         id: guestPaperObj.id,
         ragFileId: guestPaperObj.ragFileId,
         fileName: guestPaperObj.fileName,
@@ -187,14 +193,16 @@ export default function HomeUpload() {
         <FileDropzone onUpload={onUpload} />
       </div>
 
-      {/* Folder Selection Modal (for logged-in users) */}
-      <FolderSelectModal
-        open={showFolderModal}
-        fileName={pendingFile?.file.name || ''}
-        isUploading={isUploading}
-        onClose={handleFolderModalClose}
-        onConfirm={handleFolderConfirm}
-      />
+      {/* Folder Selection Modal (for logged-in users only) */}
+      {isAuthenticated && (
+        <FolderSelectModal
+          open={showFolderModal}
+          fileName={pendingFile?.file.name || ''}
+          isUploading={isUploading}
+          onClose={handleFolderModalClose}
+          onConfirm={handleFolderConfirm}
+        />
+      )}
     </div>
   );
 }

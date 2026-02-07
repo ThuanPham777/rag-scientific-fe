@@ -1,14 +1,18 @@
 // src/hooks/queries/useConversationQueries.ts
 // React Query hooks for conversation operations
+// This is the primary source of truth for conversation data (server state)
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   listConversations,
   getConversation,
   createConversation,
   deleteConversation,
   startSession,
+  listMultiPaperConversations,
 } from '../../services';
+import { chatKeys } from './useChatQueries';
 
 // Query keys
 export const conversationKeys = {
@@ -16,6 +20,7 @@ export const conversationKeys = {
   lists: () => [...conversationKeys.all, 'list'] as const,
   list: (paperId?: string) =>
     [...conversationKeys.lists(), { paperId }] as const,
+  multiPaper: () => [...conversationKeys.all, 'multi-paper'] as const,
   details: () => [...conversationKeys.all, 'detail'] as const,
   detail: (id: string) => [...conversationKeys.details(), id] as const,
 };
@@ -30,6 +35,21 @@ export function useConversations(paperId?: string) {
       const response = await listConversations(paperId);
       return response.data;
     },
+    staleTime: 30 * 1000, // 30 seconds
+  });
+}
+
+/**
+ * Hook to fetch multi-paper conversations
+ */
+export function useMultiPaperConversations() {
+  return useQuery({
+    queryKey: conversationKeys.multiPaper(),
+    queryFn: async () => {
+      const response = await listMultiPaperConversations();
+      return response.data;
+    },
+    staleTime: 30 * 1000,
   });
 }
 
@@ -44,6 +64,7 @@ export function useConversation(id: string | undefined) {
       return response.data;
     },
     enabled: !!id,
+    staleTime: 60 * 1000, // 1 minute
   });
 }
 
@@ -63,13 +84,17 @@ export function useCreateConversation() {
         data.data,
       );
     },
+    onError: (error: any) => {
+      const msg =
+        error.response?.data?.message || 'Failed to create conversation';
+      toast.error(msg);
+    },
   });
 }
 
 /**
  * Hook to start a new session (creates conversation)
- * NOTE: Currently app uses startSession directly. This hook is available for
- * future migration to React Query patterns with proper cache invalidation.
+ * Returns conversation ID for navigation
  */
 export function useStartSession() {
   const queryClient = useQueryClient();
@@ -84,6 +109,10 @@ export function useStartSession() {
     }) => startSession(paperId, ragFileId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: conversationKeys.lists() });
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to start session';
+      toast.error(msg);
     },
   });
 }
@@ -100,7 +129,16 @@ export function useDeleteConversation() {
       queryClient.removeQueries({
         queryKey: conversationKeys.detail(deletedId),
       });
+      queryClient.removeQueries({
+        queryKey: chatKeys.messageList(deletedId),
+      });
       queryClient.invalidateQueries({ queryKey: conversationKeys.lists() });
+      toast.success('Conversation deleted');
+    },
+    onError: (error: any) => {
+      const msg =
+        error.response?.data?.message || 'Failed to delete conversation';
+      toast.error(msg);
     },
   });
 }

@@ -1,23 +1,32 @@
-// src/components/pdf/PdfViewer.tsx
-import { useEffect, useRef, useState } from 'react';
+// src/components/pdf/PdfViewerRefactored.tsx
+// Refactored PdfViewer with separated logic using custom hooks
+import { useCallback, useState, useMemo, useEffect } from 'react';
+import { Document, Page } from 'react-pdf';
 import PdfToolbar from './PdfToolbar';
 import PdfPages from './PdfPages';
+import AuthModal from '../auth/AuthModal';
 
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
+
+import {
+  usePdfState,
+  usePdfZoom,
+  usePdfFullscreen,
+  usePdfSelectionActionMenu,
+  usePdfHighlightsSync,
+  usePdfSearch,
+  usePdfCapture,
+  usePdfJumpEffect,
+  usePdfKeyboard,
+} from '../../hooks/pdf';
+import { useAuthStore } from '../../store/useAuthStore';
 
 type HighlightRect = {
   top: number;
   left: number;
   width: number;
   height: number;
-};
-type Highlight = {
-  id: string;
-  pageNumber: number;
-  rects: HighlightRect[];
-  text: string;
-  color?: string;
 };
 
 type JumpHighlight = {
@@ -27,6 +36,7 @@ type JumpHighlight = {
 
 type Props = {
   fileUrl?: string;
+  paperId?: string;
   jumpToPage?: number;
   jumpHighlight?: JumpHighlight | null;
   onAction?: (
@@ -38,829 +48,529 @@ type Props = {
       imageDataUrl?: string;
     },
   ) => void;
-};
-
-type PageIndex = {
-  text: string;
-  spans: { start: number; end: number; el: HTMLSpanElement }[];
+  isChatDockOpen?: boolean;
+  chatDockWidth?: number;
+  onFullscreenChange?: (isFullscreen: boolean) => void;
+  // Callback to expose capture toggle function
+  onCaptureRefChange?: (toggleCapture: () => void) => void;
 };
 
 export default function PdfViewer({
   fileUrl,
-  jumpToPage,
+  paperId,
+  jumpToPage: jumpToPageProp,
   jumpHighlight,
   onAction,
+  isChatDockOpen = true,
+  chatDockWidth = 450,
+  onFullscreenChange,
+  onCaptureRefChange,
 }: Props) {
-  const [numPages, setNumPages] = useState(0);
-  const [scale, setScale] = useState(1.0);
+  // === Core state ===
+  const pdfState = usePdfState(fileUrl);
+  const {
+    numPages,
+    setNumPages,
+    currentPage,
+    rotation,
+    pageRefs,
+    viewerScrollRef,
+    pageIndexRef,
+    goToPage,
+    rotateCw,
+    rotateCcw,
+  } = pdfState;
 
-  // === Highlight + Selection =================================================
-  const [highlights, setHighlights] = useState<Highlight[]>([]);
-  const [lastColor, setLastColor] = useState<string | undefined>('#ffd700');
-  const [sel, setSel] = useState<{
-    pageNumber: number;
-    text: string;
-    rects: HighlightRect[];
-    anchor: { x: number; y: number };
-    pageClientWidth?: number;
-    pageClientHeight?: number;
-  } | null>(null);
+  // === Zoom ===
+  const { scale, setScale, zoomIn, zoomOut } = usePdfZoom();
 
-  // === Capture (ảnh) mode ====================================================
-  const [captureMode, setCaptureMode] = useState(false);
-  const [dragBox, setDragBox] = useState<{
-    active: boolean;
-    pageNumber: number;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null>(null);
+  // === Fullscreen ===
+  const { isFullscreen, containerRef, toggleFullscreen } = usePdfFullscreen({
+    onFullscreenChange,
+  });
 
-  // === Search ================================================================
-  const [showSearch, setShowSearch] = useState(false);
-  const [query, setQuery] = useState('');
-  const [matchCase, setMatchCase] = useState(false);
-  const [wholeWords, setWholeWords] = useState(false);
-  const [hits, setHits] = useState<
-    { pageNumber: number; rects: HighlightRect[] }[]
-  >([]);
-  const [hitIndex, setHitIndex] = useState(0);
+  // === Thumbnails ===
+  const [showThumbnails, setShowThumbnails] = useState(false);
 
-  // Refs
-  const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const viewerScrollRef = useRef<HTMLDivElement>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
-  const pageIndexRef = useRef<Record<number, PageIndex>>({});
+  // === Auth state ===
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
-  // reset khi đổi file
-  useEffect(() => {
-    setNumPages(0);
-    setHighlights([]);
-    setSel(null);
-    setCaptureMode(false);
-    setDragBox(null);
-    setHits([]);
-    setHitIndex(0);
-  }, [fileUrl]);
-
-  // selection text popup
-  useEffect(() => {
-    const handleMouseUp = () => {
-      if (captureMode) return;
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) {
-        setSel(null);
-        return;
-      }
-      const text = selection.toString().trim();
-      if (!text) {
-        setSel(null);
-        return;
-      }
-      const anchorNode = selection.anchorNode as Node | null;
-      const pageEl = (
-        anchorNode instanceof HTMLElement
-          ? anchorNode
-          : (anchorNode?.parentElement as HTMLElement)
-      )?.closest('[data-page]') as HTMLElement | null;
-
-      if (!pageEl) return;
-
-      // Bám theo textLayer để tọa độ trùng sát chữ
-      const textLayer =
-        (pageEl.querySelector('.textLayer') as HTMLElement | null) || pageEl;
-
-      const pageNumber = Number(pageEl.getAttribute('data-page') || 1);
-      const pageBounds = textLayer.getBoundingClientRect();
-      const range = selection.getRangeAt(0);
-      const rectsDom = Array.from(range.getClientRects());
-
-      const rects: HighlightRect[] = rectsDom.map((r) => ({
-        top: r.top - pageBounds.top,
-        left: r.left - pageBounds.left,
-        width: r.width,
-        height: r.height,
-      }));
-
-      if (!rects.length) {
-        setSel(null);
-        return;
-      }
-
-      const first = rects[0];
-      const anchor = { x: first.left + first.width + 12, y: first.top };
-
-      const pageClientWidth = textLayer.clientWidth;
-      const pageClientHeight = textLayer.clientHeight;
-
-      setSel({
-        pageNumber,
-        text,
-        rects,
-        anchor,
-        pageClientWidth,
-        pageClientHeight,
-      });
-    };
-
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, [captureMode]);
-
-  // cuộn viewer ⇒ ẩn popup
-  useEffect(() => {
-    const el = viewerScrollRef.current;
-    if (!el) return;
-    const h = () => setSel(null);
-    el.addEventListener('scroll', h, { passive: true });
-    return () => el.removeEventListener('scroll', h);
-  }, []);
-
-  // zoom
-  const zoomOut = () => setScale((s) => Math.max(0.5, +(s - 0.1).toFixed(2)));
-  const zoomIn = () => setScale((s) => Math.min(3, +(s + 0.1).toFixed(2)));
-
-  // Keyboard shortcuts + global mouse (capture)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSel(null);
-        setCaptureMode(false);
-      } else if (e.key === '+' || e.key === '=') {
-        e.preventDefault();
-        zoomIn();
-      } else if (e.key === '-') {
-        e.preventDefault();
-        zoomOut();
-      }
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!captureMode || !dragBox?.active) return;
-      const pageEl = pageRefs.current[dragBox.pageNumber];
-      if (!pageEl) return;
-
-      const box = pageEl.getBoundingClientRect();
-      const curX = e.clientX - box.left;
-      const curY = e.clientY - box.top;
-      const w = Math.abs(curX - dragBox.x);
-      const h = Math.abs(curY - dragBox.y);
-      const nx = Math.min(dragBox.x, curX);
-      const ny = Math.min(dragBox.y, curY);
-      setDragBox({
-        active: true,
-        pageNumber: dragBox.pageNumber,
-        x: nx,
-        y: ny,
-        w,
-        h,
-      });
-    };
-
-    const handleMouseUp = () => {
-      if (!captureMode || !dragBox?.active) return;
-      onEndDrag(dragBox.pageNumber);
-    };
-
-    const closeOnClickOutside = (e: MouseEvent) => {
-      if (!popupRef.current) return;
-      if (!popupRef.current.contains(e.target as Node)) {
-        setSel(null);
-        window.getSelection()?.removeAllRanges?.();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('mousedown', closeOnClickOutside);
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('mousedown', closeOnClickOutside);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [zoomIn, zoomOut, captureMode, dragBox]);
-
-  // Jump tới page - with retry logic for when PDF isn't fully loaded yet
-  useEffect(() => {
-    if (!jumpToPage) return;
-    console.log('[PdfViewer] jumpToPage effect triggered:', jumpToPage);
-
-    let retryCount = 0;
-    const maxRetries = 30; // Try for up to 3 seconds (30 * 100ms)
-
-    const attemptJump = () => {
-      const pageEl = pageRefs.current[jumpToPage];
-      console.log(
-        `[PdfViewer] Attempt ${retryCount + 1}: pageEl exists =`,
-        !!pageEl,
-        'numPages =',
-        numPages,
-      );
-      if (pageEl) {
-        console.log(
-          '[PdfViewer] Found page element, scrolling to page',
-          jumpToPage,
-        );
-        pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        return true;
-      }
-      return false;
-    };
-
-    // Try immediately first
-    if (attemptJump()) return;
-
-    // If page not ready, retry with interval
-    const interval = setInterval(() => {
-      retryCount++;
-      if (attemptJump() || retryCount >= maxRetries) {
-        if (retryCount >= maxRetries) {
-          console.log(
-            '[PdfViewer] Max retries reached, giving up on page jump',
-          );
-        }
-        clearInterval(interval);
-      }
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [jumpToPage, numPages]);
-
-  // 🔥 Jump + flash highlight từ Summary - with retry logic
-  useEffect(() => {
-    if (!jumpHighlight) return;
-    const { pageNumber } = jumpHighlight;
-    console.log(
-      '[PdfViewer] jumpHighlight scroll effect triggered:',
-      pageNumber,
-    );
-
-    let retryCount = 0;
-    const maxRetries = 30;
-
-    const attemptJump = () => {
-      const pageEl = pageRefs.current[pageNumber];
-      console.log(
-        `[PdfViewer] Highlight scroll attempt ${retryCount + 1}: pageEl exists =`,
-        !!pageEl,
-      );
-      if (pageEl) {
-        console.log(
-          '[PdfViewer] Found page element, scrolling to center for highlight',
-        );
-        pageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return true;
-      }
-      return false;
-    };
-
-    // Try immediately first
-    if (attemptJump()) return;
-
-    // If page not ready, retry with interval
-    const interval = setInterval(() => {
-      retryCount++;
-      if (attemptJump() || retryCount >= maxRetries) {
-        clearInterval(interval);
-      }
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [jumpHighlight]);
-
-  // tạo temporary highlight overlay cho jumpHighlight - with retry for page load
-  useEffect(() => {
-    if (!jumpHighlight) return;
-    const { pageNumber, rect } = jumpHighlight;
-    const id = `jump-${pageNumber}-${Date.now()}`;
-    console.log('[PdfViewer] jumpHighlight overlay effect triggered:', {
-      pageNumber,
-      rect,
+  // === Selection ===
+  const { selection, clearSelection, scaleSelectionToCurrent } =
+    usePdfSelectionActionMenu({
+      pageRefs,
+      viewerScrollRef,
+      disabled: false,
     });
 
-    // Function to add highlight when page is ready
-    const addHighlightWhenReady = () => {
-      console.log('[PdfViewer] Adding highlight overlay for page', pageNumber);
-      // Clear any existing jump highlights before adding new one
-      setHighlights((prev) => [
-        ...prev.filter((x) => !x.id.startsWith('jump-')),
+  // === Highlights (synced with server) ===
+  const serverHighlights = usePdfHighlightsSync({
+    paperId,
+    pageRefs,
+    enabled: !!paperId && isAuthenticated,
+  });
+
+  // === Temporary highlights (for jump/citation features - local state only) ===
+  const [tempHighlights, setTempHighlights] = useState<
+    Array<{
+      id: string;
+      pageNumber: number;
+      rects: HighlightRect[];
+      text: string;
+      color?: string;
+      isFading?: boolean; // For fade animation
+    }>
+  >([]);
+
+  // Add temporary highlight (for jump/citation features)
+  const addTemporaryHighlight = useCallback(
+    (pageNumber: number, rect: HighlightRect) => {
+      const tempId = `jump-${Date.now()}`;
+      setTempHighlights((prev) => [
+        ...prev.filter((h) => !h.id.startsWith('jump-')), // Remove old jump highlights
         {
-          id,
+          id: tempId,
           pageNumber,
           rects: [rect],
           text: '',
-          color: '#fff3b0',
+          color: '#ffc107', // Amber color for jump highlights
+          isFading: false,
         },
       ]);
-    };
 
-    // Try immediately if page exists, otherwise wait for it
-    const pageEl = pageRefs.current[pageNumber];
-    if (pageEl) {
-      addHighlightWhenReady();
-    } else {
-      // Wait for page to be ready
-      let retryCount = 0;
-      const maxRetries = 30;
-      const interval = setInterval(() => {
-        retryCount++;
-        const el = pageRefs.current[pageNumber];
-        console.log(
-          `[PdfViewer] Highlight overlay retry ${retryCount}: pageEl exists =`,
-          !!el,
+      // Start fade animation after 2 seconds
+      setTimeout(() => {
+        setTempHighlights((prev) =>
+          prev.map((h) => (h.id === tempId ? { ...h, isFading: true } : h)),
         );
-        if (el || retryCount >= maxRetries) {
-          clearInterval(interval);
-          if (el) {
-            addHighlightWhenReady();
-          } else {
-            console.log(
-              '[PdfViewer] Max retries reached for highlight overlay',
-            );
-          }
-        }
-      }, 100);
+      }, 2000);
 
-      // Cleanup interval on unmount
-      const cleanup = () => clearInterval(interval);
+      // Remove after fade completes (3 seconds total)
+      setTimeout(() => {
+        setTempHighlights((prev) => prev.filter((h) => h.id !== tempId));
+      }, 3000);
+    },
+    [],
+  );
 
-      // Set timeout to clear highlight after 5 seconds (even if added late)
-      const timeout = setTimeout(() => {
-        setHighlights((prev) => prev.filter((x) => !x.id.startsWith('jump-')));
-      }, 5000);
+  // Use last color from local state
+  const [lastColor, setLastColor] = useState<string | undefined>('#ffd700');
 
-      return () => {
-        cleanup();
-        clearTimeout(timeout);
-      };
+  // Merge server highlights with temporary highlights
+  // Note: No local storage - highlights only exist on server or as temporary jump highlights
+  const highlights = useMemo(() => {
+    // Add isFading property to temp highlights for type compatibility
+    const typedTempHighlights = tempHighlights.map((h) => ({
+      ...h,
+      isFading: h.isFading ?? false,
+    }));
+
+    // Server highlights are only available for authenticated users with paperId
+    if (paperId && isAuthenticated && serverHighlights.highlights) {
+      return [
+        ...serverHighlights.highlights.map((h) => ({ ...h, isFading: false })),
+        ...typedTempHighlights,
+      ];
     }
+    // For unauthenticated users or no paperId, only show temp highlights (for jump/citation)
+    return typedTempHighlights;
+  }, [paperId, isAuthenticated, serverHighlights.highlights, tempHighlights]);
 
-    // If page was ready, just set the timeout to clear highlight
-    const timeout = setTimeout(() => {
-      setHighlights((prev) => prev.filter((x) => !x.id.startsWith('jump-')));
-    }, 5000);
+  // === Search ===
+  const search = usePdfSearch({
+    pageRefs,
+    pageIndexRef,
+    viewerScrollRef,
+    numPages,
+    scale,
+  });
 
-    return () => clearTimeout(timeout);
-  }, [jumpHighlight]);
-
-  // =================== EXPLAIN (capture ảnh) ================================
-  const toggleCapture = () => {
-    setCaptureMode((v) => !v);
-    setSel(null);
-  };
-
-  const onStartDrag = (e: React.MouseEvent, pageNumber: number) => {
-    if (!captureMode) return;
-    const pageEl = pageRefs.current[pageNumber]!;
-    const box = pageEl.getBoundingClientRect();
-    const x = e.clientX - box.left;
-    const y = e.clientY - box.top;
-    setDragBox({ active: true, pageNumber, x, y, w: 0, h: 0 });
-  };
-
-  const onMoveDrag = (e: React.MouseEvent, pageNumber: number) => {
-    if (!captureMode || !dragBox?.active || dragBox.pageNumber !== pageNumber)
-      return;
-    const pageEl = pageRefs.current[pageNumber]!;
-    const box = pageEl.getBoundingClientRect();
-    const curX = e.clientX - box.left;
-    const curY = e.clientY - box.top;
-    const w = Math.abs(curX - dragBox.x);
-    const h = Math.abs(curY - dragBox.y);
-    const nx = Math.min(dragBox.x, curX);
-    const ny = Math.min(dragBox.y, curY);
-    setDragBox({ active: true, pageNumber, x: nx, y: ny, w, h });
-  };
-
-  const onEndDrag = (pageNumber: number) => {
-    if (!captureMode || !dragBox) return;
-
-    const pageEl = pageRefs.current[pageNumber]!;
-    const canvas = pageEl.querySelector('canvas') as HTMLCanvasElement | null;
-    if (canvas && dragBox.w > 3 && dragBox.h > 3) {
-      const scaleX = canvas.width / pageEl.clientWidth;
-      const scaleY = canvas.height / pageEl.clientHeight;
-
-      const sx = Math.round(dragBox.x * scaleX);
-      const sy = Math.round(dragBox.y * scaleY);
-      const sw = Math.round(dragBox.w * scaleX);
-      const sh = Math.round(dragBox.h * scaleY);
-
-      const out = document.createElement('canvas');
-      out.width = sw;
-      out.height = sh;
-      const octx = out.getContext('2d')!;
-      octx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-      const dataUrl = out.toDataURL('image/png');
-
+  // === Capture ===
+  // === Capture ===
+  const capture = usePdfCapture({
+    pageRefs,
+    // We'll set the onCapture after the hook is initialized
+    onCapture: (pageNumber, imageDataUrl, rect) => {
       onAction?.('explain', {
         text: '',
         pageNumber,
-        rects: [
-          {
-            top: dragBox.y,
-            left: dragBox.x,
-            width: dragBox.w,
-            height: dragBox.h,
-          },
-        ],
-        imageDataUrl: dataUrl,
-      });
-    }
-    setDragBox(null);
-    setCaptureMode(false);
-  };
+        rects: [rect],
+        imageDataUrl,
+        // Pass completion function to the API caller
+        __completeProcessing: capture.completeProcessing,
+      } as any);
+    },
+  });
 
-  // =================== SEARCH =================================================
-  const onPageRender = (pageNumber: number) => {
-    const pageEl = pageRefs.current[pageNumber];
-    if (!pageEl) return;
-    let textLayer = pageEl.querySelector('.textLayer') as HTMLElement | null;
-    if (!textLayer) {
-      setTimeout(() => onPageRender(pageNumber), 60);
-      return;
-    }
-
-    const spans = Array.from(
-      textLayer.querySelectorAll('span'),
-    ) as HTMLSpanElement[];
-    let text = '';
-    let cursor = 0;
-    const entries: PageIndex['spans'] = [];
-
-    spans.forEach((s) => {
-      const t = s.textContent ?? '';
-      const start = cursor;
-      const end = cursor + t.length;
-      cursor = end;
-      text += t;
-      entries.push({ start, end, el: s });
-    });
-
-    pageIndexRef.current[pageNumber] = { text, spans: entries };
-  };
-
-  const buildRegex = () => {
-    if (!query.trim()) return null;
-    const esc = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = wholeWords ? `\\b${esc}\\b` : esc;
-    return new RegExp(pattern, matchCase ? 'g' : 'gi');
-  };
-
-  const clearSearchOverlays = (pageNumber: number) => {
-    const pageEl = pageRefs.current[pageNumber];
-    if (!pageEl) return;
-    pageEl.querySelectorAll('.pdf-search-hit').forEach((el) => el.remove());
-  };
-
-  const overlayForRange = (range: Range, pageEl: HTMLElement) => {
-    const textLayer =
-      (pageEl.querySelector('.textLayer') as HTMLElement | null) || pageEl;
-    const pageBox = textLayer.getBoundingClientRect();
-    const rects = Array.from(range.getClientRects()).map((r) => ({
-      top: r.top - pageBox.top,
-      left: r.left - pageBox.left,
-      width: r.width,
-      height: r.height,
-    }));
-    rects.forEach((r) => {
-      const div = document.createElement('div');
-      div.className =
-        'pdf-search-hit absolute bg-yellow-300/40 rounded-[2px] pointer-events-none';
-      Object.assign(div.style, {
-        top: `${r.top}px`,
-        left: `${r.left}px`,
-        width: `${r.width}px`,
-        height: `${r.height}px`,
-      });
-      textLayer.appendChild(div);
-    });
-    return rects;
-  };
-
-  const clearAllSearchHighlights = () => {
-    for (let p = 1; p <= numPages; p++) clearSearchOverlays(p);
-    setHits([]);
-    setHitIndex(0);
-  };
-
-  const runSearch = () => {
-    if (!query.trim()) {
-      clearAllSearchHighlights();
-      return;
-    }
-    const re = buildRegex();
-    if (!re) return;
-
-    const allHits: { pageNumber: number; rects: HighlightRect[] }[] = [];
-
-    for (let p = 1; p <= numPages; p++) {
-      clearSearchOverlays(p);
-      const idx = pageIndexRef.current[p];
-      const pageEl = pageRefs.current[p];
-      if (!idx || !pageEl) continue;
-
-      const { text, spans } = idx;
-      const rectsPage: HighlightRect[] = [];
-
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(text))) {
-        const start = m.index;
-        const end = start + m[0].length;
-
-        const spanStart = spans.find((s) => start >= s.start && start < s.end);
-        const spanEnd =
-          spans.find((s) => end > s.start && end <= s.end) ||
-          spans[spans.length - 1];
-        if (!spanStart || !spanEnd) continue;
-
-        const r = document.createRange();
-        r.setStart(
-          spanStart.el.firstChild || spanStart.el,
-          start - spanStart.start,
-        );
-        r.setEnd(spanEnd.el.firstChild || spanEnd.el, end - spanEnd.start);
-
-        const rs = overlayForRange(r, pageEl);
-        rectsPage.push(...rs);
-      }
-
-      if (rectsPage.length) allHits.push({ pageNumber: p, rects: rectsPage });
-    }
-
-    setHits(allHits);
-    setHitIndex(0);
-    if (allHits.length) {
-      const first = allHits[0].rects[0];
-      pageRefs.current[allHits[0].pageNumber]?.scrollIntoView({
-        block: 'center',
-      });
-      viewerScrollRef.current?.scrollBy({
-        top: Math.max(0, first.top - 80),
-        behavior: 'smooth',
-      });
-    }
-  };
-
+  // Expose capture toggle function to parent
   useEffect(() => {
-    const t = setTimeout(runSearch, 140);
-    return () => clearTimeout(t);
-  }, [query, matchCase, wholeWords, numPages, scale]);
+    onCaptureRefChange?.(capture.toggleCapture);
+  }, [onCaptureRefChange, capture.toggleCapture]);
 
-  const gotoHit = (dir: 1 | -1) => {
-    if (!hits.length) return;
-    const total = hits.reduce((s, h) => s + h.rects.length, 0);
-    let next = (hitIndex + (dir === 1 ? 1 : total - 1)) % total;
-    setHitIndex(next);
+  // === Jump effects ===
+  usePdfJumpEffect(jumpToPageProp, jumpHighlight, {
+    pageRefs,
+    viewerScrollRef,
+    numPages,
+    onAddTemporaryHighlight: addTemporaryHighlight,
+  });
 
-    let k = 0;
-    for (const h of hits) {
-      for (const r of h.rects) {
-        if (k === next) {
-          pageRefs.current[h.pageNumber]?.scrollIntoView({ block: 'center' });
-          viewerScrollRef.current?.scrollBy({
-            top: Math.max(0, r.top - 80),
-            behavior: 'smooth',
-          });
-          return;
-        }
-        k++;
+  // === Keyboard shortcuts ===
+  usePdfKeyboard({
+    onZoomIn: zoomIn,
+    onZoomOut: zoomOut,
+    onToggleSearch: search.toggleSearch,
+    onNextMatch: () => search.gotoHit(1),
+    onPrevMatch: () => search.gotoHit(-1),
+    onEscape: () => {
+      if (search.showSearch) {
+        search.toggleSearch();
       }
-    }
-  };
+      clearSelection();
+      capture.exitCapture();
+    },
+  });
 
-  // === helpers ===============================================================
-  const getBBox = (rects: HighlightRect[]) => {
-    const left = Math.min(...rects.map((r) => r.left));
-    const top = Math.min(...rects.map((r) => r.top));
-    const right = Math.max(...rects.map((r) => r.left + r.width));
-    const bottom = Math.max(...rects.map((r) => r.top + r.height));
-    return {
-      left,
-      top,
-      right,
-      bottom,
-      width: right - left,
-      height: bottom - top,
-    };
-  };
+  // === Action handlers ===
+  // Track created highlight for subsequent updates
+  const [activeHighlightId, setActiveHighlightId] = useState<string | null>(
+    null,
+  );
 
-  const scaleSelectionToCurrent = (s: typeof sel) => {
-    if (!s) return s;
-    const pageEl = pageRefs.current[s.pageNumber];
-    if (!pageEl) return s;
-    const textLayer =
-      (pageEl.querySelector('.textLayer') as HTMLElement | null) || pageEl;
-    const baseW = s.pageClientWidth || textLayer.clientWidth;
-    const baseH = s.pageClientHeight || textLayer.clientHeight;
-    const fx = textLayer.clientWidth / baseW;
-    const fy = textLayer.clientHeight / baseH;
-    const rects = s.rects.map((r) => ({
-      top: r.top * fy,
-      left: r.left * fx,
-      width: r.width * fx,
-      height: r.height * fy,
-    }));
-    const anchor = { x: s.anchor.x * fx, y: s.anchor.y * fy };
-    return { ...s, rects, anchor } as typeof sel;
-  };
+  // Reset activeHighlightId when selection changes (new text selected = new highlight)
+  useEffect(() => {
+    // When selection changes, we're dealing with a new highlight, not updating an existing one
+    setActiveHighlightId(null);
+  }, [selection?.text, selection?.pageNumber]);
 
-  const overlapRatio = (
-    a: { left: number; top: number; right: number; bottom: number },
-    b: { left: number; top: number; right: number; bottom: number },
-  ) => {
-    const x1 = Math.max(a.left, b.left);
-    const y1 = Math.max(a.top, b.top);
-    const x2 = Math.min(a.right, b.right);
-    const y2 = Math.min(a.bottom, b.bottom);
-    if (x2 <= x1 || y2 <= y1) return 0;
-    const inter = (x2 - x1) * (y2 - y1);
-    const areaA = (a.right - a.left) * (a.bottom - a.top);
-    const areaB = (b.right - b.left) * (b.bottom - b.top);
-    return inter / Math.min(areaA, areaB);
-  };
+  const handleAddHighlight = useCallback(
+    async (color?: string, comment?: string, shouldClose = true) => {
+      if (!selection) return;
 
-  const addHighlight = (color?: string) => {
-    if (!sel) return;
-    const scaled = scaleSelectionToCurrent(sel);
-    const pageEl = pageRefs.current[scaled!.pageNumber];
-    const textLayer =
-      (pageEl?.querySelector('.textLayer') as HTMLElement | null) || pageEl;
+      // Require authentication for highlighting
+      if (!isAuthenticated) {
+        setShowAuthModal(true);
+        return;
+      }
 
-    let normalized = scaled!.rects;
-    if (textLayer) {
-      const pw = textLayer.clientWidth;
-      const ph = textLayer.clientHeight;
-      normalized = scaled!.rects.map((r) => ({
-        top: r.top / ph,
-        left: r.left / pw,
-        width: r.width / pw,
-        height: r.height / ph,
-      }));
-    }
+      // Require paperId for server storage
+      if (!paperId) {
+        console.warn('Cannot create highlight: paperId is missing');
+        clearSelection();
+        return;
+      }
 
-    setHighlights((hs) => {
-      const page = scaled!.pageNumber;
-      const pw = textLayer?.clientWidth || 1;
-      const ph = textLayer?.clientHeight || 1;
-      const newBox = getBBox(scaled!.rects);
-      const filtered = hs.filter((h) => {
-        if (h.pageNumber !== page) return true;
-        const oldRectsPx = h.rects.map((r) => {
-          if (r.left <= 1 && r.width <= 1 && r.top <= 1 && r.height <= 1) {
-            return {
-              top: r.top * ph,
-              left: r.left * pw,
-              width: r.width * pw,
-              height: r.height * ph,
-            };
+      const highlightColor = color || lastColor || '#ffd700';
+
+      try {
+        // If we already have an active highlight, update its color and add comment
+        if (activeHighlightId) {
+          // Update color
+          await serverHighlights.updateHighlightColor(
+            activeHighlightId,
+            highlightColor,
+          );
+
+          // Add comment if provided
+          if (comment && comment.trim()) {
+            await serverHighlights.addComment(
+              activeHighlightId,
+              comment.trim(),
+            );
           }
-          return r as HighlightRect;
-        });
-        const oldBox = getBBox(oldRectsPx);
-        const ratio = overlapRatio(newBox, oldBox);
-        const areaNew = newBox.width * newBox.height;
-        const areaOld = oldBox.width * oldBox.height;
-        if (ratio > 0.85 && areaNew >= areaOld * 0.9) {
-          return false;
+
+          // Update last used color
+          if (color) {
+            setLastColor(color);
+          }
+        } else {
+          // Create new highlight
+          const scaled = scaleSelectionToCurrent(selection);
+          if (!scaled) return;
+
+          const result = await serverHighlights.addHighlight(
+            selection.pageNumber,
+            selection.text,
+            scaled.rects,
+            highlightColor,
+            comment,
+          );
+
+          // Store the created highlight ID for potential updates
+          if (result?.id) {
+            setActiveHighlightId(result.id);
+          }
+
+          // Update last used color
+          if (color) {
+            setLastColor(color);
+          }
+
+          onAction?.('highlight', {
+            text: selection.text,
+            pageNumber: selection.pageNumber,
+            rects: scaled.rects,
+          });
         }
-        return true;
-      });
-      return [
-        ...filtered,
-        {
-          id: crypto.randomUUID(),
-          pageNumber: sel.pageNumber,
-          rects: normalized,
-          text: sel.text,
-          color,
-        },
-      ];
-    });
+      } catch (error) {
+        console.error('Failed to save highlight to server:', error);
+      }
 
-    onAction?.('highlight', {
-      text: sel.text,
-      pageNumber: sel.pageNumber,
-      rects: scaled!.rects,
-    });
-  };
+      // Only clear selection if explicitly requested
+      if (shouldClose) {
+        setActiveHighlightId(null);
+        clearSelection();
+      }
+    },
+    [
+      selection,
+      scaleSelectionToCurrent,
+      paperId,
+      isAuthenticated,
+      serverHighlights,
+      lastColor,
+      onAction,
+      clearSelection,
+      activeHighlightId,
+    ],
+  );
 
-  const cancelHighlight = () => {
-    if (!sel) {
-      setSel(null);
+  // Handler to finalize highlight editing (close the editor)
+  const handleFinalizeHighlight = useCallback(() => {
+    setActiveHighlightId(null);
+    clearSelection();
+  }, [clearSelection]);
+
+  const handleRemoveHighlight = useCallback(async () => {
+    if (!selection) {
+      clearSelection();
       return;
     }
-    const scaled = scaleSelectionToCurrent(sel);
-    setHighlights((hs) => {
-      const page = scaled!.pageNumber;
-      const pageEl = pageRefs.current[page];
-      const textLayer =
-        (pageEl?.querySelector('.textLayer') as HTMLElement | null) || pageEl;
-      const pw = textLayer?.clientWidth || 1;
-      const ph = textLayer?.clientHeight || 1;
-      const curBox = getBBox(scaled!.rects);
-      return hs.filter((h) => {
-        if (h.pageNumber !== page) return true;
-        const oldRectsPx = h.rects.map((r) => {
-          if (r.left <= 1 && r.width <= 1 && r.top <= 1 && r.height <= 1) {
-            return {
-              top: r.top * ph,
-              left: r.left * pw,
-              width: r.width * pw,
-              height: r.height * ph,
-            };
-          }
-          return r as HighlightRect;
-        });
-        const oldBox = getBBox(oldRectsPx);
-        const ratio = overlapRatio(curBox, oldBox);
-        return ratio < 0.85;
+
+    // Require authentication for highlight removal
+    if (!isAuthenticated || !paperId) {
+      clearSelection();
+      return;
+    }
+
+    const scaled = scaleSelectionToCurrent(selection);
+    if (scaled) {
+      try {
+        await serverHighlights.removeHighlightByRects(
+          selection.pageNumber,
+          scaled.rects,
+        );
+      } catch (error) {
+        console.error('Failed to remove highlight from server:', error);
+      }
+    }
+    clearSelection();
+  }, [
+    selection,
+    scaleSelectionToCurrent,
+    paperId,
+    isAuthenticated,
+    serverHighlights,
+    clearSelection,
+  ]);
+
+  const fireAction = useCallback(
+    (type: 'explain' | 'summarize' | 'related' | 'highlight' | 'save') => {
+      if (!selection) return;
+      const scaled = scaleSelectionToCurrent(selection);
+      onAction?.(type, {
+        text: selection.text,
+        pageNumber: selection.pageNumber,
+        rects: scaled?.rects || selection.rects,
       });
-    });
-    setSel(null);
-  };
+      clearSelection();
+    },
+    [selection, scaleSelectionToCurrent, onAction, clearSelection],
+  );
 
-  const fire = (
-    type: NonNullable<Parameters<NonNullable<Props['onAction']>>[0]>,
-  ) => {
-    if (!sel) return;
-    const scaled = scaleSelectionToCurrent(sel);
-    onAction?.(type, {
-      text: sel.text,
-      pageNumber: sel.pageNumber,
-      rects: scaled!.rects,
-    });
-    setSel(null);
-  };
+  // === Download ===
+  const handleDownload = useCallback(() => {
+    if (!fileUrl) return;
+    const link = document.createElement('a');
+    link.href = fileUrl;
+    link.download = fileUrl.split('/').pop() || 'document.pdf';
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [fileUrl]);
 
+  // === Styles ===
+  const fullscreenStyle = isFullscreen
+    ? isChatDockOpen
+      ? { right: `${chatDockWidth}px` }
+      : {}
+    : {};
+
+  // === Render ===
   return (
-    <div className='flex flex-col h-full min-h-0'>
-      <PdfToolbar
-        showSearch={showSearch}
-        onToggleSearch={() =>
-          setShowSearch((v) => {
-            const next = !v;
-            if (v && !next) {
-              setQuery('');
-              clearAllSearchHighlights();
-            }
-            return next;
-          })
-        }
-        query={query}
-        onQueryChange={setQuery}
-        hits={hits}
-        hitIndex={hitIndex}
-        onGotoHit={gotoHit}
-        onRunSearch={runSearch}
-        matchCase={matchCase}
-        onMatchCaseChange={setMatchCase}
-        wholeWords={wholeWords}
-        onWholeWordsChange={setWholeWords}
-        onToggleCapture={toggleCapture}
-        captureMode={captureMode}
-        zoomIn={zoomIn}
-        zoomOut={zoomOut}
-        scale={scale}
-        setScale={setScale}
-      />
+    <>
+      {/* Fullscreen backdrop */}
+      {isFullscreen && (
+        <div className='fixed inset-0 z-[60] bg-gray-900/50 backdrop-blur-sm' />
+      )}
 
       <div
-        ref={viewerScrollRef}
-        className={`flex-1 overflow-auto bg-gray-50 min-h-0 ${
-          captureMode ? 'cursor-crosshair' : ''
+        ref={containerRef}
+        className={`flex flex-col min-h-0 transition-all duration-300 ${
+          isFullscreen
+            ? `fixed top-0 left-0 bottom-0 z-[70] bg-white ${isChatDockOpen ? '' : 'right-0'}`
+            : 'h-full'
         }`}
+        style={fullscreenStyle}
       >
-        <style>{`.textLayer span:hover{font-weight:700}`}</style>
-        {!fileUrl ? (
-          <div className='p-6 text-sm text-gray-500'>No PDF selected.</div>
-        ) : (
-          <PdfPages
-            fileUrl={fileUrl}
-            numPages={numPages}
-            scale={scale}
-            highlights={highlights}
-            selection={sel}
-            captureMode={captureMode}
-            dragBox={dragBox}
-            pageRefs={pageRefs}
-            onPageRender={onPageRender}
-            onStartDrag={onStartDrag}
-            onMoveDrag={onMoveDrag}
-            onEndDrag={onEndDrag}
-            onAction={fire}
-            onAddHighlight={addHighlight}
-            onRemoveHighlight={cancelHighlight}
-            selectedColorDefault={lastColor}
-            onSelectedColorChange={setLastColor}
-            onLoadSuccess={setNumPages}
-          />
-        )}
+        <PdfToolbar
+          showSearch={search.showSearch}
+          onToggleSearch={search.toggleSearch}
+          query={search.query}
+          onQueryChange={search.setQuery}
+          hitIndex={search.hitIndex}
+          totalMatches={search.totalMatches}
+          onGotoHit={search.gotoHit}
+          onRunSearch={search.runSearch}
+          matchCase={search.matchCase}
+          onMatchCaseChange={search.setMatchCase}
+          wholeWords={search.wholeWords}
+          onWholeWordsChange={search.setWholeWords}
+          onToggleCapture={capture.toggleCapture}
+          captureMode={capture.captureMode}
+          zoomIn={zoomIn}
+          zoomOut={zoomOut}
+          scale={scale}
+          setScale={setScale}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={toggleFullscreen}
+          onRotateCw={rotateCw}
+          onRotateCcw={rotateCcw}
+          onDownload={handleDownload}
+          fileUrl={fileUrl}
+          currentPage={currentPage}
+          numPages={numPages}
+          onPageChange={goToPage}
+          onToggleThumbnails={() => setShowThumbnails((v) => !v)}
+          showThumbnails={showThumbnails}
+        />
+
+        <div className='flex-1 flex min-h-0'>
+          {/* Thumbnails sidebar */}
+          {isFullscreen && showThumbnails && numPages > 0 && fileUrl && (
+            <div className='w-44 border-r border-gray-200 bg-gray-100 overflow-y-auto flex-shrink-0'>
+              <div className='p-2 space-y-2'>
+                <Document file={fileUrl}>
+                  {Array.from({ length: numPages }, (_, idx) => {
+                    const pageNum = idx + 1;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => goToPage(pageNum)}
+                        className={`w-full p-2 rounded-lg border transition-all ${
+                          currentPage === pageNum
+                            ? 'border-orange-500 bg-orange-50 shadow-sm'
+                            : 'border-gray-300 bg-white hover:border-orange-300 hover:bg-orange-50/50'
+                        }`}
+                      >
+                        <div className='overflow-hidden rounded mb-1 bg-white shadow-sm'>
+                          <Page
+                            pageNumber={pageNum}
+                            width={120}
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
+                          />
+                        </div>
+                        <div className='text-xs text-center text-gray-600'>
+                          {pageNum}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </Document>
+              </div>
+            </div>
+          )}
+
+          {/* Main PDF content */}
+          <div
+            ref={viewerScrollRef}
+            className={`flex-1 bg-gray-50 min-h-0 relative ${
+              capture.captureMode ? 'cursor-crosshair' : ''
+            } ${
+              capture.captureMode &&
+              !capture.isProcessing &&
+              !capture.dragBox?.active
+                ? 'ring-2 ring-orange-400 ring-offset-2 shadow-[0_0_15px_rgba(251,146,60,0.5)]'
+                : ''
+            } ${
+              capture.isProcessing || capture.dragBox?.active
+                ? 'overflow-hidden'
+                : 'overflow-auto'
+            }`}
+          >
+            <style>{`
+              /* Remove font-weight change that causes rendering issues */
+              .textLayer {
+                /* Ensure text layer is above highlight layer */
+                z-index: 2 !important;
+              }
+              .textLayer span {
+                /* Prevent font rendering issues */
+                -webkit-font-smoothing: antialiased;
+              }
+              .textLayer ::selection {
+                background-color: rgba(59, 130, 246, 0.3);
+              }
+              .pdf-pages-container {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+              }
+            `}</style>
+
+            {!fileUrl ? (
+              <div className='p-6 text-sm text-gray-500'>No PDF selected.</div>
+            ) : (
+              <PdfPages
+                fileUrl={fileUrl}
+                numPages={numPages}
+                scale={scale}
+                rotation={rotation}
+                highlights={highlights}
+                selection={selection}
+                captureMode={capture.captureMode}
+                dragBox={capture.dragBox}
+                isProcessing={capture.isProcessing}
+                capturedRegion={capture.capturedRegion}
+                pageRefs={pageRefs}
+                onPageRender={search.onPageRender}
+                onStartDrag={capture.onStartDrag}
+                onMoveDrag={capture.onMoveDrag}
+                onEndDrag={capture.onEndDrag}
+                onAction={fireAction}
+                onAddHighlight={handleAddHighlight}
+                onRemoveHighlight={handleRemoveHighlight}
+                onFinalizeHighlight={handleFinalizeHighlight}
+                selectedColorDefault={lastColor}
+                onSelectedColorChange={setLastColor}
+                onLoadSuccess={setNumPages}
+                isAuthenticated={isAuthenticated}
+                paperId={paperId}
+              />
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* Auth Modal for unauthenticated highlight attempts */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        initialMode='login'
+      />
+    </>
   );
 }

@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { login as apiLogin, signup as apiSignup } from '../../services';
 import { useAuthStore } from '../../store/useAuthStore';
-import { useGoogleAuth } from '../../hooks/useGoogleAuth';
+import { useGoogleAuth } from '../../hooks/auth/useGoogleAuth';
 import LoginForm, { type LoginFormData } from './LoginForm';
 import SignupForm, { type SignupFormData } from './SignupForm';
 

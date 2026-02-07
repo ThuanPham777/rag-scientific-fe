@@ -1,5 +1,5 @@
 // src/pages/ChatPage.tsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
@@ -25,17 +25,31 @@ export default function ChatPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { isAuthenticated, isInitialized } = useAuthStore();
-  const {
-    session,
-    paper,
-    isChatLoading,
-    addMessage,
-    setMessages,
-    setSession,
-    setPaper,
-    setChatLoading,
-    setPendingJump,
-  } = usePaperStore();
+
+  // Use new API from usePaperStore
+  const currentPaper = usePaperStore((s) => s.currentPaper);
+  const currentConversationId = usePaperStore((s) => s.currentConversationId);
+  const sessionMeta = usePaperStore((s) => s.sessionMeta);
+  const optimisticMessages = usePaperStore((s) => s.optimisticMessages);
+  const isChatLoading = usePaperStore((s) => s.isChatLoading);
+  const setCurrentPaper = usePaperStore((s) => s.setCurrentPaper);
+  const setSession = usePaperStore((s) => s.setSession);
+  const addOptimisticMessage = usePaperStore((s) => s.addOptimisticMessage);
+  const setOptimisticMessages = usePaperStore((s) => s.setOptimisticMessages);
+  const setChatLoading = usePaperStore((s) => s.setChatLoading);
+  const setPendingJump = usePaperStore((s) => s.setPendingJump);
+  const updateCurrentPaper = usePaperStore((s) => s.updateCurrentPaper);
+
+  // Build session object from store state
+  const session = currentConversationId
+    ? {
+        id: currentConversationId,
+        paperId: sessionMeta?.paperId,
+        ragFileId: sessionMeta?.ragFileId,
+        title: sessionMeta?.title,
+        messages: optimisticMessages,
+      }
+    : null;
 
   // Guest store
   const {
@@ -74,7 +88,7 @@ export default function ChatPage() {
           userId: '',
         }
       : undefined
-    : paper;
+    : (currentPaper ?? undefined);
 
   // Start as true if we have urlConversationId but no session (need to restore)
   const [initialLoading, setInitialLoading] = useState(() => {
@@ -85,11 +99,22 @@ export default function ChatPage() {
       return false; // Guest session found
     }
     // Authenticated session - check paper store
-    if (usePaperStore.getState().session?.id === urlConversationId) {
+    const paperStore = usePaperStore.getState();
+    if (paperStore.currentConversationId === urlConversationId) {
       return false;
     }
     return true; // Need to restore
   });
+
+  // State for ChatDock open status (for fullscreen PDF viewer integration)
+  // MUST be defined before any early returns to follow Rules of Hooks
+  const [isChatDockOpen, setIsChatDockOpen] = useState(true);
+  // State for PDF fullscreen mode
+  const [isPdfFullscreen, setIsPdfFullscreen] = useState(false);
+  const CHAT_DOCK_WIDTH = 500;
+
+  // Capture function - will be set by PdfPanel
+  const captureToggleRef = useRef<(() => void) | null>(null);
 
   // Restore session from URL on mount/reload
   useEffect(() => {
@@ -105,7 +130,7 @@ export default function ChatPage() {
         guestStore.currentPaper
       ) {
         // Session found in localStorage, sync to paper store for PDF viewer
-        setPaper({
+        setCurrentPaper({
           id: guestStore.currentPaper.id,
           ragFileId: guestStore.currentPaper.ragFileId,
           fileName: guestStore.currentPaper.fileName,
@@ -152,7 +177,7 @@ export default function ChatPage() {
               try {
                 const paperResponse = await getPaper(conv.paperId);
                 if (paperResponse.data) {
-                  setPaper(paperResponse.data);
+                  setCurrentPaper(paperResponse.data);
                 }
               } catch (err) {
                 console.error('Failed to load paper:', err);
@@ -166,7 +191,7 @@ export default function ChatPage() {
                 conv.paperId,
               );
               if (messages.length > 0) {
-                setMessages(messages);
+                setOptimisticMessages(messages);
               }
             } catch (err) {
               console.error('Failed to load message history:', err);
@@ -264,7 +289,7 @@ export default function ChatPage() {
         if (status !== 'PROCESSING') {
           updateGuestPaper({ status });
           // Also update paper store
-          usePaperStore.getState().updatePaper({ status } as any);
+          updateCurrentPaper({ status } as any);
         }
       } catch (err) {
         console.error('Failed to check ingest status:', err);
@@ -276,7 +301,13 @@ export default function ChatPage() {
     pollStatus(); // Check immediately
 
     return () => clearInterval(interval);
-  }, [isGuest, guestPaper?.ragFileId, guestPaper?.status, updateGuestPaper]);
+  }, [
+    isGuest,
+    guestPaper?.ragFileId,
+    guestPaper?.status,
+    updateGuestPaper,
+    updateCurrentPaper,
+  ]);
 
   // Load message history when session changes (for existing authenticated sessions only)
   useEffect(() => {
@@ -287,14 +318,14 @@ export default function ChatPage() {
       getMessageHistory(session.id, session.paperId)
         .then((messages) => {
           if (messages.length > 0) {
-            setMessages(messages);
+            setOptimisticMessages(messages);
           }
         })
         .catch((err) => {
           console.error('Failed to load message history:', err);
         });
     }
-  }, [session?.id, urlConversationId, setMessages, isGuest]);
+  }, [session?.id, urlConversationId, setOptimisticMessages, isGuest]);
 
   // Get messages from appropriate store
   const messages = isGuest
@@ -319,14 +350,19 @@ export default function ChatPage() {
         try {
           await clearChatHistoryMutation.mutateAsync(conversationId);
           // Also clear from paper store
-          setMessages([]);
+          setOptimisticMessages([]);
         } catch (err) {
           console.error('Failed to clear chat history:', err);
           alert('Failed to clear chat history. Please try again.');
         }
       }
     },
-    [isGuest, setGuestMessages, setMessages, clearChatHistoryMutation],
+    [
+      isGuest,
+      setGuestMessages,
+      setOptimisticMessages,
+      clearChatHistoryMutation,
+    ],
   );
 
   // onSend handler - defined as useCallback to maintain stable reference
@@ -345,7 +381,7 @@ export default function ChatPage() {
       if (isGuest) {
         addGuestMessage(userMsg);
       } else {
-        addMessage(userMsg);
+        addOptimisticMessage(userMsg);
       }
 
       // Set loading state on appropriate store
@@ -370,8 +406,12 @@ export default function ChatPage() {
           addGuestMessage(assistantMsg);
         } else if (session) {
           // Authenticated: Call regular API
-          const { assistantMsg } = await sendQuery(session.id, text, paper?.id);
-          addMessage(assistantMsg);
+          const { assistantMsg } = await sendQuery(
+            session.id,
+            text,
+            currentPaper?.id,
+          );
+          addOptimisticMessage(assistantMsg);
         }
       } catch (err: any) {
         console.error('❌ Chat error:', err);
@@ -385,7 +425,7 @@ export default function ChatPage() {
         if (isGuest) {
           addGuestMessage(errorMsg);
         } else {
-          addMessage(errorMsg);
+          addOptimisticMessage(errorMsg);
         }
       } finally {
         setLoading(false);
@@ -397,9 +437,9 @@ export default function ChatPage() {
       guestSession,
       guestPaper?.id,
       session,
-      paper?.id,
+      currentPaper?.id,
       addGuestMessage,
-      addMessage,
+      addOptimisticMessage,
       setGuestLoading,
       setChatLoading,
     ],
@@ -426,7 +466,7 @@ export default function ChatPage() {
       if (isGuest) {
         addGuestMessage(userMsg);
       } else {
-        addMessage(userMsg);
+        addOptimisticMessage(userMsg);
       }
 
       // Set loading state on appropriate store
@@ -454,10 +494,10 @@ export default function ChatPage() {
           const { assistantMsg } = await sendQuery(
             session.id,
             queryText,
-            paper?.id,
+            currentPaper?.id,
           );
           console.log('call api success', assistantMsg);
-          addMessage(assistantMsg);
+          addOptimisticMessage(assistantMsg);
         }
       } catch (err: any) {
         console.error('❌ PDF action error:', err);
@@ -471,7 +511,7 @@ export default function ChatPage() {
         if (isGuest) {
           addGuestMessage(errorMsg);
         } else {
-          addMessage(errorMsg);
+          addOptimisticMessage(errorMsg);
         }
       } finally {
         setLoadingPdf(false);
@@ -483,9 +523,9 @@ export default function ChatPage() {
       guestSession,
       guestPaper?.id,
       session,
-      paper?.id,
+      currentPaper?.id,
       addGuestMessage,
-      addMessage,
+      addOptimisticMessage,
       setGuestLoading,
       setChatLoading,
     ],
@@ -522,10 +562,16 @@ export default function ChatPage() {
 
   return (
     <div className='pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2'>
-      <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-4 px-3'>
+      <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_500px] gap-2'>
         <PdfPanel
           activePaper={activePaper}
           onPdfAction={handlePdfAction}
+          isChatDockOpen={isChatDockOpen}
+          chatDockWidth={CHAT_DOCK_WIDTH}
+          onFullscreenChange={setIsPdfFullscreen}
+          onCaptureRefChange={(toggleCapture) => {
+            captureToggleRef.current = toggleCapture;
+          }}
         />
         <div
           className='hidden lg:block'
@@ -534,13 +580,16 @@ export default function ChatPage() {
       </div>
 
       <ChatDock
-        session={activeSession}
+        session={activeSession as any}
         messages={messages}
         onSend={onSend}
         onClearChatHistory={handleClearChatHistory}
         isLoading={isGuest ? guestIsLoading : isChatLoading}
         defaultOpen={true}
         activePaperId={activePaper?.ragFileId}
+        onOpenChange={setIsChatDockOpen}
+        isPdfFullscreen={isPdfFullscreen}
+        onExplainMath={() => captureToggleRef.current?.()}
       />
     </div>
   );

@@ -1,51 +1,55 @@
 // src/store/useMultiPaperChatStore.ts
-// Store for managing multi-paper chat selection and state
+// UI/Client state ONLY - No legacy compatibility
+// Server data (conversations, messages) is managed by React Query
+// This store handles paper selection UI state and optimistic messages
 
 import { create } from 'zustand';
 import type { Paper, ChatMessage } from '../utils/types';
 
-export interface MultiPaperSession {
-  id: string; // Local client-side ID
-  conversationId?: string; // Backend conversation ID (from database)
-  paperIds: string[];
-  papers: Paper[];
-  messages: ChatMessage[];
-}
-
-interface MultiPaperChatState {
-  // Selected papers for multi-chat
+interface MultiPaperChatUIState {
+  // Selected papers for multi-chat (UI selection state)
   selectedPapers: Paper[];
 
-  // Current multi-paper session
-  session: MultiPaperSession | null;
+  // Current conversation ID (set from React Query data)
+  currentConversationId: string | null;
+
+  // Optimistic messages (for real-time chat experience)
+  optimisticMessages: ChatMessage[];
 
   // Loading state
   isLoading: boolean;
 
-  // Actions
+  // Actions - Paper selection
   selectPaper: (paper: Paper) => void;
   deselectPaper: (paperId: string) => void;
   togglePaper: (paper: Paper) => void;
   clearSelection: () => void;
   isSelected: (paperId: string) => boolean;
 
-  // Session management
-  setSession: (session: MultiPaperSession | null) => void;
-  setConversationId: (conversationId: string) => void;
-  addMessage: (message: ChatMessage) => void;
-  setMessages: (messages: ChatMessage[]) => void;
-  clearSession: () => void;
+  // Actions - Conversation
+  setCurrentConversationId: (id: string | null) => void;
 
-  // Loading
+  // Actions - Optimistic messages
+  addOptimisticMessage: (message: ChatMessage) => void;
+  setOptimisticMessages: (messages: ChatMessage[]) => void;
+  clearOptimisticMessages: () => void;
+
+  // Actions - Loading
   setLoading: (loading: boolean) => void;
+
+  // Actions - Reset
+  reset: () => void;
 }
 
-export const useMultiPaperChatStore = create<MultiPaperChatState>(
+export const useMultiPaperChatStore = create<MultiPaperChatUIState>(
   (set, get) => ({
+    // UI state
     selectedPapers: [],
-    session: null,
+    currentConversationId: null,
+    optimisticMessages: [],
     isLoading: false,
 
+    // Paper selection actions
     selectPaper: (paper) => {
       const { selectedPapers } = get();
       if (!selectedPapers.find((p) => p.id === paper.id)) {
@@ -79,62 +83,47 @@ export const useMultiPaperChatStore = create<MultiPaperChatState>(
       return get().selectedPapers.some((p) => p.id === paperId);
     },
 
-    setSession: (session) => {
-      set({ session });
-    },
+    // Conversation actions
+    setCurrentConversationId: (id) => set({ currentConversationId: id }),
 
-    setConversationId: (conversationId) => {
-      set((state) => {
-        if (!state.session) return state;
-        return {
-          session: {
-            ...state.session,
-            conversationId,
-          },
-        };
-      });
-    },
+    // Message actions
+    addOptimisticMessage: (message) =>
+      set((state) => ({
+        optimisticMessages: [...state.optimisticMessages, message],
+      })),
 
-    addMessage: (message) => {
-      set((state) => {
-        if (!state.session) {
-          // Create new session if none exists
-          return {
-            session: {
-              id: crypto.randomUUID(),
-              paperIds: state.selectedPapers.map((p) => p.id),
-              papers: state.selectedPapers,
-              messages: [message],
-            },
-          };
-        }
-        return {
-          session: {
-            ...state.session,
-            messages: [...state.session.messages, message],
-          },
-        };
-      });
-    },
+    setOptimisticMessages: (messages) => set({ optimisticMessages: messages }),
 
-    setMessages: (messages) => {
-      set((state) => {
-        if (!state.session) return state;
-        return {
-          session: {
-            ...state.session,
-            messages,
-          },
-        };
-      });
-    },
+    clearOptimisticMessages: () => set({ optimisticMessages: [] }),
 
-    clearSession: () => {
-      set({ session: null });
-    },
+    // Loading actions
+    setLoading: (loading) => set({ isLoading: loading }),
 
-    setLoading: (loading) => {
-      set({ isLoading: loading });
-    },
+    // Reset action
+    reset: () =>
+      set({
+        selectedPapers: [],
+        currentConversationId: null,
+        optimisticMessages: [],
+        isLoading: false,
+      }),
   }),
 );
+
+// Helper type for session-like object (used by components)
+export interface MultiPaperSessionData {
+  conversationId: string | null;
+  paperIds: string[];
+  papers: Paper[];
+  messages: ChatMessage[];
+}
+
+// Selector to get session-like object from store state
+export const selectMultiPaperSession = (
+  state: MultiPaperChatUIState,
+): MultiPaperSessionData => ({
+  conversationId: state.currentConversationId,
+  paperIds: state.selectedPapers.map((p) => p.id),
+  papers: state.selectedPapers,
+  messages: state.optimisticMessages,
+});

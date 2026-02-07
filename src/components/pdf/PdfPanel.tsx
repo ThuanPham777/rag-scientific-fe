@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import PdfViewer from './PdfViewer';
 import SummaryView from './SummaryView';
 import RelatedPapersView from './RelatedPapersView';
 import type { Paper, RelatedPapersResponse } from '../../utils/types';
@@ -13,10 +12,18 @@ import {
 import { usePaperStore } from '../../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../../store/useGuestStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import PdfViewer from './PdfViewer';
 
 type Props = {
   activePaper?: Paper;
   onPdfAction?: (action: 'explain' | 'summarize', selectedText: string) => void;
+  // Chat dock integration for fullscreen mode
+  isChatDockOpen?: boolean;
+  chatDockWidth?: number;
+  // Callback when fullscreen state changes
+  onFullscreenChange?: (isFullscreen: boolean) => void;
+  // Callback to expose capture toggle function to parent
+  onCaptureRefChange?: (toggleCapture: () => void) => void;
 };
 
 type PendingJump = {
@@ -26,7 +33,14 @@ type PendingJump = {
 
 type ActiveTab = 'pdf' | 'summary' | 'related';
 
-export default function PdfPanel({ activePaper, onPdfAction }: Props) {
+export default function PdfPanel({
+  activePaper,
+  onPdfAction,
+  isChatDockOpen = true,
+  chatDockWidth = 500,
+  onFullscreenChange,
+  onCaptureRefChange,
+}: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('pdf');
 
   // Data states
@@ -39,17 +53,23 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
   const [summaryFetched, setSummaryFetched] = useState(false);
   const [relatedFetched, setRelatedFetched] = useState(false);
 
-  const {
-    session,
-    paper,
-    pendingJump: paperPendingJump,
-    setPendingJump: paperSetPendingJump,
-  } = usePaperStore() as {
-    session: any;
-    paper: { id: string; ragFileId?: string } | null;
-    pendingJump: PendingJump | null;
-    setPendingJump: (val: PendingJump | null) => void;
-  };
+  const currentPaper = usePaperStore((s) => s.currentPaper);
+  const currentConversationId = usePaperStore((s) => s.currentConversationId);
+  const sessionMeta = usePaperStore((s) => s.sessionMeta);
+  const pendingJump: PendingJump | null = usePaperStore((s) => s.pendingJump);
+  const paperSetPendingJump = usePaperStore((s) => s.setPendingJump);
+
+  // Build session object from store state for compatibility
+  const session = currentConversationId
+    ? {
+        id: currentConversationId,
+        paperId: sessionMeta?.paperId,
+        ragFileId: sessionMeta?.ragFileId,
+      }
+    : null;
+
+  // Use currentPaper as the paper reference
+  const paper = currentPaper;
 
   // Guest store for pendingJump
   const guestPendingJump = useGuestStore((s) => s.pendingJump);
@@ -62,7 +82,7 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
     !isAuthenticated && guestSession?.id && isGuestSession(guestSession.id);
 
   // Use appropriate pendingJump based on mode
-  const pendingJump = isGuest ? guestPendingJump : paperPendingJump;
+  const activePendingJump = isGuest ? guestPendingJump : pendingJump;
   const setPendingJump = isGuest ? guestSetPendingJump : paperSetPendingJump;
 
   // --- Logic 1: Summary ---
@@ -145,28 +165,28 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
   useEffect(() => {
     // Nếu store có pendingJump mà đang KHÔNG ở tab PDF
     // -> Chuyển ngay về tab PDF để PdfViewer nhận được props và thực hiện scroll
-    if (pendingJump) {
-      console.log('[PdfPanel] pendingJump detected:', pendingJump);
+    if (activePendingJump) {
+      console.log('[PdfPanel] pendingJump detected:', activePendingJump);
     }
-    if (pendingJump && activeTab !== 'pdf') {
+    if (activePendingJump && activeTab !== 'pdf') {
       console.log('[PdfPanel] Switching to PDF tab due to pendingJump');
       setActiveTab('pdf');
     }
-  }, [pendingJump, activeTab]);
+  }, [activePendingJump, activeTab]);
 
   // --- FIX 2: Cleanup Pending Jump ---
   useEffect(() => {
-    if (pendingJump && activeTab === 'pdf') {
+    if (activePendingJump && activeTab === 'pdf') {
       // Khi đã ở tab PDF và có pendingJump, chờ để PdfViewer nhận props và scroll/highlight
-      // Tăng lên 5s để đảm bảo PDF có đủ thời gian load (đặc biệt khi mở tab mới)
-      console.log('[PdfPanel] Starting cleanup timer for pendingJump (5s)');
+      // Tăng lên 10s để đảm bảo PDF có đủ thời gian load (đặc biệt khi mở tab mới từ multi-paper chat)
+      console.log('[PdfPanel] Starting cleanup timer for pendingJump (10s)');
       const timer = setTimeout(() => {
         console.log('[PdfPanel] Clearing pendingJump after timeout');
         setPendingJump(null);
-      }, 5000);
+      }, 10000);
       return () => clearTimeout(timer);
     }
-  }, [pendingJump, activeTab, setPendingJump]);
+  }, [activePendingJump, activeTab, setPendingJump]);
 
   const renderTabBtn = (tabName: ActiveTab, label: string) => (
     <button
@@ -201,16 +221,23 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
         >
           <PdfViewer
             fileUrl={activePaper?.localUrl || activePaper?.fileUrl}
+            paperId={activePaper?.id}
             // Truyền pendingJump vào component con
-            jumpToPage={pendingJump?.pageNumber}
+            jumpToPage={activePendingJump?.pageNumber}
             jumpHighlight={
-              pendingJump?.rect && pendingJump.pageNumber
+              activePendingJump?.rect && activePendingJump.pageNumber
                 ? {
-                    pageNumber: pendingJump.pageNumber,
-                    rect: pendingJump.rect,
+                    pageNumber: activePendingJump.pageNumber,
+                    rect: activePendingJump.rect,
                   }
                 : undefined
             }
+            // Chat dock integration for fullscreen mode
+            isChatDockOpen={isChatDockOpen}
+            chatDockWidth={chatDockWidth}
+            onFullscreenChange={onFullscreenChange}
+            // Expose capture toggle function to parent
+            onCaptureRefChange={onCaptureRefChange}
             onAction={(action, payload) => {
               // Check if guest mode (from localStorage) or authenticated
               const isAuthenticated = useAuthStore.getState().isAuthenticated;
@@ -227,6 +254,8 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
               if (action === 'explain' && (payload as any).imageDataUrl) {
                 const imageDataUrl = (payload as any).imageDataUrl as string;
                 const pageNumber = (payload as any).pageNumber as number;
+                const completeProcessing = (payload as any)
+                  .__completeProcessing as (() => void) | undefined;
 
                 if (isGuest && guestPaper?.ragFileId) {
                   // Guest mode: use guestExplainRegion
@@ -267,6 +296,7 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                     })
                     .finally(() => {
                       guestStore.setLoading(false);
+                      completeProcessing?.();
                     });
                   return;
                 }
@@ -274,7 +304,7 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                 // Authenticated mode: use explainRegion
                 const fileId = paper?.id;
 
-                usePaperStore.getState().addMessage({
+                usePaperStore.getState().addOptimisticMessage({
                   id: crypto.randomUUID(),
                   role: 'user',
                   content: 'Explain this region',
@@ -291,11 +321,11 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                   pageNumber,
                 })
                   .then(({ assistantMsg }) => {
-                    usePaperStore.getState().addMessage(assistantMsg);
+                    usePaperStore.getState().addOptimisticMessage(assistantMsg);
                   })
                   .catch((err) => {
                     console.error('❌ Explain error:', err);
-                    usePaperStore.getState().addMessage({
+                    usePaperStore.getState().addOptimisticMessage({
                       id: crypto.randomUUID(),
                       role: 'assistant',
                       content: '⚠️ Sorry, something went wrong.',
@@ -304,6 +334,7 @@ export default function PdfPanel({ activePaper, onPdfAction }: Props) {
                   })
                   .finally(() => {
                     usePaperStore.getState().setChatLoading(false);
+                    completeProcessing?.();
                   });
                 return;
               }

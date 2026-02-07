@@ -14,7 +14,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { cn } from '../../lib/utils';
-import { useFolderStore } from '../../store/useFolderStore';
+import { useFolders, useCreateFolder } from '../../hooks';
 
 interface FolderSelectModalProps {
   open: boolean;
@@ -31,19 +31,14 @@ export function FolderSelectModal({
   onClose,
   onConfirm,
 }: FolderSelectModalProps) {
-  const { folders, isLoadingFolders, isCreating, fetchFolders, createFolder } =
-    useFolderStore();
+  // Use React Query hooks instead of Zustand store
+  // Only fetch folders when modal is open to prevent unnecessary API calls
+  const { data: folders = [], isLoading: isLoadingFolders } = useFolders(open);
+  const createFolderMutation = useCreateFolder();
 
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
-
-  // Fetch folders when modal opens
-  useEffect(() => {
-    if (open) {
-      fetchFolders();
-    }
-  }, [open, fetchFolders]);
 
   // Auto-select first folder if available
   useEffect(() => {
@@ -54,11 +49,17 @@ export function FolderSelectModal({
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
-    const result = await createFolder({ name: newFolderName.trim() });
-    if (result) {
-      setSelectedFolderId(result.id);
-      setShowNewFolderInput(false);
-      setNewFolderName('');
+    try {
+      const result = await createFolderMutation.mutateAsync({
+        name: newFolderName.trim(),
+      });
+      if (result.data) {
+        setSelectedFolderId(result.data.id);
+        setShowNewFolderInput(false);
+        setNewFolderName('');
+      }
+    } catch {
+      // Error handled by mutation
     }
   };
 
@@ -159,10 +160,15 @@ export function FolderSelectModal({
                       <Button
                         size='sm'
                         onClick={handleCreateFolder}
-                        disabled={!newFolderName.trim() || isCreating}
+                        disabled={
+                          !newFolderName.trim() ||
+                          createFolderMutation.isPending
+                        }
                         className='bg-orange-500 hover:bg-orange-600'
                       >
-                        {isCreating ? 'Creating...' : 'Create'}
+                        {createFolderMutation.isPending
+                          ? 'Creating...'
+                          : 'Create'}
                       </Button>
                     </div>
                   </div>
