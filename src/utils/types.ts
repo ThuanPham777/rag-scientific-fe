@@ -145,6 +145,31 @@ export interface RelatedPapersResponse {
   results: RelatedPaperItem[];
 }
 
+export interface BrainstormQuestionsResponse {
+  questions: string[];
+}
+
+// ============================
+// 🔹 Suggested Questions (conversation-level)
+// ============================
+export interface SuggestedQuestionItem {
+  id: string;
+  question: string;
+}
+
+export interface SuggestedQuestionsResult {
+  conversationId: string;
+  questions: SuggestedQuestionItem[];
+}
+
+// ============================
+// 🔹 Follow-Up Questions (message-level, ephemeral)
+// ============================
+export interface FollowUpQuestionsResult {
+  messageId: string;
+  questions: string[];
+}
+
 // ============================
 // 🔹 Folder Types (My Library)
 // ============================

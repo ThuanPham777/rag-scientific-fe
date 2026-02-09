@@ -57,6 +57,9 @@ type Props = {
 
   // Capture functionality
   onExplainMath?: () => void;
+
+  // Follow-up questions keyed by message ID (populated by parent after assistant response)
+  followUpMap?: Record<string, string[]>;
 };
 
 const LOADING_STEPS = [
@@ -84,6 +87,7 @@ export default function ChatDock({
   onOpenChange,
   isPdfFullscreen = false,
   onExplainMath,
+  followUpMap = {},
 }: Props) {
   // Use messages prop if provided, otherwise fall back to session?.messages
   const messages = messagesProp ?? session?.messages ?? [];
@@ -91,6 +95,7 @@ export default function ChatDock({
   const [open, setOpen] = useState(defaultOpen);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [stepIndex, setStepIndex] = useState(0);
+  const [inputText, setInputText] = useState('');
 
   // Track if user manually closed the dock
   const [userClosed, setUserClosed] = useState(false);
@@ -176,7 +181,7 @@ export default function ChatDock({
             position === 'fixed'
               ? positionClasses
               : `relative ${WIDTH} ${HEIGHT}`
-          } bg-white border border-gray-200 ${isPdfFullscreen ? 'rounded-none border-l' : 'rounded-lg'} flex flex-col pointer-events-auto overflow-hidden shadow-2xl`}
+          } bg-white border border-gray-200 ${isPdfFullscreen ? 'rounded-none border-l' : 'rounded-lg'} flex flex-col pointer-events-auto shadow-2xl`}
         >
           {/* Header */}
           <div
@@ -286,6 +291,9 @@ export default function ChatDock({
                 key={m.id}
                 msg={m}
                 activePaperId={mode === 'single' ? activePaperId : undefined}
+                conversationId={conversationId || session?.id}
+                onFollowUpSelect={onSend}
+                followUps={followUpMap[m.id] || []}
               />
             ))}
             {isLoading && <ChatMessageLoading label={currentStepLabel} />}
@@ -298,18 +306,23 @@ export default function ChatDock({
           />
 
           {/* Footer Area */}
-          <div className='bg-white relative z-30 flex flex-col'>
+          <div className='bg-white relative z-[99999] flex flex-col'>
             {/* Quick Actions - only show in single mode with showQuickActions */}
             {showQuickActions && mode === 'single' && (
               <ChatQuickActions
                 onSelect={onSend}
-                fileId={activePaperId}
+                conversationId={conversationId || session?.id}
                 disabled={isLoading}
+                inputText={inputText}
               />
             )}
 
             <ChatInput
-              onSend={onSend}
+              onSend={(text, opts) => {
+                onSend(text, opts);
+                setInputText('');
+              }}
+              onTextChange={setInputText}
               onExplainMath={onExplainMath}
               disabled={
                 isLoading || (mode === 'multi' && selectedPapers.length === 0)

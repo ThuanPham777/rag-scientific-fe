@@ -21,9 +21,20 @@ interface ChatMessageProps {
   msg: Msg;
   /** Current active paper ID (for single-paper mode to detect cross-paper citations) */
   activePaperId?: string;
+  /** Conversation ID – needed for cross-paper citation navigation */
+  conversationId?: string;
+  /** Callback when user clicks a follow-up question */
+  onFollowUpSelect?: (question: string) => void;
+  /** Follow-up questions to display (passed from parent, not fetched internally) */
+  followUps?: string[];
 }
 
-export default function ChatMessage({ msg, activePaperId }: ChatMessageProps) {
+export default function ChatMessage({
+  msg,
+  activePaperId,
+  onFollowUpSelect,
+  followUps = [],
+}: ChatMessageProps) {
   const isUser = msg.role === 'user';
   const navigate = useNavigate();
 
@@ -199,7 +210,27 @@ export default function ChatMessage({ msg, activePaperId }: ChatMessageProps) {
             />
           )}
 
-          {/* Citation sources */}
+          {/* Follow-up questions (before sources) */}
+          {!isUser && followUps.length > 0 && onFollowUpSelect && (
+            <div className='mt-3 pt-3 border-t border-gray-100'>
+              <p className='text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2'>
+                Quickly ask these questions
+              </p>
+              <div className='flex flex-wrap gap-1.5'>
+                {followUps.map((q, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => onFollowUpSelect(q)}
+                    className='text-xs px-3 py-1.5 rounded-full border border-orange-200 text-orange-700 bg-orange-50 hover:bg-orange-100 hover:border-orange-300 transition-colors cursor-pointer'
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Citation sources (at the bottom) */}
           {msg.citations && (
             <>
               <SourcesSection

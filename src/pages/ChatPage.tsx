@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { useClearChatHistory } from '../hooks';
+import { useClearChatHistory, useGenerateFollowUpQuestions } from '../hooks';
 import {
   sendQuery,
   getMessageHistory,
@@ -63,6 +63,10 @@ export default function ChatPage() {
 
   // Clear chat history mutation (for authenticated users)
   const clearChatHistoryMutation = useClearChatHistory();
+
+  // Follow-up questions: mutation + local map keyed by messageId
+  const followUpMutation = useGenerateFollowUpQuestions();
+  const [followUpMap, setFollowUpMap] = useState<Record<string, string[]>>({});
 
   // Determine if this is a guest session by checking localStorage
   const isGuest = urlConversationId
@@ -365,6 +369,26 @@ export default function ChatPage() {
     ],
   );
 
+  // Helper: fetch follow-up questions for an assistant message (fire-and-forget)
+  const fetchFollowUps = useCallback(
+    (convId: string, messageId: string) => {
+      followUpMutation
+        .mutateAsync({ conversationId: convId, messageId })
+        .then((res) => {
+          if (res.success && res.data.questions?.length) {
+            setFollowUpMap((prev) => ({
+              ...prev,
+              [messageId]: res.data.questions,
+            }));
+          }
+        })
+        .catch(() => {
+          /* already logged by the mutation hook */
+        });
+    },
+    [followUpMutation],
+  );
+
   // onSend handler - defined as useCallback to maintain stable reference
   const onSend = useCallback(
     async (text: string) => {
@@ -404,6 +428,11 @@ export default function ChatPage() {
             raw.tokenCount,
           );
           addGuestMessage(assistantMsg);
+
+          // Fetch follow-ups for the new assistant message
+          if (guestSession.id && assistantMsg.id) {
+            fetchFollowUps(guestSession.id, assistantMsg.id);
+          }
         } else if (session) {
           // Authenticated: Call regular API
           const { assistantMsg } = await sendQuery(
@@ -412,6 +441,11 @@ export default function ChatPage() {
             currentPaper?.id,
           );
           addOptimisticMessage(assistantMsg);
+
+          // Fetch follow-ups for the new assistant message
+          if (session.id && assistantMsg.id) {
+            fetchFollowUps(session.id, assistantMsg.id);
+          }
         }
       } catch (err: any) {
         console.error('❌ Chat error:', err);
@@ -442,6 +476,7 @@ export default function ChatPage() {
       addOptimisticMessage,
       setGuestLoading,
       setChatLoading,
+      fetchFollowUps,
     ],
   );
 
@@ -489,6 +524,11 @@ export default function ChatPage() {
             raw.tokenCount,
           );
           addGuestMessage(assistantMsg);
+
+          // Fetch follow-ups for the new assistant message
+          if (guestSession.id && assistantMsg.id) {
+            fetchFollowUps(guestSession.id, assistantMsg.id);
+          }
         } else if (session) {
           // Authenticated: Call regular API
           const { assistantMsg } = await sendQuery(
@@ -496,8 +536,12 @@ export default function ChatPage() {
             queryText,
             currentPaper?.id,
           );
-          console.log('call api success', assistantMsg);
           addOptimisticMessage(assistantMsg);
+
+          // Fetch follow-ups for the new assistant message
+          if (session.id && assistantMsg.id) {
+            fetchFollowUps(session.id, assistantMsg.id);
+          }
         }
       } catch (err: any) {
         console.error('❌ PDF action error:', err);
@@ -528,6 +572,7 @@ export default function ChatPage() {
       addOptimisticMessage,
       setGuestLoading,
       setChatLoading,
+      fetchFollowUps,
     ],
   );
 
@@ -586,10 +631,11 @@ export default function ChatPage() {
         onClearChatHistory={handleClearChatHistory}
         isLoading={isGuest ? guestIsLoading : isChatLoading}
         defaultOpen={true}
-        activePaperId={activePaper?.ragFileId}
+        activePaperId={activePaper?.id}
         onOpenChange={setIsChatDockOpen}
         isPdfFullscreen={isPdfFullscreen}
         onExplainMath={() => captureToggleRef.current?.()}
+        followUpMap={followUpMap}
       />
     </div>
   );

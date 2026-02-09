@@ -107,15 +107,15 @@ export default function PdfPanel({
 
   // --- Logic 2: Related Papers ---
   const handleRelated = async () => {
-    if (!paper?.ragFileId) {
-      console.error('❌ No ragFileId found for paper');
+    if (!paper?.id) {
+      console.error('❌ No paper ID found');
       return;
     }
     setRelatedFetched(true); // Mark as attempted
     try {
       setIsLoading(true);
-      const data = await getRelatedPapers(paper.ragFileId);
-      setRelatedData(data);
+      const data = await getRelatedPapers(paper.id);
+      setRelatedData(data.data);
     } catch (error) {
       console.error('❌ Error fetching related papers:', error);
     } finally {

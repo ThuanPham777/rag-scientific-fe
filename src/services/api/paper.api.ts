@@ -2,7 +2,11 @@
 // Paper (PDF) related API calls
 
 import api from '../../config/axios';
-import type { ApiResponse, Paper } from '../../utils/types';
+import type {
+  ApiResponse,
+  Paper,
+  RelatedPapersResponse,
+} from '../../utils/types';
 
 export interface CreatePaperParams {
   fileName: string;
@@ -85,4 +89,25 @@ export async function uploadPdf(
     paper: { ...paper, localUrl },
     localUrl,
   };
+}
+
+/**
+ * Get related papers for a document (via backend, with caching)
+ */
+export async function getRelatedPapers(
+  paperId: string,
+): Promise<ApiResponse<RelatedPapersResponse>> {
+  const { data } = await api.post(`/papers/${paperId}/related-papers`, {});
+  return data;
+}
+
+/**
+ * Generate or get a paper summary (via backend, with caching)
+ * @param paperId - Paper ID (database UUID)
+ */
+export async function getPaperSummary(
+  paperId: string,
+): Promise<{ paperId: string; summary: string }> {
+  const { data } = await api.post(`/papers/${paperId}/summary`);
+  return data;
 }

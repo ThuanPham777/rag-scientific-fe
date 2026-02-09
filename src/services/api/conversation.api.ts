@@ -2,7 +2,12 @@
 // Conversation related API calls
 
 import api from '../../config/axios';
-import type { ApiResponse, Conversation } from '../../utils/types';
+import type {
+  ApiResponse,
+  Conversation,
+  SuggestedQuestionsResult,
+  FollowUpQuestionsResult,
+} from '../../utils/types';
 
 // Extended conversation type with multi-paper support
 export interface ConversationWithPapers extends Conversation {
@@ -91,4 +96,52 @@ export async function startSession(
   return {
     conversationId: res.data.id,
   };
+}
+
+// ============================================================
+// Suggested Questions (conversation-level)
+// ============================================================
+
+/**
+ * Generate suggested questions for a conversation.
+ * If no textInput, caches generic questions; otherwise generates fresh.
+ */
+export async function generateSuggestedQuestions(
+  conversationId: string,
+  textInput?: string,
+): Promise<ApiResponse<SuggestedQuestionsResult>> {
+  const { data } = await api.post(
+    `/conversations/${conversationId}/suggested-questions`,
+    { textInput: textInput || undefined },
+  );
+  return data;
+}
+
+/**
+ * Get cached suggested questions for a conversation (no generation).
+ */
+export async function getSuggestedQuestions(
+  conversationId: string,
+): Promise<ApiResponse<SuggestedQuestionsResult>> {
+  const { data } = await api.get(
+    `/conversations/${conversationId}/suggested-questions`,
+  );
+  return data;
+}
+
+// ============================================================
+// Follow-Up Questions (message-level)
+// ============================================================
+
+/**
+ * Get (or auto-generate) follow-up questions for a specific assistant message.
+ */
+export async function generateFollowUpQuestions(
+  conversationId: string,
+  messageId: string,
+): Promise<ApiResponse<FollowUpQuestionsResult>> {
+  const { data } = await api.get(
+    `/conversations/${conversationId}/messages/${messageId}/followup-questions`,
+  );
+  return data;
 }

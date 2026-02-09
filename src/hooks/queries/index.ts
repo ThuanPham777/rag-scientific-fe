@@ -12,11 +12,15 @@ export {
 // Conversation queries and keys
 export {
   conversationKeys,
+  suggestedQuestionKeys,
   useConversations,
   useMultiPaperConversations,
   useConversation,
   useStartSession,
   useDeleteConversation,
+  useSuggestedQuestions,
+  useGenerateSuggestedQuestions,
+  useGenerateFollowUpQuestions,
 } from './useConversationQueries';
 
 // Chat queries and keys
