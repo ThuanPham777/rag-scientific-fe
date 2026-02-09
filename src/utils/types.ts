@@ -128,7 +128,7 @@ export type Session = ChatSession;
 // 🔹 Related Papers Types
 // ============================
 export interface RelatedPaperItem {
-  arxiv_id: string;
+  arxivId: string;
   title: string;
   abstract: string;
   authors: string[];
@@ -136,13 +136,13 @@ export interface RelatedPaperItem {
   score: number;
   reason: string;
   categories?: string[];
+  orderIndex?: number;
 }
 
 export interface RelatedPapersResponse {
-  file_id: string;
-  base_title: string;
-  base_abstract: string;
+  paperId: string;
   results: RelatedPaperItem[];
+  fromCache: boolean;
 }
 
 export interface BrainstormQuestionsResponse {
@@ -168,6 +168,11 @@ export interface SuggestedQuestionsResult {
 export interface FollowUpQuestionsResult {
   messageId: string;
   questions: string[];
+}
+
+export interface SummaryResult {
+  paperId: string;
+  summary: string;
 }
 
 // ============================

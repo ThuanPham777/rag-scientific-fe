@@ -6,6 +6,7 @@ import type {
   ApiResponse,
   Paper,
   RelatedPapersResponse,
+  SummaryResult,
 } from '../../utils/types';
 
 export interface CreatePaperParams {
@@ -107,7 +108,7 @@ export async function getRelatedPapers(
  */
 export async function getPaperSummary(
   paperId: string,
-): Promise<{ paperId: string; summary: string }> {
+): Promise<ApiResponse<SummaryResult>> {
   const { data } = await api.post(`/papers/${paperId}/summary`);
   return data;
 }
