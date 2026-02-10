@@ -25,9 +25,11 @@ export default function TopNav() {
   });
 
   const menuRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   /* ---------------- Logout ---------------- */
   const handleLogout = async () => {
+    console.log('Logging out...');
     try {
       const refreshToken = getRefreshToken();
       if (refreshToken) {
@@ -46,8 +48,12 @@ export default function TopNav() {
     if (!openMenu) return;
 
     const onMouseDown = (e: MouseEvent) => {
-      if (!menuRef.current) return;
-      if (!menuRef.current.contains(e.target as Node)) {
+      if (
+        menuRef.current &&
+        dropdownRef.current &&
+        !menuRef.current.contains(e.target as Node) &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setOpenMenu(false);
       }
     };
@@ -165,7 +171,10 @@ export default function TopNav() {
 
                 {openMenu &&
                   createPortal(
-                    <div className='fixed top-[56px] right-4 w-64 rounded-md border bg-white shadow-lg p-3 z-[99999]'>
+                    <div
+                      ref={dropdownRef}
+                      className='fixed top-[56px] right-4 w-64 rounded-md border bg-white shadow-lg p-3 z-[99999]'
+                    >
                       <div className='px-2 pb-1 text-sm font-medium'>
                         My Account
                       </div>

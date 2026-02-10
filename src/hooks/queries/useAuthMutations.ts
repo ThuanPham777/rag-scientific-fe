@@ -13,6 +13,8 @@ import {
   logout,
   logoutAll,
   refreshTokens,
+  forgotPassword as apiForgotPassword,
+  resetPassword as apiResetPassword,
 } from '../../services';
 import { useAuthStore } from '../../store/useAuthStore';
 
@@ -139,5 +141,29 @@ export function useRefreshTokens() {
         });
       }
     },
+  });
+}
+
+/**
+ * Hook for forgot password mutation
+ */
+export function useForgotPassword() {
+  return useMutation({
+    mutationFn: ({ email }: { email: string }) => apiForgotPassword(email),
+  });
+}
+
+/**
+ * Hook for reset password mutation
+ */
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: ({
+      token,
+      newPassword,
+    }: {
+      token: string;
+      newPassword: string;
+    }) => apiResetPassword(token, newPassword),
   });
 }

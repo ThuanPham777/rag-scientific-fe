@@ -58,3 +58,15 @@ export {
 
 // Comment queries and keys
 export { useUpdateComment, useDeleteComment } from './useCommentQueries';
+
+// Auth mutations
+export {
+  useLogin,
+  useSignup,
+  useGoogleIdTokenAuth,
+  useLogout,
+  useLogoutAll,
+  useRefreshTokens,
+  useForgotPassword,
+  useResetPassword,
+} from './useAuthMutations';

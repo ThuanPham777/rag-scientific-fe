@@ -31,6 +31,19 @@ export type SignupResponse = {
 };
 
 // ============================
+// 🔹 Forgot / Reset Password Types
+// ============================
+export type ForgotPasswordResponse = {
+  success: boolean;
+  message: string;
+};
+
+export type ResetPasswordResponse = {
+  success: boolean;
+  message: string;
+};
+
+// ============================
 // 🔹 Paper Types
 // ============================
 export type PaperStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';

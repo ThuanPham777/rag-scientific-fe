@@ -88,6 +88,8 @@ api.interceptors.response.use(
       '/auth/signup',
       '/auth/refresh',
       '/auth/google',
+      '/auth/forgot-password',
+      '/auth/reset-password',
     ];
     const isAuthEndpoint = authEndpoints.some((ep) =>
       originalRequest?.url?.includes(ep),

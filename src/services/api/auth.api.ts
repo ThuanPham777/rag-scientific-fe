@@ -2,7 +2,12 @@
 // Authentication related API calls
 
 import api from '../../config/axios';
-import type { LoginResponse, SignupResponse } from '../../utils/types';
+import type {
+  LoginResponse,
+  SignupResponse,
+  ForgotPasswordResponse,
+  ResetPasswordResponse,
+} from '../../utils/types';
 
 /**
  * Register a new user
@@ -78,4 +83,28 @@ export async function logout(refreshToken: string): Promise<void> {
  */
 export async function logoutAll(): Promise<void> {
   await api.post('/auth/logout-all');
+}
+
+/**
+ * Request password reset email
+ */
+export async function forgotPassword(
+  email: string,
+): Promise<ForgotPasswordResponse> {
+  const { data } = await api.post('/auth/forgot-password', { email });
+  return data;
+}
+
+/**
+ * Reset password with token
+ */
+export async function resetPassword(
+  token: string,
+  newPassword: string,
+): Promise<ResetPasswordResponse> {
+  const { data } = await api.post('/auth/reset-password', {
+    token,
+    newPassword,
+  });
+  return data;
 }
