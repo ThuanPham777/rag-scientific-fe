@@ -1,13 +1,17 @@
 // src/pages/ChatPage.tsx
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { useClearChatHistory } from '../hooks';
+import {
+  useClearChatHistory,
+  useGenerateFollowUpQuestions,
+  useInfiniteMessageHistory,
+  flattenMessagePages,
+} from '../hooks';
 import {
   sendQuery,
-  getMessageHistory,
   getConversation,
   getPaper,
   guestAskQuestion,
@@ -30,12 +34,9 @@ export default function ChatPage() {
   const currentPaper = usePaperStore((s) => s.currentPaper);
   const currentConversationId = usePaperStore((s) => s.currentConversationId);
   const sessionMeta = usePaperStore((s) => s.sessionMeta);
-  const optimisticMessages = usePaperStore((s) => s.optimisticMessages);
   const isChatLoading = usePaperStore((s) => s.isChatLoading);
   const setCurrentPaper = usePaperStore((s) => s.setCurrentPaper);
   const setSession = usePaperStore((s) => s.setSession);
-  const addOptimisticMessage = usePaperStore((s) => s.addOptimisticMessage);
-  const setOptimisticMessages = usePaperStore((s) => s.setOptimisticMessages);
   const setChatLoading = usePaperStore((s) => s.setChatLoading);
   const setPendingJump = usePaperStore((s) => s.setPendingJump);
   const updateCurrentPaper = usePaperStore((s) => s.updateCurrentPaper);
@@ -47,7 +48,7 @@ export default function ChatPage() {
         paperId: sessionMeta?.paperId,
         ragFileId: sessionMeta?.ragFileId,
         title: sessionMeta?.title,
-        messages: optimisticMessages,
+        messages: [] as ChatMessage[],
       }
     : null;
 
@@ -63,6 +64,10 @@ export default function ChatPage() {
 
   // Clear chat history mutation (for authenticated users)
   const clearChatHistoryMutation = useClearChatHistory();
+
+  // Follow-up questions: mutation + local map keyed by messageId
+  const followUpMutation = useGenerateFollowUpQuestions();
+  const [followUpMap, setFollowUpMap] = useState<Record<string, string[]>>({});
 
   // Determine if this is a guest session by checking localStorage
   const isGuest = urlConversationId
@@ -184,18 +189,7 @@ export default function ChatPage() {
               }
             }
 
-            // Load message history
-            try {
-              const messages = await getMessageHistory(
-                urlConversationId,
-                conv.paperId,
-              );
-              if (messages.length > 0) {
-                setOptimisticMessages(messages);
-              }
-            } catch (err) {
-              console.error('Failed to load message history:', err);
-            }
+            // Message history is now loaded automatically by useInfiniteMessageHistory
           } else {
             // No conversation found, redirect
             console.error('Invalid conversation response:', response);
@@ -309,28 +303,42 @@ export default function ChatPage() {
     updateCurrentPaper,
   ]);
 
-  // Load message history when session changes (for existing authenticated sessions only)
+  // =============================================
+  // Infinite message history (cursor pagination)
+  // =============================================
+  const activeConversationId = isGuest
+    ? undefined
+    : (currentConversationId ?? undefined);
+  const activePaperId = isGuest ? undefined : sessionMeta?.paperId;
+
+  const {
+    data: infiniteData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteMessageHistory(activeConversationId, activePaperId);
+
+  // Flatten paginated server messages into ASC order for display
+  const serverMessages = useMemo(
+    () => flattenMessagePages(infiniteData),
+    [infiniteData],
+  );
+
+  // Track messages sent during this session (not yet in server response)
+  const [sentMessages, setSentMessages] = useState<ChatMessage[]>([]);
+
+  // Reset sentMessages when conversation changes
   useEffect(() => {
-    // Skip for guest sessions - messages are persisted in localStorage
-    if (isGuest) return;
+    setSentMessages([]);
+  }, [currentConversationId]);
 
-    if (session?.id && urlConversationId && session.id === urlConversationId) {
-      getMessageHistory(session.id, session.paperId)
-        .then((messages) => {
-          if (messages.length > 0) {
-            setOptimisticMessages(messages);
-          }
-        })
-        .catch((err) => {
-          console.error('Failed to load message history:', err);
-        });
-    }
-  }, [session?.id, urlConversationId, setOptimisticMessages, isGuest]);
-
-  // Get messages from appropriate store
-  const messages = isGuest
-    ? guestSession?.messages || []
-    : session?.messages || [];
+  // Combine server + sent messages, deduplicating by ID
+  const messages = useMemo(() => {
+    if (isGuest) return guestSession?.messages || [];
+    const serverIds = new Set(serverMessages.map((m) => m.id));
+    const uniqueSent = sentMessages.filter((m) => !serverIds.has(m.id));
+    return [...serverMessages, ...uniqueSent];
+  }, [isGuest, guestSession?.messages, serverMessages, sentMessages]);
 
   // Handle clear chat history - MUST be defined before early returns (Rules of Hooks)
   const handleClearChatHistory = useCallback(
@@ -349,20 +357,35 @@ export default function ChatPage() {
         // For authenticated users, call API
         try {
           await clearChatHistoryMutation.mutateAsync(conversationId);
-          // Also clear from paper store
-          setOptimisticMessages([]);
+          // Clear local sent messages
+          setSentMessages([]);
         } catch (err) {
           console.error('Failed to clear chat history:', err);
           alert('Failed to clear chat history. Please try again.');
         }
       }
     },
-    [
-      isGuest,
-      setGuestMessages,
-      setOptimisticMessages,
-      clearChatHistoryMutation,
-    ],
+    [isGuest, setGuestMessages, clearChatHistoryMutation],
+  );
+
+  // Helper: fetch follow-up questions for an assistant message (fire-and-forget)
+  const fetchFollowUps = useCallback(
+    (convId: string, messageId: string) => {
+      followUpMutation
+        .mutateAsync({ conversationId: convId, messageId })
+        .then((res) => {
+          if (res.success && res.data.questions?.length) {
+            setFollowUpMap((prev) => ({
+              ...prev,
+              [messageId]: res.data.questions,
+            }));
+          }
+        })
+        .catch(() => {
+          /* already logged by the mutation hook */
+        });
+    },
+    [followUpMutation],
   );
 
   // onSend handler - defined as useCallback to maintain stable reference
@@ -381,7 +404,7 @@ export default function ChatPage() {
       if (isGuest) {
         addGuestMessage(userMsg);
       } else {
-        addOptimisticMessage(userMsg);
+        setSentMessages((prev) => [...prev, userMsg]);
       }
 
       // Set loading state on appropriate store
@@ -404,6 +427,11 @@ export default function ChatPage() {
             raw.tokenCount,
           );
           addGuestMessage(assistantMsg);
+
+          // Fetch follow-ups for the new assistant message
+          if (guestSession.id && assistantMsg.id) {
+            fetchFollowUps(guestSession.id, assistantMsg.id);
+          }
         } else if (session) {
           // Authenticated: Call regular API
           const { assistantMsg } = await sendQuery(
@@ -411,7 +439,12 @@ export default function ChatPage() {
             text,
             currentPaper?.id,
           );
-          addOptimisticMessage(assistantMsg);
+          setSentMessages((prev) => [...prev, assistantMsg]);
+
+          // Fetch follow-ups for the new assistant message
+          if (session.id && assistantMsg.id) {
+            fetchFollowUps(session.id, assistantMsg.id);
+          }
         }
       } catch (err: any) {
         console.error('❌ Chat error:', err);
@@ -425,7 +458,7 @@ export default function ChatPage() {
         if (isGuest) {
           addGuestMessage(errorMsg);
         } else {
-          addOptimisticMessage(errorMsg);
+          setSentMessages((prev) => [...prev, errorMsg]);
         }
       } finally {
         setLoading(false);
@@ -439,9 +472,9 @@ export default function ChatPage() {
       session,
       currentPaper?.id,
       addGuestMessage,
-      addOptimisticMessage,
       setGuestLoading,
       setChatLoading,
+      fetchFollowUps,
     ],
   );
 
@@ -466,7 +499,7 @@ export default function ChatPage() {
       if (isGuest) {
         addGuestMessage(userMsg);
       } else {
-        addOptimisticMessage(userMsg);
+        setSentMessages((prev) => [...prev, userMsg]);
       }
 
       // Set loading state on appropriate store
@@ -489,6 +522,11 @@ export default function ChatPage() {
             raw.tokenCount,
           );
           addGuestMessage(assistantMsg);
+
+          // Fetch follow-ups for the new assistant message
+          if (guestSession.id && assistantMsg.id) {
+            fetchFollowUps(guestSession.id, assistantMsg.id);
+          }
         } else if (session) {
           // Authenticated: Call regular API
           const { assistantMsg } = await sendQuery(
@@ -496,8 +534,12 @@ export default function ChatPage() {
             queryText,
             currentPaper?.id,
           );
-          console.log('call api success', assistantMsg);
-          addOptimisticMessage(assistantMsg);
+          setSentMessages((prev) => [...prev, assistantMsg]);
+
+          // Fetch follow-ups for the new assistant message
+          if (session.id && assistantMsg.id) {
+            fetchFollowUps(session.id, assistantMsg.id);
+          }
         }
       } catch (err: any) {
         console.error('❌ PDF action error:', err);
@@ -511,7 +553,7 @@ export default function ChatPage() {
         if (isGuest) {
           addGuestMessage(errorMsg);
         } else {
-          addOptimisticMessage(errorMsg);
+          setSentMessages((prev) => [...prev, errorMsg]);
         }
       } finally {
         setLoadingPdf(false);
@@ -525,9 +567,9 @@ export default function ChatPage() {
       session,
       currentPaper?.id,
       addGuestMessage,
-      addOptimisticMessage,
       setGuestLoading,
       setChatLoading,
+      fetchFollowUps,
     ],
   );
 
@@ -586,10 +628,14 @@ export default function ChatPage() {
         onClearChatHistory={handleClearChatHistory}
         isLoading={isGuest ? guestIsLoading : isChatLoading}
         defaultOpen={true}
-        activePaperId={activePaper?.ragFileId}
+        activePaperId={activePaper?.id}
         onOpenChange={setIsChatDockOpen}
         isPdfFullscreen={isPdfFullscreen}
         onExplainMath={() => captureToggleRef.current?.()}
+        followUpMap={followUpMap}
+        onLoadMore={!isGuest ? fetchNextPage : undefined}
+        hasMore={!isGuest ? (hasNextPage ?? false) : false}
+        isLoadingMore={!isGuest ? isFetchingNextPage : false}
       />
     </div>
   );

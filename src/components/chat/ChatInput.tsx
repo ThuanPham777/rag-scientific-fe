@@ -11,6 +11,7 @@ import { Switch } from '@radix-ui/react-switch';
 type Props = {
   onSend: (text: string, opts?: { highQuality: boolean }) => void;
   onExplainMath?: () => void;
+  onTextChange?: (text: string) => void;
   disabled?: boolean;
   placeholder?: string;
   showSigmaButton?: boolean;
@@ -19,6 +20,7 @@ type Props = {
 export default function ChatInput({
   onSend,
   onExplainMath,
+  onTextChange,
   disabled = false,
   placeholder,
   showSigmaButton = true,
@@ -70,7 +72,10 @@ export default function ChatInput({
         <Textarea
           ref={textareaRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            onTextChange?.(e.target.value);
+          }}
           onKeyDown={handleKeyDown}
           placeholder={
             placeholder || (disabled ? 'Đang xử lý...' : 'Ask any question...')

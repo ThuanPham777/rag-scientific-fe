@@ -42,7 +42,13 @@ export default function MyLibraryPage() {
   // React Query hooks (server state)
   // =========================================
   const { data: folders = [], isLoading: isLoadingFolders } = useFolders();
-  const { data: allPapers = [], isLoading: isLoadingAllPapers } = usePapers();
+  const {
+    data: allPapers = [],
+    isLoading: isLoadingAllPapers,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = usePapers();
 
   // Zustand UI state for selected folder
   const { selectedFolderId, selectFolder, clearSelectedFolder } =
@@ -313,6 +319,11 @@ export default function MyLibraryPage() {
             onToggleSelect={togglePaper}
             onSelectAll={handleSelectAll}
             onDeselectAll={handleDeselectAll}
+            onLoadMore={
+              selectedView === 'all' ? () => fetchNextPage() : undefined
+            }
+            hasMore={selectedView === 'all' ? (hasNextPage ?? false) : false}
+            isLoadingMore={selectedView === 'all' ? isFetchingNextPage : false}
           />
         </div>
       </main>

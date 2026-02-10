@@ -26,13 +26,7 @@ export default function RelatedPapersView({ data }: Props) {
             </h2>
             <div className='flex items-center gap-2 mt-1'>
               <span className='text-sm font-medium text-gray-500'>
-                Found {data.results.length} papers similar to
-              </span>
-              <span
-                className='text-sm font-bold text-gray-800 truncate max-w-[200px] md:max-w-xs'
-                title={data.base_title}
-              >
-                "{data.base_title}"
+                Found {data.results.length} related papers
               </span>
             </div>
           </div>
@@ -45,7 +39,7 @@ export default function RelatedPapersView({ data }: Props) {
 
             return (
               <div
-                key={paper.arxiv_id}
+                key={paper.arxivId}
                 className='group bg-white border border-gray-200 rounded-2xl p-5 hover:border-blue-300 hover:shadow-md transition-all duration-200'
               >
                 {/* Card Header */}

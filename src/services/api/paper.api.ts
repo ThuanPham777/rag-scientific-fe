@@ -2,7 +2,12 @@
 // Paper (PDF) related API calls
 
 import api from '../../config/axios';
-import type { ApiResponse, Paper } from '../../utils/types';
+import type {
+  ApiResponse,
+  Paper,
+  RelatedPapersResponse,
+  SummaryResult,
+} from '../../utils/types';
 
 export interface CreatePaperParams {
   fileName: string;
@@ -23,11 +28,24 @@ export async function createPaper(
 }
 
 /**
- * List all papers for the current user
+ * List all papers for the current user (cursor-paginated)
  */
-export async function listPapers(): Promise<ApiResponse<Paper[]>> {
-  const { data } = await api.get('/papers');
-  return data;
+export async function listPapers(
+  cursor?: string,
+  limit: number = 20,
+): Promise<{ items: Paper[]; nextCursor?: string; hasNext: boolean }> {
+  const params: Record<string, any> = { limit };
+  if (cursor) params.cursor = cursor;
+
+  const { data } = await api.get('/papers', { params });
+
+  const response = data.data; // CursorPaginationDto { items, pagination }
+
+  return {
+    items: response.items || [],
+    nextCursor: response.pagination?.nextCursor,
+    hasNext: response.pagination?.hasNext ?? false,
+  };
 }
 
 /**
@@ -85,4 +103,25 @@ export async function uploadPdf(
     paper: { ...paper, localUrl },
     localUrl,
   };
+}
+
+/**
+ * Get related papers for a document (via backend, with caching)
+ */
+export async function getRelatedPapers(
+  paperId: string,
+): Promise<ApiResponse<RelatedPapersResponse>> {
+  const { data } = await api.post(`/papers/${paperId}/related-papers`, {});
+  return data;
+}
+
+/**
+ * Generate or get a paper summary (via backend, with caching)
+ * @param paperId - Paper ID (database UUID)
+ */
+export async function getPaperSummary(
+  paperId: string,
+): Promise<ApiResponse<SummaryResult>> {
+  const { data } = await api.post(`/papers/${paperId}/summary`);
+  return data;
 }

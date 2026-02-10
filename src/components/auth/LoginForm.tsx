@@ -1,5 +1,6 @@
 // src/components/auth/LoginForm.tsx
 import { type UseFormReturn } from 'react-hook-form';
+import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import Divider from './Divider';
 import GoogleButton from './GoogleButton';
@@ -23,6 +24,7 @@ interface LoginFormProps {
   onGoogleLogin: () => void;
   isGoogleLoading: boolean;
   onSwitchToSignup: () => void;
+  onForgotPassword?: () => void;
 }
 
 export default function LoginForm({
@@ -33,6 +35,7 @@ export default function LoginForm({
   onGoogleLogin,
   isGoogleLoading,
   onSwitchToSignup,
+  onForgotPassword,
 }: LoginFormProps) {
   return (
     <form
@@ -96,6 +99,24 @@ export default function LoginForm({
             {form.formState.errors.password.message}
           </p>
         )}
+        <div className='flex justify-end mt-1'>
+          {onForgotPassword ? (
+            <button
+              type='button'
+              onClick={onForgotPassword}
+              className='text-sm text-orange-600 hover:text-orange-500 font-medium transition-colors'
+            >
+              Forgot password?
+            </button>
+          ) : (
+            <Link
+              to='/forgot-password'
+              className='text-sm text-orange-600 hover:text-orange-500 font-medium transition-colors'
+            >
+              Forgot password?
+            </Link>
+          )}
+        </div>
       </div>
 
       <button

@@ -12,17 +12,23 @@ export {
 // Conversation queries and keys
 export {
   conversationKeys,
+  suggestedQuestionKeys,
   useConversations,
   useMultiPaperConversations,
   useConversation,
   useStartSession,
   useDeleteConversation,
+  useSuggestedQuestions,
+  useGenerateSuggestedQuestions,
+  useGenerateFollowUpQuestions,
 } from './useConversationQueries';
 
 // Chat queries and keys
 export {
   chatKeys,
   useMessageHistory,
+  useInfiniteMessageHistory,
+  flattenMessagePages,
   useSendMessage,
   useSendMultiPaperMessage,
   useExplainRegion,
@@ -54,3 +60,15 @@ export {
 
 // Comment queries and keys
 export { useUpdateComment, useDeleteComment } from './useCommentQueries';
+
+// Auth mutations
+export {
+  useLogin,
+  useSignup,
+  useGoogleIdTokenAuth,
+  useLogout,
+  useLogoutAll,
+  useRefreshTokens,
+  useForgotPassword,
+  useResetPassword,
+} from './useAuthMutations';

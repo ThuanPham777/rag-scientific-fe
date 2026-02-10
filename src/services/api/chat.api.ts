@@ -51,15 +51,25 @@ export async function sendQuery(
 }
 
 /**
- * Get message history for a conversation
+ * Get message history for a conversation (cursor-paginated)
+ * Backend returns messages in DESC order (newest first).
  */
 export async function getMessageHistory(
   conversationId: string,
   paperId?: string,
-): Promise<ChatMessage[]> {
-  const { data } = await api.get(`/chat/messages/${conversationId}`);
+  cursor?: string,
+  limit: number = 20,
+): Promise<{ items: ChatMessage[]; nextCursor?: string; hasNext: boolean }> {
+  const params: Record<string, any> = { limit };
+  if (cursor) params.cursor = cursor;
 
-  return data.data.map((m: any) => ({
+  const { data } = await api.get(`/chat/messages/${conversationId}`, {
+    params,
+  });
+
+  const response = data.data; // CursorPaginationDto { items, pagination }
+
+  const items: ChatMessage[] = (response.items || []).map((m: any) => ({
     id: m.id,
     role: m.role.toLowerCase() as 'user' | 'assistant',
     content: m.content,
@@ -72,6 +82,12 @@ export async function getMessageHistory(
       : undefined,
     createdAt: m.createdAt,
   }));
+
+  return {
+    items,
+    nextCursor: response.pagination?.nextCursor,
+    hasNext: response.pagination?.hasNext ?? false,
+  };
 }
 
 /**

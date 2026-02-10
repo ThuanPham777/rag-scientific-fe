@@ -31,6 +31,19 @@ export type SignupResponse = {
 };
 
 // ============================
+// 🔹 Forgot / Reset Password Types
+// ============================
+export type ForgotPasswordResponse = {
+  success: boolean;
+  message: string;
+};
+
+export type ResetPasswordResponse = {
+  success: boolean;
+  message: string;
+};
+
+// ============================
 // 🔹 Paper Types
 // ============================
 export type PaperStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
@@ -128,7 +141,7 @@ export type Session = ChatSession;
 // 🔹 Related Papers Types
 // ============================
 export interface RelatedPaperItem {
-  arxiv_id: string;
+  arxivId: string;
   title: string;
   abstract: string;
   authors: string[];
@@ -136,13 +149,43 @@ export interface RelatedPaperItem {
   score: number;
   reason: string;
   categories?: string[];
+  orderIndex?: number;
 }
 
 export interface RelatedPapersResponse {
-  file_id: string;
-  base_title: string;
-  base_abstract: string;
+  paperId: string;
   results: RelatedPaperItem[];
+  fromCache: boolean;
+}
+
+export interface BrainstormQuestionsResponse {
+  questions: string[];
+}
+
+// ============================
+// 🔹 Suggested Questions (conversation-level)
+// ============================
+export interface SuggestedQuestionItem {
+  id: string;
+  question: string;
+}
+
+export interface SuggestedQuestionsResult {
+  conversationId: string;
+  questions: SuggestedQuestionItem[];
+}
+
+// ============================
+// 🔹 Follow-Up Questions (message-level, ephemeral)
+// ============================
+export interface FollowUpQuestionsResult {
+  messageId: string;
+  questions: string[];
+}
+
+export interface SummaryResult {
+  paperId: string;
+  summary: string;
 }
 
 // ============================
@@ -221,4 +264,21 @@ export interface ApiResponse<T> {
   success: boolean;
   message: string;
   data: T;
+}
+
+// ============================
+// 🔹 Cursor Pagination Types
+// ============================
+export interface CursorPaginationMeta {
+  limit: number;
+  nextCursor?: string;
+  prevCursor?: string;
+  hasNext: boolean;
+  hasPrev: boolean;
+  count: number;
+}
+
+export interface CursorPaginatedResponse<T> {
+  items: T[];
+  pagination: CursorPaginationMeta;
 }

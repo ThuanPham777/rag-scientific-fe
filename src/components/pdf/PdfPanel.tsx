@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
 import SummaryView from './SummaryView';
 import RelatedPapersView from './RelatedPapersView';
-import type { Paper, RelatedPapersResponse } from '../../utils/types';
+import type {
+  Paper,
+  RelatedPapersResponse,
+  SummaryResult,
+} from '../../utils/types';
 import {
-  sendQuery,
   explainRegion,
   getRelatedPapers,
+  getPaperSummary,
   guestExplainRegion,
   buildGuestAssistantMessage,
 } from '../../services';
@@ -44,7 +48,7 @@ export default function PdfPanel({
   const [activeTab, setActiveTab] = useState<ActiveTab>('pdf');
 
   // Data states
-  const [summaryData, setSummaryData] = useState<any>(null);
+  const [summaryData, setSummaryData] = useState<SummaryResult | null>(null);
   const [relatedData, setRelatedData] = useState<RelatedPapersResponse | null>(
     null,
   );
@@ -87,17 +91,12 @@ export default function PdfPanel({
 
   // --- Logic 1: Summary ---
   const handleSummary = async () => {
-    if (!session || !paper?.id) return;
+    if (!paper?.id) return;
     setSummaryFetched(true); // Mark as attempted
     try {
       setIsLoading(true);
-      const { assistantMsg, raw } = await sendQuery(
-        session.id,
-        'Summarize the content of this paper',
-        paper.id,
-      );
-      const payload = raw ?? { answer: assistantMsg.content };
-      setSummaryData(payload);
+      const res = await getPaperSummary(paper.id);
+      setSummaryData(res.data);
     } catch (error) {
       console.error('❌ Error summarizing paper:', error);
     } finally {
@@ -107,15 +106,15 @@ export default function PdfPanel({
 
   // --- Logic 2: Related Papers ---
   const handleRelated = async () => {
-    if (!paper?.ragFileId) {
-      console.error('❌ No ragFileId found for paper');
+    if (!paper?.id) {
+      console.error('❌ No paper ID found');
       return;
     }
     setRelatedFetched(true); // Mark as attempted
     try {
       setIsLoading(true);
-      const data = await getRelatedPapers(paper.ragFileId);
-      setRelatedData(data);
+      const data = await getRelatedPapers(paper.id);
+      setRelatedData(data.data);
     } catch (error) {
       console.error('❌ Error fetching related papers:', error);
     } finally {
@@ -130,7 +129,6 @@ export default function PdfPanel({
       !summaryData &&
       !summaryFetched &&
       !isLoading &&
-      session &&
       paper?.id
     ) {
       handleSummary();
@@ -150,7 +148,7 @@ export default function PdfPanel({
     relatedFetched,
     isLoading,
     paper?.ragFileId,
-    session,
+    paper?.id,
   ]);
 
   // Reset fetch flags when paper changes

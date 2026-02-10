@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { login as apiLogin, signup as apiSignup } from '../../services';
@@ -26,6 +27,8 @@ export default function AuthModal({
   const [loading, setLoading] = useState(false);
 
   const { login } = useAuthStore();
+
+  const navigate = useNavigate();
 
   const {
     status: googleStatus,
@@ -74,6 +77,11 @@ export default function AuthModal({
   const handleGoogleLogin = async () => {
     setServerError('');
     await initiateGoogleLogin();
+  };
+
+  const handleForgotPassword = () => {
+    onClose();
+    navigate('/forgot-password');
   };
 
   const handleLogin = async (data: LoginFormData) => {
@@ -197,6 +205,7 @@ export default function AuthModal({
               onGoogleLogin={handleGoogleLogin}
               isGoogleLoading={isGoogleLoading}
               onSwitchToSignup={() => switchMode('signup')}
+              onForgotPassword={handleForgotPassword}
             />
           ) : (
             <SignupForm

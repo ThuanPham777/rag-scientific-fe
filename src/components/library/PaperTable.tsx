@@ -5,6 +5,7 @@ import {
   FolderInput,
   Upload,
   Loader2,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,6 +31,10 @@ interface PaperTableProps {
   onToggleSelect?: (paper: Paper) => void;
   onSelectAll?: () => void;
   onDeselectAll?: () => void;
+  // Load-more pagination
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
 }
 
 export function PaperTable({
@@ -45,6 +50,9 @@ export function PaperTable({
   onToggleSelect,
   onSelectAll,
   onDeselectAll,
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
 }: PaperTableProps) {
   const allSelected =
     papers.length > 0 && papers.every((p) => selectedPaperIds.includes(p.id));
@@ -195,6 +203,31 @@ export function PaperTable({
           );
         })}
       </div>
+
+      {/* Load More Files button */}
+      {hasMore && (
+        <div className='flex justify-center py-4 border-t'>
+          <Button
+            variant='outline'
+            size='sm'
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className='gap-2'
+          >
+            {isLoadingMore ? (
+              <>
+                <Loader2 className='h-4 w-4 animate-spin' />
+                Loading…
+              </>
+            ) : (
+              <>
+                <ChevronDown className='h-4 w-4' />
+                Load More Files
+              </>
+            )}
+          </Button>
+        </div>
+      )}
     </>
   );
 }

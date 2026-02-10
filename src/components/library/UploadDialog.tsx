@@ -64,7 +64,7 @@ export function UploadDialog({
       open={open}
       onOpenChange={(o) => !isUploading && onOpenChange(o)}
     >
-      <DialogContent className='sm:max-w-md'>
+      <DialogContent className='sm:max-w-xl w-full max-h-[100vh] overflow-hidden'>
         <DialogHeader>
           <DialogTitle>Select a Collection</DialogTitle>
         </DialogHeader>
@@ -155,14 +155,16 @@ export function UploadDialog({
               <p className='text-sm text-gray-600 mb-2'>
                 {uploadQueue.length} file(s) selected:
               </p>
-              <div className='max-h-[120px] overflow-auto space-y-2'>
+              <div className='max-h-[200px] overflow-auto space-y-2'>
                 {uploadQueue.map((item) => (
                   <div
                     key={item.id}
-                    className='flex items-center gap-2 text-sm'
+                    className='flex items-center gap-2 text-sm w-full min-w-0'
                   >
                     <FileText className='h-4 w-4 text-red-500 shrink-0' />
-                    <span className='truncate flex-1'>{item.file.name}</span>
+                    <span className='flex-1 min-w-0 truncate'>
+                      {item.file.name}
+                    </span>
                     {item.status === 'pending' && (
                       <button
                         onClick={() => onRemoveFromQueue(item.id)}

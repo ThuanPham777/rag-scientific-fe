@@ -5,6 +5,8 @@ import ChatPage from './pages/ChatPage';
 import MyLibraryPage from './pages/MyLibraryPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import GoogleCallbackPage from './pages/GoogleCallbackPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 export default function App() {
   return (
@@ -13,6 +15,16 @@ export default function App() {
       <Route
         path='/auth/google/callback'
         element={<GoogleCallbackPage />}
+      />
+
+      {/* Password reset pages - no layout needed */}
+      <Route
+        path='/forgot-password'
+        element={<ForgotPasswordPage />}
+      />
+      <Route
+        path='/reset-password'
+        element={<ResetPasswordPage />}
       />
 
       {/* Routes with layout */}

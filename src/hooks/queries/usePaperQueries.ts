@@ -2,7 +2,12 @@
 // React Query hooks for paper operations
 // This is the primary source of truth for paper data (server state)
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  useInfiniteQuery,
+} from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   listPapers,
@@ -12,6 +17,7 @@ import {
   uploadPdf,
 } from '../../services';
 import { folderKeys } from './useFolderQueries';
+import type { Paper } from '../../utils/types';
 
 // Query keys
 export const paperKeys = {
@@ -19,22 +25,33 @@ export const paperKeys = {
   lists: () => [...paperKeys.all, 'list'] as const,
   list: (filters?: Record<string, unknown>) =>
     [...paperKeys.lists(), filters] as const,
+  infinite: () => [...paperKeys.all, 'infinite'] as const,
   details: () => [...paperKeys.all, 'detail'] as const,
   detail: (id: string) => [...paperKeys.details(), id] as const,
 };
 
 /**
- * Hook to fetch all papers
+ * Hook to fetch all papers (cursor-paginated via useInfiniteQuery)
  */
 export function usePapers() {
-  return useQuery({
-    queryKey: paperKeys.lists(),
-    queryFn: async () => {
-      const response = await listPapers();
-      return response.data;
-    },
-    staleTime: 30 * 1000, // 30 seconds
+  const infiniteQuery = useInfiniteQuery({
+    queryKey: paperKeys.infinite(),
+    queryFn: ({ pageParam }) => listPapers(pageParam, 20),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasNext ? lastPage.nextCursor : undefined,
+    staleTime: 30 * 1000,
   });
+
+  // Flatten pages into a single array for backwards-compatible usage
+  const allPapers: Paper[] =
+    infiniteQuery.data?.pages?.flatMap((page) => page.items) ?? [];
+
+  return {
+    ...infiniteQuery,
+    /** Flat array of all loaded papers (across all fetched pages) */
+    data: allPapers,
+  };
 }
 
 /**
@@ -72,8 +89,8 @@ export function useUploadPaper() {
       return uploadPdf(file, onProgress, folderId);
     },
     onSuccess: (data) => {
-      // Invalidate and refetch papers list
-      queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
+      // Invalidate and refetch papers (covers both list and infinite queries)
+      queryClient.invalidateQueries({ queryKey: paperKeys.all });
       // Invalidate folder-related queries
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       // Add the new paper to the cache
@@ -97,8 +114,8 @@ export function useDeletePaper() {
     onSuccess: (_, deletedId) => {
       // Remove from cache
       queryClient.removeQueries({ queryKey: paperKeys.detail(deletedId) });
-      // Refetch list
-      queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
+      // Refetch papers (covers both list and infinite queries)
+      queryClient.invalidateQueries({ queryKey: paperKeys.all });
       // Invalidate folder-related queries
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       toast.success('Paper deleted');
@@ -121,7 +138,7 @@ export function useCreatePaper() {
   return useMutation({
     mutationFn: createPaper,
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: paperKeys.all });
       queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.setQueryData(paperKeys.detail(data.data.id), data.data);
     },

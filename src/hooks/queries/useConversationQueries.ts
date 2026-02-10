@@ -11,6 +11,9 @@ import {
   deleteConversation,
   startSession,
   listMultiPaperConversations,
+  getSuggestedQuestions,
+  generateSuggestedQuestions,
+  generateFollowUpQuestions,
 } from '../../services';
 import { chatKeys } from './useChatQueries';
 
@@ -139,6 +142,83 @@ export function useDeleteConversation() {
       const msg =
         error.response?.data?.message || 'Failed to delete conversation';
       toast.error(msg);
+    },
+  });
+}
+
+// ============================================================
+// Suggested Questions
+// ============================================================
+
+export const suggestedQuestionKeys = {
+  all: ['suggested-questions'] as const,
+  list: (conversationId: string) =>
+    [...suggestedQuestionKeys.all, conversationId] as const,
+};
+
+/**
+ * Hook to fetch saved suggested questions for a conversation.
+ * Runs on mount / page reload so "My Questions" is populated immediately.
+ */
+export function useSuggestedQuestions(conversationId?: string) {
+  return useQuery({
+    queryKey: suggestedQuestionKeys.list(conversationId!),
+    queryFn: async () => {
+      const response = await getSuggestedQuestions(conversationId!);
+      return response.data; // SuggestedQuestionsResult
+    },
+    enabled: !!conversationId,
+    staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+/**
+ * Hook to generate (brainstorm) suggested questions via RAG.
+ * On success the saved-questions query is invalidated so the list refreshes.
+ */
+export function useGenerateSuggestedQuestions() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      conversationId,
+      textInput,
+    }: {
+      conversationId: string;
+      textInput?: string;
+    }) => generateSuggestedQuestions(conversationId, textInput),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: suggestedQuestionKeys.list(variables.conversationId),
+      });
+    },
+    onError: (error: any) => {
+      const msg =
+        error.response?.data?.message || 'Failed to generate questions';
+      toast.error(msg);
+    },
+  });
+}
+
+// ============================================================
+// Follow-Up Questions (ephemeral, mutation only)
+// ============================================================
+
+/**
+ * Mutation hook to generate follow-up questions for a specific assistant message.
+ * Called right after the assistant response arrives – results are ephemeral.
+ */
+export function useGenerateFollowUpQuestions() {
+  return useMutation({
+    mutationFn: ({
+      conversationId,
+      messageId,
+    }: {
+      conversationId: string;
+      messageId: string;
+    }) => generateFollowUpQuestions(conversationId, messageId),
+    onError: (error: any) => {
+      console.error('Follow-up questions failed:', error);
     },
   });
 }

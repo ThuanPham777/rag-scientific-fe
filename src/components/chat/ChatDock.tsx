@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   ChevronDown,
   ChevronUp,
@@ -6,6 +6,7 @@ import {
   X,
   FileText,
   Trash2,
+  Loader2,
 } from 'lucide-react';
 import ChatSuggestions from './ChatSuggestions';
 import ChatMessage from './ChatMessage';
@@ -57,6 +58,14 @@ type Props = {
 
   // Capture functionality
   onExplainMath?: () => void;
+
+  // Follow-up questions keyed by message ID (populated by parent after assistant response)
+  followUpMap?: Record<string, string[]>;
+
+  // Infinite scroll (load older messages when scrolling up)
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
 };
 
 const LOADING_STEPS = [
@@ -84,16 +93,60 @@ export default function ChatDock({
   onOpenChange,
   isPdfFullscreen = false,
   onExplainMath,
+  followUpMap = {},
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
 }: Props) {
   // Use messages prop if provided, otherwise fall back to session?.messages
   const messages = messagesProp ?? session?.messages ?? [];
 
   const [open, setOpen] = useState(defaultOpen);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [stepIndex, setStepIndex] = useState(0);
+  const [inputText, setInputText] = useState('');
 
   // Track if user manually closed the dock
   const [userClosed, setUserClosed] = useState(false);
+
+  // Infinite scroll: preserve scroll position when prepending older messages
+  const prevScrollHeightRef = useRef<number>(0);
+  const isLoadingMoreRef = useRef(false);
+
+  // Handle scroll-to-top to load older messages
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      if (!onLoadMore || !hasMore || isLoadingMore || isLoadingMoreRef.current)
+        return;
+      const target = e.currentTarget;
+      if (target.scrollTop < 80) {
+        isLoadingMoreRef.current = true;
+        prevScrollHeightRef.current = target.scrollHeight;
+        onLoadMore();
+      }
+    },
+    [onLoadMore, hasMore, isLoadingMore],
+  );
+
+  // After older messages are prepended, restore scroll position
+  useEffect(() => {
+    if (!isLoadingMoreRef.current) return;
+    if (isLoadingMore) return; // still loading
+
+    // Loading finished — restore scroll position
+    const container = messagesContainerRef.current;
+    if (container && prevScrollHeightRef.current > 0) {
+      requestAnimationFrame(() => {
+        const newScrollHeight = container.scrollHeight;
+        container.scrollTop += newScrollHeight - prevScrollHeightRef.current;
+        prevScrollHeightRef.current = 0;
+        isLoadingMoreRef.current = false;
+      });
+    } else {
+      isLoadingMoreRef.current = false;
+    }
+  }, [isLoadingMore, messages.length]);
 
   // Notify parent when open state changes
   useEffect(() => {
@@ -176,7 +229,7 @@ export default function ChatDock({
             position === 'fixed'
               ? positionClasses
               : `relative ${WIDTH} ${HEIGHT}`
-          } bg-white border border-gray-200 ${isPdfFullscreen ? 'rounded-none border-l' : 'rounded-lg'} flex flex-col pointer-events-auto overflow-hidden shadow-2xl`}
+          } bg-white border border-gray-200 ${isPdfFullscreen ? 'rounded-none border-l' : 'rounded-lg'} flex flex-col pointer-events-auto shadow-2xl`}
         >
           {/* Header */}
           <div
@@ -257,7 +310,20 @@ export default function ChatDock({
           )}
 
           {/* Messages Area */}
-          <div className='flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0 bg-white relative'>
+          <div
+            ref={messagesContainerRef}
+            onScroll={handleScroll}
+            className='flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0 bg-white relative'
+          >
+            {/* Loading older messages indicator */}
+            {isLoadingMore && (
+              <div className='flex items-center justify-center py-2'>
+                <Loader2 className='h-4 w-4 animate-spin text-gray-400 mr-2' />
+                <span className='text-xs text-gray-400'>
+                  Loading older messages…
+                </span>
+              </div>
+            )}
             {messages.length === 0 && showSuggestions && (
               <div className='mb-6'>
                 {mode === 'multi' && selectedPapers.length === 0 ? (
@@ -286,6 +352,9 @@ export default function ChatDock({
                 key={m.id}
                 msg={m}
                 activePaperId={mode === 'single' ? activePaperId : undefined}
+                conversationId={conversationId || session?.id}
+                onFollowUpSelect={onSend}
+                followUps={followUpMap[m.id] || []}
               />
             ))}
             {isLoading && <ChatMessageLoading label={currentStepLabel} />}
@@ -298,18 +367,23 @@ export default function ChatDock({
           />
 
           {/* Footer Area */}
-          <div className='bg-white relative z-30 flex flex-col'>
+          <div className='bg-white relative z-[99999] flex flex-col'>
             {/* Quick Actions - only show in single mode with showQuickActions */}
             {showQuickActions && mode === 'single' && (
               <ChatQuickActions
                 onSelect={onSend}
-                fileId={activePaperId}
+                conversationId={conversationId || session?.id}
                 disabled={isLoading}
+                inputText={inputText}
               />
             )}
 
             <ChatInput
-              onSend={onSend}
+              onSend={(text, opts) => {
+                onSend(text, opts);
+                setInputText('');
+              }}
+              onTextChange={setInputText}
               onExplainMath={onExplainMath}
               disabled={
                 isLoading || (mode === 'multi' && selectedPapers.length === 0)
