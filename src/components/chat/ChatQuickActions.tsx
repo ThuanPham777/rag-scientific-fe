@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ChevronUp, Sparkles, X, Lightbulb } from 'lucide-react';
 import {
   useSuggestedQuestions,
@@ -14,6 +14,10 @@ type Props = {
   disabled?: boolean;
   /** Current text from the chat input – drives search filtering & contextual brainstorm */
   inputText?: string;
+  /** Controlled open state (optional - if not provided, uses internal state) */
+  open?: boolean;
+  /** Callback when suggestions panel open state changes */
+  onOpenChange?: (open: boolean) => void;
 };
 
 const PREDEFINED_QUESTIONS = [
@@ -36,8 +40,19 @@ export default function ChatQuickActions({
   conversationId,
   disabled,
   inputText = '',
+  open: controlledOpen,
+  onOpenChange,
 }: Props) {
-  const [isOpen, setIsOpen] = useState(false);
+  // Use controlled or uncontrolled state
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isOpen = controlledOpen ?? internalOpen;
+
+  const setIsOpen = (newOpen: boolean) => {
+    if (controlledOpen === undefined) {
+      setInternalOpen(newOpen);
+    }
+    onOpenChange?.(newOpen);
+  };
   const [activeTab, setActiveTab] = useState<Tab>('general');
 
   // ── React Query: load saved questions on mount / after brainstorm ──
@@ -54,6 +69,9 @@ export default function ChatQuickActions({
 
   // Whether we're showing the "brainstorm results" view (all questions merged)
   const [showBrainstormResults, setShowBrainstormResults] = useState(false);
+
+  // Ref for scrollable container to scroll to bottom when showing brainstorm results
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Saved questions from DB (loaded on mount / page reload)
   const savedQuestions = useMemo(
@@ -93,7 +111,13 @@ export default function ChatQuickActions({
     [filterBySearch, dynamicQuestions],
   );
 
-  // ── Search mode: merge all questions into one list ──────
+  // ── All questions merged (unfiltered) ──────
+  const allQuestionsUnfiltered = useMemo(
+    () => [...PREDEFINED_QUESTIONS, ...dynamicQuestions],
+    [dynamicQuestions],
+  );
+
+  // ── Search mode: merge and filter all questions ──────
   const isSearchMode = !!searchTerm;
   const filteredAll = useMemo(
     () => filterBySearch([...PREDEFINED_QUESTIONS, ...dynamicQuestions]),
@@ -103,15 +127,23 @@ export default function ChatQuickActions({
   // Show merged view when searching OR after brainstorm results
   const isMergedView = isSearchMode || showBrainstormResults;
 
-  const activeQuestions = isMergedView
-    ? filteredAll
-    : activeTab === 'general'
-      ? filteredGeneral
-      : filteredDynamic;
+  // Active questions logic:
+  // - showBrainstormResults: show ALL (unfiltered) with highlights
+  // - isSearchMode: show filtered by searchTerm
+  // - otherwise: show by active tab
+  const activeQuestions = showBrainstormResults
+    ? allQuestionsUnfiltered // Show ALL when brainstorm (no filter)
+    : isSearchMode
+      ? filteredAll // Filter when searching
+      : activeTab === 'general'
+        ? filteredGeneral
+        : filteredDynamic;
 
-  const totalResults = isMergedView
-    ? filteredAll.length
-    : filteredGeneral.length + filteredDynamic.length;
+  const totalResults = showBrainstormResults
+    ? allQuestionsUnfiltered.length
+    : isMergedView
+      ? filteredAll.length
+      : filteredGeneral.length + filteredDynamic.length;
 
   // ── Brainstorm handler (uses mutation) ──────────────────
   const isBrainstorming = generateMutation.isPending;
@@ -154,6 +186,19 @@ export default function ChatQuickActions({
       setIsOpen(true);
     }
   }, [searchTerm]);
+
+  // Scroll to bottom when showing brainstorm results to reveal new questions
+  useEffect(() => {
+    if (showBrainstormResults && scrollContainerRef.current) {
+      // Use setTimeout to ensure DOM is updated before scrolling
+      setTimeout(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop =
+            scrollContainerRef.current.scrollHeight;
+        }
+      }, 100);
+    }
+  }, [showBrainstormResults, activeQuestions.length]);
 
   // ── Brainstorm button label ────────────────────────────────
   const brainstormLabel = searchTerm
@@ -240,7 +285,10 @@ export default function ChatQuickActions({
             )}
 
             {/* ── Scrollable question list ── */}
-            <div className='p-3 overflow-y-auto custom-scrollbar bg-gray-50/30 flex-1 min-h-0'>
+            <div
+              ref={scrollContainerRef}
+              className='p-3 overflow-y-auto custom-scrollbar bg-gray-50/30 flex-1 min-h-0'
+            >
               {activeQuestions.length > 0 ? (
                 <ul className='space-y-1'>
                   {activeQuestions.map((q, idx) => {

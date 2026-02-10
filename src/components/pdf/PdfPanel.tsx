@@ -7,7 +7,6 @@ import type {
   SummaryResult,
 } from '../../utils/types';
 import {
-  explainRegion,
   getRelatedPapers,
   getPaperSummary,
   guestExplainRegion,
@@ -28,6 +27,12 @@ type Props = {
   onFullscreenChange?: (isFullscreen: boolean) => void;
   // Callback to expose capture toggle function to parent
   onCaptureRefChange?: (toggleCapture: () => void) => void;
+  // Callback for explain region capture (image) — handled by parent (ChatPage)
+  onExplainRegionCapture?: (
+    imageDataUrl: string,
+    pageNumber: number,
+    completeProcessing?: () => void,
+  ) => void;
 };
 
 type PendingJump = {
@@ -44,6 +49,7 @@ export default function PdfPanel({
   chatDockWidth = 500,
   onFullscreenChange,
   onCaptureRefChange,
+  onExplainRegionCapture,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('pdf');
 
@@ -299,41 +305,15 @@ export default function PdfPanel({
                   return;
                 }
 
-                // Authenticated mode: use explainRegion
-                const fileId = paper?.id;
-
-                usePaperStore.getState().addOptimisticMessage({
-                  id: crypto.randomUUID(),
-                  role: 'user',
-                  content: 'Explain this region',
-                  imageDataUrl,
-                  createdAt: new Date().toISOString(),
-                });
-
-                // Set loading state
-                usePaperStore.getState().setChatLoading(true);
-
-                explainRegion(imageDataUrl, {
-                  conversationId: session?.id,
-                  paperId: fileId,
-                  pageNumber,
-                })
-                  .then(({ assistantMsg }) => {
-                    usePaperStore.getState().addOptimisticMessage(assistantMsg);
-                  })
-                  .catch((err) => {
-                    console.error('❌ Explain error:', err);
-                    usePaperStore.getState().addOptimisticMessage({
-                      id: crypto.randomUUID(),
-                      role: 'assistant',
-                      content: '⚠️ Sorry, something went wrong.',
-                      createdAt: new Date().toISOString(),
-                    });
-                  })
-                  .finally(() => {
-                    usePaperStore.getState().setChatLoading(false);
-                    completeProcessing?.();
-                  });
+                // Authenticated mode: delegate to parent (ChatPage) to reuse
+                // the same sentMessages pipeline as normal text messages
+                if (onExplainRegionCapture) {
+                  onExplainRegionCapture(
+                    imageDataUrl,
+                    pageNumber,
+                    completeProcessing,
+                  );
+                }
                 return;
               }
 

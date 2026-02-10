@@ -107,6 +107,9 @@ export default function ChatDock({
   const [stepIndex, setStepIndex] = useState(0);
   const [inputText, setInputText] = useState('');
 
+  // Track suggestions panel state to close it when sending message
+  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+
   // Track if user manually closed the dock
   const [userClosed, setUserClosed] = useState(false);
 
@@ -371,15 +374,23 @@ export default function ChatDock({
             {/* Quick Actions - only show in single mode with showQuickActions */}
             {showQuickActions && mode === 'single' && (
               <ChatQuickActions
-                onSelect={onSend}
+                onSelect={(text) => {
+                  // When question is selected from suggestions, also close the panel
+                  setIsSuggestionsOpen(false);
+                  onSend(text);
+                }}
                 conversationId={conversationId || session?.id}
                 disabled={isLoading}
                 inputText={inputText}
+                open={isSuggestionsOpen}
+                onOpenChange={setIsSuggestionsOpen}
               />
             )}
 
             <ChatInput
               onSend={(text, opts) => {
+                // Close suggestions panel when sending message
+                setIsSuggestionsOpen(false);
                 onSend(text, opts);
                 setInputText('');
               }}

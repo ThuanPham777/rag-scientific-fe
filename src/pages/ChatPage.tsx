@@ -17,6 +17,7 @@ import {
   guestAskQuestion,
   guestCheckIngestStatus,
   buildGuestAssistantMessage,
+  explainRegion,
 } from '../services';
 import PdfPanel from '../components/pdf/PdfPanel';
 import ChatDock from '../components/chat/ChatDock';
@@ -478,6 +479,84 @@ export default function ChatPage() {
     ],
   );
 
+  // handleExplainRegionCapture - handles Explain Region (Sigma capture) using same pipeline as onSend
+  const handleExplainRegionCapture = useCallback(
+    async (
+      imageDataUrl: string,
+      pageNumber: number,
+      completeProcessing?: () => void,
+    ) => {
+      if (!activeSession) return;
+
+      // 1. Create user message with captured image (same as onSend)
+      const userMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: 'Explain this region',
+        imageDataUrl,
+        createdAt: new Date().toISOString(),
+      };
+
+      // 2. Add user message to the same store as normal messages
+      if (isGuest) {
+        addGuestMessage(userMsg);
+      } else {
+        setSentMessages((prev) => [...prev, userMsg]);
+      }
+
+      // 3. Set loading state (same as onSend)
+      const setLoading = isGuest ? setGuestLoading : setChatLoading;
+
+      try {
+        setLoading(true);
+
+        if (session) {
+          // 4. Call explainRegion API
+          const { assistantMsg } = await explainRegion(imageDataUrl, {
+            conversationId: session.id,
+            paperId: currentPaper?.id,
+            pageNumber,
+          });
+
+          // 5. Add assistant message to same store (same as onSend)
+          setSentMessages((prev) => [...prev, assistantMsg]);
+
+          // 6. Fetch follow-ups (same as onSend)
+          if (session.id && assistantMsg.id) {
+            fetchFollowUps(session.id, assistantMsg.id);
+          }
+        }
+      } catch (err: any) {
+        console.error('\u274c Explain Region error:', err);
+        const errorMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content:
+            '\u26a0\ufe0f Sorry, something went wrong while analyzing this region.',
+          createdAt: new Date().toISOString(),
+        };
+        if (isGuest) {
+          addGuestMessage(errorMsg);
+        } else {
+          setSentMessages((prev) => [...prev, errorMsg]);
+        }
+      } finally {
+        setLoading(false);
+        completeProcessing?.();
+      }
+    },
+    [
+      activeSession,
+      isGuest,
+      session,
+      currentPaper?.id,
+      addGuestMessage,
+      setGuestLoading,
+      setChatLoading,
+      fetchFollowUps,
+    ],
+  );
+
   // handlePdfAction - defined as useCallback to maintain stable reference
   const handlePdfAction = useCallback(
     async (action: 'explain' | 'summarize', selectedText: string) => {
@@ -614,6 +693,7 @@ export default function ChatPage() {
           onCaptureRefChange={(toggleCapture) => {
             captureToggleRef.current = toggleCapture;
           }}
+          onExplainRegionCapture={handleExplainRegionCapture}
         />
         <div
           className='hidden lg:block'
