@@ -27,6 +27,8 @@ export {
 export {
   chatKeys,
   useMessageHistory,
+  useInfiniteMessageHistory,
+  flattenMessagePages,
   useSendMessage,
   useSendMultiPaperMessage,
   useExplainRegion,

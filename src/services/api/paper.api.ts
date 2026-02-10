@@ -28,11 +28,24 @@ export async function createPaper(
 }
 
 /**
- * List all papers for the current user
+ * List all papers for the current user (cursor-paginated)
  */
-export async function listPapers(): Promise<ApiResponse<Paper[]>> {
-  const { data } = await api.get('/papers');
-  return data;
+export async function listPapers(
+  cursor?: string,
+  limit: number = 20,
+): Promise<{ items: Paper[]; nextCursor?: string; hasNext: boolean }> {
+  const params: Record<string, any> = { limit };
+  if (cursor) params.cursor = cursor;
+
+  const { data } = await api.get('/papers', { params });
+
+  const response = data.data; // CursorPaginationDto { items, pagination }
+
+  return {
+    items: response.items || [],
+    nextCursor: response.pagination?.nextCursor,
+    hasNext: response.pagination?.hasNext ?? false,
+  };
 }
 
 /**

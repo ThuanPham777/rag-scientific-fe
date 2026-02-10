@@ -265,3 +265,20 @@ export interface ApiResponse<T> {
   message: string;
   data: T;
 }
+
+// ============================
+// 🔹 Cursor Pagination Types
+// ============================
+export interface CursorPaginationMeta {
+  limit: number;
+  nextCursor?: string;
+  prevCursor?: string;
+  hasNext: boolean;
+  hasPrev: boolean;
+  count: number;
+}
+
+export interface CursorPaginatedResponse<T> {
+  items: T[];
+  pagination: CursorPaginationMeta;
+}
