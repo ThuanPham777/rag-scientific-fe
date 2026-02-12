@@ -1,4 +1,5 @@
 // Search hook - manages PDF text search functionality
+// Supports English & Vietnamese with proper Unicode normalization
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 export type HighlightRect = {
@@ -16,9 +17,58 @@ type PageIndex = {
 // Individual match info for navigation
 type SearchMatch = {
   pageNumber: number;
-  rect: HighlightRect;
-  matchIndex: number; // index within all matches
+  /** Character offset in the page's concatenated text */
+  startOffset: number;
+  endOffset: number;
+  matchIndex: number; // global index across all pages
 };
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Normalize a string to NFC and optionally lowercase */
+function normText(s: string, lower: boolean): string {
+  const n = s.normalize('NFC');
+  return lower ? n.toLowerCase() : n;
+}
+
+/**
+ * Build a Unicode-aware search regex.
+ *
+ * JavaScript's `\b` only recognizes ASCII word chars ([a-zA-Z0-9_]).
+ * For Vietnamese / accented text we use `\p{L}` / `\p{N}` (Unicode
+ * letter / digit) with lookahead / lookbehind to define word boundaries.
+ */
+function buildSearchRegex(
+  query: string,
+  matchCase: boolean,
+  wholeWords: boolean,
+): RegExp | null {
+  const trimmed = query.trim();
+  if (!trimmed) return null;
+
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  let pattern: string;
+  if (wholeWords) {
+    // Unicode-aware word boundaries
+    pattern = `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`;
+  } else {
+    pattern = escaped;
+  }
+
+  let flags = 'gu'; // global + unicode
+  if (!matchCase) flags += 'i';
+
+  try {
+    return new RegExp(pattern, flags);
+  } catch {
+    // Fallback for environments without Unicode property escapes
+    const fbPattern = wholeWords ? `\\b${escaped}\\b` : escaped;
+    return new RegExp(fbPattern, matchCase ? 'g' : 'gi');
+  }
+}
 
 export interface UseSearchOptions {
   pageRefs: React.MutableRefObject<Record<number, HTMLDivElement | null>>;
@@ -49,13 +99,6 @@ export function usePdfSearch(options: UseSearchOptions) {
   // Track observers for cleanup
   const observersRef = useRef<Map<number, MutationObserver>>(new Map());
 
-  const buildRegex = useCallback(() => {
-    if (!query.trim()) return null;
-    const esc = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = wholeWords ? `\\b${esc}\\b` : esc;
-    return new RegExp(pattern, matchCase ? 'g' : 'gi');
-  }, [query, matchCase, wholeWords]);
-
   const clearSearchOverlays = useCallback(
     (pageNumber: number) => {
       const pageEl = pageRefs.current[pageNumber];
@@ -69,6 +112,7 @@ export function usePdfSearch(options: UseSearchOptions) {
   );
 
   // Create overlay for a range with option for current match styling
+  // Merges adjacent client rects on the same line to avoid fragmented highlights
   const overlayForRange = useCallback(
     (
       range: Range,
@@ -78,14 +122,35 @@ export function usePdfSearch(options: UseSearchOptions) {
       const textLayer =
         (pageEl.querySelector('.textLayer') as HTMLElement | null) || pageEl;
       const pageBox = textLayer.getBoundingClientRect();
-      const rects = Array.from(range.getClientRects()).map((r) => ({
-        top: r.top - pageBox.top,
-        left: r.left - pageBox.left,
-        width: r.width,
-        height: r.height,
-      }));
 
-      rects.forEach((r) => {
+      const rawRects = Array.from(range.getClientRects());
+      const merged: HighlightRect[] = [];
+
+      for (const cr of rawRects) {
+        const r: HighlightRect = {
+          top: cr.top - pageBox.top,
+          left: cr.left - pageBox.left,
+          width: cr.width,
+          height: cr.height,
+        };
+        // Skip zero-dimension rects
+        if (r.width < 0.5 || r.height < 0.5) continue;
+
+        // Merge with last rect if same line and adjacent
+        const last = merged[merged.length - 1];
+        if (
+          last &&
+          Math.abs(last.top - r.top) < 2 &&
+          Math.abs(last.height - r.height) < 2 &&
+          Math.abs(last.left + last.width - r.left) < 3
+        ) {
+          last.width = r.left + r.width - last.left;
+        } else {
+          merged.push(r);
+        }
+      }
+
+      for (const r of merged) {
         const div = document.createElement('div');
         div.className = isCurrent
           ? 'pdf-search-hit-current absolute rounded-[2px] pointer-events-none'
@@ -102,9 +167,9 @@ export function usePdfSearch(options: UseSearchOptions) {
           boxShadow: isCurrent ? '0 0 4px rgba(249, 115, 22, 0.8)' : 'none',
         });
         textLayer.appendChild(div);
-      });
+      }
 
-      return rects;
+      return merged;
     },
     [],
   );
@@ -115,6 +180,48 @@ export function usePdfSearch(options: UseSearchOptions) {
     setHitIndex(0);
     matchesRef.current = [];
   }, [numPages, clearSearchOverlays]);
+
+  // ---- Helper: create a DOM Range given a page & character offsets ----
+  const createRangeForMatch = useCallback(
+    (
+      pageNumber: number,
+      startOffset: number,
+      endOffset: number,
+    ): Range | null => {
+      const idx = pageIndexRef.current[pageNumber];
+      if (!idx) return null;
+
+      const { spans } = idx;
+      const spanStart = spans.find(
+        (s) => startOffset >= s.start && startOffset < s.end,
+      );
+      const spanEnd =
+        spans.find((s) => endOffset > s.start && endOffset <= s.end) ||
+        spans[spans.length - 1];
+
+      if (!spanStart || !spanEnd) return null;
+
+      try {
+        const range = document.createRange();
+        const sNode = spanStart.el.firstChild || spanStart.el;
+        const eNode = spanEnd.el.firstChild || spanEnd.el;
+        const sOff = Math.min(
+          startOffset - spanStart.start,
+          (sNode.textContent ?? '').length,
+        );
+        const eOff = Math.min(
+          endOffset - spanEnd.start,
+          (eNode.textContent ?? '').length,
+        );
+        range.setStart(sNode, sOff);
+        range.setEnd(eNode, eOff);
+        return range;
+      } catch {
+        return null;
+      }
+    },
+    [pageIndexRef],
+  );
 
   // Update current match highlight (change which match is marked as current)
   const updateCurrentMatchHighlight = useCallback(
@@ -136,70 +243,18 @@ export function usePdfSearch(options: UseSearchOptions) {
       if (!currentMatch) return;
 
       const pageEl = pageRefs.current[currentMatch.pageNumber];
-      const idx = pageIndexRef.current[currentMatch.pageNumber];
-      if (!pageEl || !idx) return;
+      if (!pageEl) return;
 
-      // Re-find the match to get the range
-      const re = buildRegex();
-      if (!re) return;
-
-      const { text, spans } = idx;
-      let matchCounter = 0;
-      let m: RegExpExecArray | null;
-
-      // Reset regex state
-      re.lastIndex = 0;
-
-      while ((m = re.exec(text))) {
-        // Find the absolute match index for this page
-        let absoluteIndex = 0;
-        for (const hit of hits) {
-          if (hit.pageNumber < currentMatch.pageNumber) {
-            absoluteIndex += hit.rects.length;
-          } else {
-            break;
-          }
-        }
-
-        if (absoluteIndex + matchCounter === newIndex) {
-          const start = m.index;
-          const end = start + m[0].length;
-
-          const spanStart = spans.find(
-            (s) => start >= s.start && start < s.end,
-          );
-          const spanEnd =
-            spans.find((s) => end > s.start && end <= s.end) ||
-            spans[spans.length - 1];
-
-          if (spanStart && spanEnd) {
-            try {
-              const r = document.createRange();
-              r.setStart(
-                spanStart.el.firstChild || spanStart.el,
-                Math.min(
-                  start - spanStart.start,
-                  spanStart.el.textContent?.length || 0,
-                ),
-              );
-              r.setEnd(
-                spanEnd.el.firstChild || spanEnd.el,
-                Math.min(
-                  end - spanEnd.start,
-                  spanEnd.el.textContent?.length || 0,
-                ),
-              );
-              overlayForRange(r, pageEl, true);
-            } catch {
-              // Range creation failed, skip
-            }
-          }
-          break;
-        }
-        matchCounter++;
+      const range = createRangeForMatch(
+        currentMatch.pageNumber,
+        currentMatch.startOffset,
+        currentMatch.endOffset,
+      );
+      if (range) {
+        overlayForRange(range, pageEl, true);
       }
     },
-    [numPages, pageRefs, pageIndexRef, buildRegex, hits, overlayForRange],
+    [numPages, pageRefs, createRangeForMatch, overlayForRange],
   );
 
   const runSearch = useCallback(() => {
@@ -209,7 +264,11 @@ export function usePdfSearch(options: UseSearchOptions) {
       return;
     }
 
-    const re = buildRegex();
+    // Normalize query: NFC + lowercase when case-insensitive
+    const isLower = !matchCase;
+    const normalizedQuery = normText(query, isLower);
+    // Build regex on the normalized query (always case-sensitive since we pre-lowered)
+    const re = buildSearchRegex(normalizedQuery, true, wholeWords);
     if (!re) return;
 
     const allHits: { pageNumber: number; rects: HighlightRect[] }[] = [];
@@ -222,7 +281,6 @@ export function usePdfSearch(options: UseSearchOptions) {
       const idx = pageIndexRef.current[p];
       const pageEl = pageRefs.current[p];
 
-      // If page doesn't have index yet, track it
       if (!idx || !pageEl) {
         pagesWithoutIndex++;
         continue;
@@ -234,53 +292,33 @@ export function usePdfSearch(options: UseSearchOptions) {
         continue;
       }
 
+      // Normalize the page text the same way as the query
+      const searchText = isLower ? normText(text, true) : text.normalize('NFC');
+
       const rectsPage: HighlightRect[] = [];
 
-      // Reset regex for each page
       re.lastIndex = 0;
-
       let m: RegExpExecArray | null;
-      while ((m = re.exec(text))) {
+      while ((m = re.exec(searchText))) {
         const start = m.index;
         const end = start + m[0].length;
 
-        const spanStart = spans.find((s) => start >= s.start && start < s.end);
-        const spanEnd =
-          spans.find((s) => end > s.start && end <= s.end) ||
-          spans[spans.length - 1];
+        const range = createRangeForMatch(p, start, end);
+        if (!range) continue;
 
-        if (!spanStart || !spanEnd) continue;
+        // First match gets current styling
+        const isFirst = globalMatchIndex === 0;
+        const rs = overlayForRange(range, pageEl, isFirst);
 
-        try {
-          const r = document.createRange();
-          const startOffset = Math.min(
-            start - spanStart.start,
-            spanStart.el.textContent?.length || 0,
-          );
-          const endOffset = Math.min(
-            end - spanEnd.start,
-            spanEnd.el.textContent?.length || 0,
-          );
-
-          r.setStart(spanStart.el.firstChild || spanStart.el, startOffset);
-          r.setEnd(spanEnd.el.firstChild || spanEnd.el, endOffset);
-
-          // First match gets current styling
-          const isFirst = globalMatchIndex === 0;
-          const rs = overlayForRange(r, pageEl, isFirst);
-
-          rs.forEach((rect) => {
-            rectsPage.push(rect);
-            allMatches.push({
-              pageNumber: p,
-              rect,
-              matchIndex: globalMatchIndex,
-            });
-            globalMatchIndex++;
+        if (rs.length) {
+          rectsPage.push(...rs);
+          allMatches.push({
+            pageNumber: p,
+            startOffset: start,
+            endOffset: end,
+            matchIndex: globalMatchIndex,
           });
-        } catch {
-          // Skip this match if range creation fails
-          continue;
+          globalMatchIndex++;
         }
       }
 
@@ -291,24 +329,22 @@ export function usePdfSearch(options: UseSearchOptions) {
     setHits(allHits);
     setHitIndex(0);
 
-    // If there are pages without index, search is pending
     searchPendingRef.current = pagesWithoutIndex > 0 && numPages > 0;
 
-    // Scroll to first match
+    // Scroll to first match using single direct scroll
     if (allMatches.length > 0) {
       const first = allMatches[0];
-      const pageEl = pageRefs.current[first.pageNumber];
-      if (pageEl) {
-        pageEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      }
+      scrollToMatch(first);
     }
   }, [
     query,
+    matchCase,
+    wholeWords,
     numPages,
-    buildRegex,
     clearSearchOverlays,
     clearAllSearchHighlights,
     overlayForRange,
+    createRangeForMatch,
     pageRefs,
     pageIndexRef,
   ]);
@@ -330,6 +366,41 @@ export function usePdfSearch(options: UseSearchOptions) {
     }
   }, [scale]);
 
+  // Scroll to a specific match — single direct scroll, no double-jump
+  const scrollToMatch = useCallback(
+    (match: SearchMatch) => {
+      const pageEl = pageRefs.current[match.pageNumber];
+      if (!pageEl) return;
+
+      const range = createRangeForMatch(
+        match.pageNumber,
+        match.startOffset,
+        match.endOffset,
+      );
+
+      const scrollContainer = viewerScrollRef?.current;
+      if (!range || !scrollContainer) {
+        // Fallback: scroll page into view
+        pageEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return;
+      }
+
+      // Calculate match position relative to scroll container
+      const rangeRect = range.getBoundingClientRect();
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const matchAbsoluteTop =
+        rangeRect.top - containerRect.top + scrollContainer.scrollTop;
+      const matchCenter = matchAbsoluteTop + rangeRect.height / 2;
+      const targetScrollTop = matchCenter - containerRect.height / 3;
+
+      scrollContainer.scrollTo({
+        top: Math.max(0, targetScrollTop),
+        behavior: 'smooth',
+      });
+    },
+    [pageRefs, viewerScrollRef, createRangeForMatch],
+  );
+
   const gotoHit = useCallback(
     (dir: 1 | -1) => {
       const matches = matchesRef.current;
@@ -342,35 +413,10 @@ export function usePdfSearch(options: UseSearchOptions) {
       // Update current match highlighting
       updateCurrentMatchHighlight(next);
 
-      // Scroll to the match
-      const match = matches[next];
-      if (match) {
-        const pageEl = pageRefs.current[match.pageNumber];
-        if (pageEl) {
-          // First scroll to page
-          pageEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
-
-          // Then adjust for the specific match position
-          setTimeout(() => {
-            const textLayer = pageEl.querySelector('.textLayer');
-            if (textLayer && viewerScrollRef.current) {
-              const textLayerRect = textLayer.getBoundingClientRect();
-              const containerRect =
-                viewerScrollRef.current.getBoundingClientRect();
-              const matchTop = textLayerRect.top + match.rect.top;
-              const targetScroll =
-                matchTop - containerRect.top - containerRect.height / 3;
-
-              viewerScrollRef.current.scrollBy({
-                top: targetScroll,
-                behavior: 'smooth',
-              });
-            }
-          }, 100);
-        }
-      }
+      // Scroll to the match with single smooth scroll
+      scrollToMatch(matches[next]);
     },
-    [hitIndex, pageRefs, viewerScrollRef, updateCurrentMatchHighlight],
+    [hitIndex, updateCurrentMatchHighlight, scrollToMatch],
   );
 
   const toggleSearch = useCallback(() => {
@@ -415,8 +461,10 @@ export function usePdfSearch(options: UseSearchOptions) {
         const entries: PageIndex['spans'] = [];
 
         spans.forEach((s) => {
-          const t = s.textContent ?? '';
-          if (t.length > 0) {
+          const raw = s.textContent ?? '';
+          if (raw.length > 0) {
+            // NFC normalize for consistent Vietnamese diacritics
+            const t = raw.normalize('NFC');
             const start = cursor;
             const end = cursor + t.length;
             cursor = end;

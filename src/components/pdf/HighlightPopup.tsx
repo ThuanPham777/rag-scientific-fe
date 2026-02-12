@@ -229,16 +229,6 @@ export default function HighlightPopup({
 
   const popupStyle = getPopupStyle();
 
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
   const comments = highlightData?.comments || [];
 
   return createPortal(
