@@ -75,6 +75,9 @@ export default function MyLibraryPage() {
     sendMessage: sendMultiMessage,
     currentConversationId: multiChatConversationId,
     clearChat: clearMultiChat,
+    fetchNextPage: fetchMoreMultiMessages,
+    hasNextPage: hasMoreMultiMessages,
+    isFetchingNextPage: isFetchingMoreMultiMessages,
   } = useMultiPaperChat();
 
   // Handle clear chat history for multi-paper mode
@@ -341,6 +344,9 @@ export default function MyLibraryPage() {
         onRemovePaper={deselectPaper}
         showQuickActions={false}
         showSuggestions={true}
+        onLoadMore={() => fetchMoreMultiMessages()}
+        hasMore={hasMoreMultiMessages}
+        isLoadingMore={isFetchingMoreMultiMessages}
       />
 
       {/* Folder Dialogs */}
