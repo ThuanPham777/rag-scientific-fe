@@ -113,6 +113,9 @@ export default function ChatDock({
   // Track if user manually closed the dock
   const [userClosed, setUserClosed] = useState(false);
 
+  // Track if initial scroll has been performed (for opening from citation links)
+  const hasInitialScrolled = useRef(false);
+
   // Infinite scroll: preserve scroll position when prepending older messages
   const prevScrollHeightRef = useRef<number>(0);
   const isLoadingMoreRef = useRef(false);
@@ -186,6 +189,11 @@ export default function ChatDock({
     }
   }, [messages.length]);
 
+  // Reset initial scroll tracking when conversation changes
+  useEffect(() => {
+    hasInitialScrolled.current = false;
+  }, [conversationId, session?.id]);
+
   // Reset userClosed when user opens the dock
   const handleToggle = () => {
     setOpen((v) => {
@@ -202,8 +210,27 @@ export default function ChatDock({
 
   useEffect(() => {
     if (!open) return;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Skip auto-scroll when prepending older messages (scroll-up load)
+    if (isLoadingMoreRef.current) return;
+    // Use requestAnimationFrame to ensure DOM is painted before scrolling
+    // This fixes the issue where scrollIntoView fires before messages render
+    requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
   }, [open, messages.length, isLoading]);
+
+  // Robust initial scroll: when messages first arrive (e.g. from citation nav),
+  // ensure we scroll to bottom even if the timing-based effect above missed it
+  useEffect(() => {
+    if (!open || hasInitialScrolled.current || messages.length === 0) return;
+    hasInitialScrolled.current = true;
+    // Double rAF to ensure layout is fully computed after first message render
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+      });
+    });
+  }, [open, messages.length]);
 
   const WIDTH = position === 'fixed' ? `w-[500px]` : 'w-full';
   const HEIGHT =

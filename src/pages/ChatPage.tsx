@@ -4,6 +4,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
 import { useAuthStore } from '../store/useAuthStore';
+
 import {
   useClearChatHistory,
   useGenerateFollowUpQuestions,
@@ -429,7 +430,6 @@ export default function ChatPage() {
           );
           addGuestMessage(assistantMsg);
 
-          // Fetch follow-ups for the new assistant message
           if (guestSession.id && assistantMsg.id) {
             fetchFollowUps(guestSession.id, assistantMsg.id);
           }
@@ -442,7 +442,6 @@ export default function ChatPage() {
           );
           setSentMessages((prev) => [...prev, assistantMsg]);
 
-          // Fetch follow-ups for the new assistant message
           if (session.id && assistantMsg.id) {
             fetchFollowUps(session.id, assistantMsg.id);
           }
@@ -521,7 +520,6 @@ export default function ChatPage() {
           // 5. Add assistant message to same store (same as onSend)
           setSentMessages((prev) => [...prev, assistantMsg]);
 
-          // 6. Fetch follow-ups (same as onSend)
           if (session.id && assistantMsg.id) {
             fetchFollowUps(session.id, assistantMsg.id);
           }
@@ -602,7 +600,6 @@ export default function ChatPage() {
           );
           addGuestMessage(assistantMsg);
 
-          // Fetch follow-ups for the new assistant message
           if (guestSession.id && assistantMsg.id) {
             fetchFollowUps(guestSession.id, assistantMsg.id);
           }
@@ -615,7 +612,6 @@ export default function ChatPage() {
           );
           setSentMessages((prev) => [...prev, assistantMsg]);
 
-          // Fetch follow-ups for the new assistant message
           if (session.id && assistantMsg.id) {
             fetchFollowUps(session.id, assistantMsg.id);
           }
