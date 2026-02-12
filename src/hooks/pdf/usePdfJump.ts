@@ -257,40 +257,64 @@ export function usePdfJumpEffect(
     let hasJumped = false;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
-    const scrollPageIntoView = (
+    /**
+     * Scroll directly to the highlight position within the scroll container.
+     * Computes highlight's absolute offset and centers it in the viewport.
+     * Falls back to page-center scroll if highlight position can't be calculated.
+     */
+    const scrollDirectlyToHighlight = (
+      scrollContainer: HTMLDivElement,
       pageEl: HTMLDivElement,
-      block: 'start' | 'center' = 'start',
+      highlightRect: HighlightRect,
     ) => {
-      const scrollContainer = viewerScrollRef?.current;
+      try {
+        const textLayer = pageEl.querySelector(
+          '.textLayer',
+        ) as HTMLElement | null;
+        // textLayer || pageEl is always truthy since pageEl is HTMLDivElement
+        const referenceEl = textLayer || pageEl;
 
-      if (scrollContainer) {
-        // Use offsetTop for more reliable positioning
+        // Calculate highlight position in pixels (same logic as PdfPages.tsx)
+        const pageBox = pageEl.getBoundingClientRect();
+        const refBox = referenceEl.getBoundingClientRect();
+        const offsetTop = refBox.top - pageBox.top;
+
+        const refHeight = referenceEl.clientHeight;
+        const highlightTop =
+          (highlightRect.top <= 1
+            ? highlightRect.top * refHeight
+            : highlightRect.top) + offsetTop;
+        const highlightHeight =
+          highlightRect.height <= 1
+            ? highlightRect.height * refHeight
+            : highlightRect.height;
+
+        // Calculate absolute position of highlight within scroll container
         const pageOffsetTop = pageEl.offsetTop;
+        const highlightAbsoluteTop = pageOffsetTop + highlightTop;
+        const highlightCenter = highlightAbsoluteTop + highlightHeight / 2;
 
-        let targetScrollTop: number;
-        if (block === 'start') {
-          targetScrollTop = pageOffsetTop - 20;
-        } else {
-          const containerHeight = scrollContainer.clientHeight;
-          targetScrollTop =
-            pageOffsetTop - containerHeight / 2 + pageEl.offsetHeight / 2;
-        }
+        // Center the highlight in viewport
+        const containerHeight = scrollContainer.clientHeight;
+        const targetScrollTop = highlightCenter - containerHeight / 2;
 
-        console.log('[usePdfJumpEffect] Highlight scroll executing:', {
-          pageNumber,
+        console.log('[usePdfJumpEffect] Scrolling directly to highlight:', {
           pageOffsetTop,
+          highlightTop,
+          highlightAbsoluteTop,
+          highlightCenter,
           targetScrollTop,
+          rect: highlightRect,
         });
 
         scrollContainer.scrollTo({
           top: Math.max(0, targetScrollTop),
           behavior: 'smooth',
         });
-      } else {
-        console.log(
-          '[usePdfJumpEffect] Highlight: Using scrollIntoView fallback',
-        );
-        pageEl.scrollIntoView({ behavior: 'smooth', block });
+      } catch (err) {
+        console.error('[usePdfJumpEffect] Error scrolling to highlight:', err);
+        // Fallback: scroll page into view
+        pageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     };
 
@@ -317,17 +341,23 @@ export function usePdfJumpEffect(
       }
 
       console.log('[usePdfJumpEffect] Highlight jump executing:', pageNumber);
-      scrollPageIntoView(pageEl, 'center');
+
+      // Add highlight first so it renders in the DOM
+      onAddTemporaryHighlight?.(pageNumber, rect);
+
+      // Single scroll directly to highlight position (no double-scroll)
+      // Use rAF to wait for the highlight to render before calculating position
+      requestAnimationFrame(() => {
+        scrollDirectlyToHighlight(scrollContainer, pageEl, rect);
+      });
+
       hasJumped = true;
       return true;
     };
 
     // Delay first attempt to ensure DOM is ready after route change
     const initialDelay = setTimeout(() => {
-      if (attemptJump()) {
-        onAddTemporaryHighlight?.(pageNumber, rect);
-        return;
-      }
+      if (attemptJump()) return;
 
       console.log('[usePdfJumpEffect] Starting retry loop for highlight:', {
         pageNumber,
@@ -338,10 +368,7 @@ export function usePdfJumpEffect(
         const success = attemptJump();
         if (success || retryCount >= maxRetries) {
           if (intervalId) clearInterval(intervalId);
-          // Add highlight only if jump was successful
-          if (success) {
-            onAddTemporaryHighlight?.(pageNumber, rect);
-          } else {
+          if (!success) {
             console.log(
               '[usePdfJumpEffect] Max retries reached for highlight:',
               {
