@@ -38,7 +38,7 @@ function SourcesModalBase({
   const opensInNewTab = isMultiPaper && citation.sourceFileUrl;
 
   const modal = (
-    <div className='absolute inset-0 z-50 flex flex-col justify-end pointer-events-auto'>
+    <div className='absolute inset-0 z-[99999] flex flex-col justify-end pointer-events-auto'>
       {/* Backdrop */}
       <div
         className='absolute inset-0 bg-black/20 backdrop-blur-[1px] transition-opacity'

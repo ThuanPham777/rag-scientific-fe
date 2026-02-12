@@ -393,11 +393,11 @@ export default function ChatDock({
 
           <div
             id='chat-dock-overlay'
-            className='absolute inset-0 z-40 pointer-events-none'
+            className='absolute inset-0 z-[110] pointer-events-none'
           />
 
           {/* Footer Area */}
-          <div className='bg-white relative z-[99999] flex flex-col'>
+          <div className='bg-white relative z-100 flex flex-col'>
             {/* Quick Actions - only show in single mode with showQuickActions */}
             {showQuickActions && mode === 'single' && (
               <ChatQuickActions

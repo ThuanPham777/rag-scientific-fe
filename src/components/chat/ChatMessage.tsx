@@ -213,7 +213,7 @@ export default function ChatMessage({
           {/* Follow-up questions (before sources) */}
           {!isUser && followUps.length > 0 && onFollowUpSelect && (
             <div className='mt-3 pt-3 border-t border-gray-100'>
-              <p className='text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2'>
+              <p className='text-[11px] font-semibold text-gray-400 tracking-wider mb-2'>
                 Quickly ask these questions
               </p>
               <div className='flex flex-wrap gap-1.5'>

@@ -21,6 +21,7 @@ import {
   useDeleteComment,
 } from '../../hooks/queries/useCommentQueries';
 import type { HighlightColor } from '../../services/api/highlight.api';
+import { formatSmartDate } from '@/utils/formatSmartDate';
 
 type Props = {
   highlightId: string;
@@ -372,7 +373,7 @@ export default function HighlightPopup({
                     <p className='text-sm text-gray-700'>{comment.content}</p>
                     <div className='flex items-center justify-between mt-1'>
                       <span className='text-xs text-gray-400'>
-                        {formatDate(comment.createdAt)}
+                        {formatSmartDate(comment.createdAt)}
                       </span>
                       <div className='flex gap-1'>
                         <button
