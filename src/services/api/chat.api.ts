@@ -103,6 +103,7 @@ export async function getMessageHistory(
       : undefined,
     userId: m.userId,
     displayName: m.displayName,
+    avatarUrl: m.avatarUrl,
     createdAt: m.createdAt,
   }));
 

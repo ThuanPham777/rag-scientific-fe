@@ -4,6 +4,7 @@
 import { Crown, UserMinus, Circle } from 'lucide-react';
 import { useSessionStore } from '../../store/useSessionStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { UserAvatar } from '../common/UserAvatar';
 import type { SessionDetail } from '../../utils/types';
 
 interface MembersListProps {
@@ -32,13 +33,6 @@ export default function MembersList({
         const isOnline = onlineSet.has(member.userId);
         const isSelf = member.userId === currentUserId;
 
-        const initials = (member.displayName || '?')
-          .split(' ')
-          .map((w) => w[0])
-          .join('')
-          .slice(0, 2)
-          .toUpperCase();
-
         return (
           <div
             key={member.userId}
@@ -46,17 +40,11 @@ export default function MembersList({
           >
             {/* Avatar */}
             <div className='relative'>
-              <div className='w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold flex items-center justify-center'>
-                {member.avatarUrl ? (
-                  <img
-                    src={member.avatarUrl}
-                    alt={member.displayName}
-                    className='w-full h-full rounded-full object-cover'
-                  />
-                ) : (
-                  initials
-                )}
-              </div>
+              <UserAvatar
+                name={member.displayName}
+                avatarUrl={member.avatarUrl}
+                size='md'
+              />
               {/* Online indicator */}
               <Circle
                 size={8}

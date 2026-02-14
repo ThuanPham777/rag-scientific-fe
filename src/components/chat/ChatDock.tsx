@@ -151,6 +151,7 @@ export default function ChatDock({
         members.push({
           id: m.userId,
           displayName: m.displayName || 'User',
+          avatarUrl: m.avatarUrl,
         });
       }
     }

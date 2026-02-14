@@ -1,67 +1,39 @@
 // src/components/chat/message/MessageBubble.tsx
-// Chat message bubble component with avatar, grouping, and timestamp support
+// Chat message bubble component with correct alignment and shared avatar.
+//
+// Alignment rules (like standard messaging apps):
+//   MY messages     → RIGHT, primary color (orange)
+//   OTHER messages  → LEFT,  neutral color (white)
+//   ASSISTANT       → LEFT,  neutral color (white), bot avatar
+//
+// `isOwnMessage` is the ONLY signal for alignment in collaborative mode,
+// NOT `isUser` or `role`.
 
 import { memo } from 'react';
 import type { ReactNode } from 'react';
-import { Bot } from 'lucide-react';
+import { UserAvatar, AssistantAvatar } from '../../common/UserAvatar';
 import { formatMessageTime } from '../../../utils/formatTimestamp';
 
 interface MessageBubbleProps {
+  /** true when msg.role === 'user' */
   isUser: boolean;
   children: ReactNode;
-  /** Whether this message is grouped with the one above (same sender, close time) */
+  /** Grouped with bubble above (same sender, close time) */
   isGrouped?: boolean;
-  /** Display name for collaborative chat avatar */
+  /** Display name for avatar / sender label */
   displayName?: string;
-  /** Avatar URL (collaborative chat) */
+  /** Avatar URL from backend */
   avatarUrl?: string;
-  /** ISO timestamp string */
+  /** ISO timestamp */
   timestamp?: string;
-  /** Show the timestamp (only shown on last message in a group or on hover) */
+  /** Show the timestamp line */
   showTimestamp?: boolean;
-  /** Whether this is a collaborative session */
+  /** Collaborative session? (shows avatars + sender name) */
   isCollaborative?: boolean;
-  /** Whether this message is from the current user (skip avatar for self) */
+  /** This message belongs to the current user */
   isOwnMessage?: boolean;
 }
 
-/**
- * Returns initials from a display name (e.g. "John Doe" → "JD", "Alice" → "A")
- */
-function getInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
-
-/**
- * Deterministic color from a string (for avatar backgrounds)
- */
-function getAvatarColor(name: string): string {
-  const colors = [
-    'bg-blue-500',
-    'bg-emerald-500',
-    'bg-violet-500',
-    'bg-pink-500',
-    'bg-amber-500',
-    'bg-cyan-500',
-    'bg-rose-500',
-    'bg-indigo-500',
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-}
-
-/**
- * Styled message bubble container with avatar and grouping
- */
 function MessageBubbleBase({
   isUser,
   children,
@@ -73,48 +45,63 @@ function MessageBubbleBase({
   isCollaborative = false,
   isOwnMessage = false,
 }: MessageBubbleProps) {
-  // Show avatar only in collaborative mode, first message in group, and NOT for own messages
-  const showAvatar = isCollaborative && !isGrouped && !isOwnMessage;
+  // ── Alignment ──────────────────────────────────────────────
+  // In non-collaborative mode: user → right, assistant → left (classic single-paper chat)
+  // In collaborative mode:     MY message → right, everything else → left
+  const alignRight = isCollaborative ? isOwnMessage : isUser;
+
+  // ── Avatar visibility ──────────────────────────────────────
+  // Show avatar on the left for "other" messages (first in a group only).
+  // In non-collaborative mode the assistant still gets a bot avatar.
+  const isAssistant = !isUser;
+  const showLeftAvatar = isCollaborative
+    ? !alignRight && !isGrouped // other user or assistant, first in group
+    : isAssistant && !isGrouped; // single-paper: assistant, first in group
+
   const spacing = isGrouped ? 'mb-0.5' : 'mb-4';
 
   return (
     <div
-      className={`flex w-full ${spacing} ${isUser ? 'justify-end' : 'justify-start'}`}
+      className={`flex w-full ${spacing} ${alignRight ? 'justify-end' : 'justify-start'}`}
     >
-      {/* Left avatar area (assistant / other users in collaborative) */}
-      {!isUser && isCollaborative && (
+      {/* ── Left avatar column ───────────────────────────────── */}
+      {!alignRight && (
         <div className='w-7 mr-2 flex-shrink-0 flex flex-col items-center justify-end'>
-          {showAvatar && (
-            <div className='w-7 h-7 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shadow-sm'>
-              <Bot
-                size={14}
-                className='text-white'
+          {showLeftAvatar &&
+            (isAssistant ? (
+              <AssistantAvatar size='sm' />
+            ) : (
+              <UserAvatar
+                name={displayName}
+                avatarUrl={avatarUrl}
+                size='sm'
               />
-            </div>
-          )}
+            ))}
         </div>
       )}
 
+      {/* ── Message column ───────────────────────────────────── */}
       <div
-        className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[90%] md:max-w-[85%]`}
+        className={`flex flex-col ${alignRight ? 'items-end' : 'items-start'} max-w-[90%] md:max-w-[85%]`}
       >
-        {/* Sender name (collaborative, first in group only, not for own messages) */}
-        {isCollaborative && !isGrouped && displayName && !isOwnMessage && (
+        {/* Sender name (collaborative, first in group, NOT own message) */}
+        {isCollaborative && !isGrouped && !alignRight && displayName && (
           <span className='text-[11px] font-semibold text-gray-500 mb-0.5 ml-1'>
-            {displayName}
+            {isAssistant ? 'Assistant' : displayName}
           </span>
         )}
 
+        {/* Bubble */}
         <div
           className={`relative rounded-2xl px-4 py-2 shadow-sm border transition-all ${
-            isUser
+            alignRight
               ? `bg-orange-500 text-white border-orange-500 ${
                   isGrouped ? 'rounded-tr-lg' : 'rounded-br-none'
                 }`
               : `bg-white text-gray-800 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] ${
                   isGrouped ? 'rounded-tl-lg' : 'rounded-bl-none'
                 }`
-          } ${!isUser && !isCollaborative ? 'max-w-full' : ''}`}
+          } ${!alignRight && !isCollaborative ? 'max-w-full' : ''}`}
         >
           {children}
         </div>
@@ -126,26 +113,6 @@ function MessageBubbleBase({
           </span>
         )}
       </div>
-
-      {/* Right avatar area (other users' messages on the right side in collaborative) */}
-      {isUser && isCollaborative && !isOwnMessage && (
-        <div className='w-7 ml-2 flex-shrink-0 flex flex-col items-center justify-end'>
-          {showAvatar &&
-            (avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt={displayName || 'You'}
-                className='w-7 h-7 rounded-full object-cover shadow-sm'
-              />
-            ) : (
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold shadow-sm ${getAvatarColor(displayName || 'U')}`}
-              >
-                {getInitials(displayName || 'U')}
-              </div>
-            ))}
-        </div>
-      )}
     </div>
   );
 }

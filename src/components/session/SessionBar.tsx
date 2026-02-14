@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Users, Link2, LogOut, X } from 'lucide-react';
 import { useSessionStore } from '../../store/useSessionStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { UserAvatar } from '../common/UserAvatar';
 import type { SessionDetail, OnlineMember } from '../../utils/types';
 
 interface SessionBarProps {
@@ -114,27 +115,12 @@ export default function SessionBar({
 }
 
 function MemberAvatar({ member }: { member: OnlineMember }) {
-  const initials = (member.displayName || '?')
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-
   return (
-    <div
-      className='w-6 h-6 rounded-full bg-indigo-200 text-indigo-700 text-[10px] font-semibold flex items-center justify-center ring-2 ring-white'
-      title={member.displayName}
-    >
-      {member.avatarUrl ? (
-        <img
-          src={member.avatarUrl}
-          alt={member.displayName}
-          className='w-full h-full rounded-full object-cover'
-        />
-      ) : (
-        initials
-      )}
-    </div>
+    <UserAvatar
+      name={member.displayName}
+      avatarUrl={member.avatarUrl}
+      size='xs'
+      ring='ring-2 ring-white'
+    />
   );
 }

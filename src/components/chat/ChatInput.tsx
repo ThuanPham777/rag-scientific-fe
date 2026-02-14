@@ -4,13 +4,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Send, Sigma, Bot, User } from 'lucide-react';
+import { Send, Sigma } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '@radix-ui/react-switch';
+import { UserAvatar, AssistantAvatar } from '../common/UserAvatar';
 
 export type MentionMember = {
   id: string; // 'assistant' for AI, or userId
   displayName: string;
+  avatarUrl?: string | null;
   isAssistant?: boolean;
 };
 
@@ -220,14 +222,12 @@ export default function ChatInput({
                 onMouseEnter={() => setMentionIndex(idx)}
               >
                 {member.isAssistant ? (
-                  <Bot
-                    size={16}
-                    className='text-orange-500 shrink-0'
-                  />
+                  <AssistantAvatar size='xs' />
                 ) : (
-                  <User
-                    size={16}
-                    className='text-gray-400 shrink-0'
+                  <UserAvatar
+                    name={member.displayName}
+                    avatarUrl={member.avatarUrl}
+                    size='xs'
                   />
                 )}
                 <span className={member.isAssistant ? 'font-semibold' : ''}>

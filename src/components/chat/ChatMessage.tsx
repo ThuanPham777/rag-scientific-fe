@@ -199,6 +199,7 @@ export default function ChatMessage({
       isUser={isUser}
       isGrouped={isGrouped}
       displayName={msg.displayName}
+      avatarUrl={msg.avatarUrl}
       timestamp={msg.createdAt}
       showTimestamp={showTimestamp}
       isCollaborative={isCollaborative}

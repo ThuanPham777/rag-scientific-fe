@@ -38,7 +38,7 @@ export default function ChatPage() {
   }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { isAuthenticated, isInitialized } = useAuthStore();
+  const { isAuthenticated, isInitialized, user: currentUser } = useAuthStore();
 
   // Use new API from usePaperStore
   const currentPaper = usePaperStore((s) => s.currentPaper);
@@ -574,18 +574,15 @@ export default function ChatPage() {
         id: crypto.randomUUID(),
         role: 'user',
         content: trimmedText, // Show original text including @Assistant
+        userId: currentUser?.id,
+        displayName: currentUser?.displayName,
+        avatarUrl: currentUser?.avatarUrl,
         createdAt: new Date().toISOString(),
       };
 
       // Add user message to appropriate store
-      // For plain collaborative messages, skip optimistic add — WebSocket broadcasts fast.
-      // For @Assistant queries (slow RAG), add optimistically so user sees their msg immediately.
-      if (isCollaborative && !isAssistantQuery) {
-        // Plain message: WebSocket will broadcast quickly, no local add needed
-      } else if (isCollaborative && isAssistantQuery) {
-        // @Assistant query: add optimistically for immediate display while RAG processes
-        setSentMessages((prev) => [...prev, userMsg]);
-      } else if (isGuest) {
+      // Always show optimistic message immediately for instant feedback.
+      if (isGuest) {
         addGuestMessage(userMsg);
       } else {
         setSentMessages((prev) => [...prev, userMsg]);
@@ -621,29 +618,32 @@ export default function ChatPage() {
         } else if (session) {
           if (isCollaborative && !isAssistantQuery) {
             // Collaborative mode WITHOUT @Assistant: just send plain message
-            await sendPlainMessage(session.id, trimmedText);
-            // The WebSocket will broadcast the message and invalidate the query cache
+            const serverMsg = await sendPlainMessage(session.id, trimmedText);
+            // Replace temp ID with server ID so dedup works when refetch arrives
+            setSentMessages((prev) =>
+              prev.map((m) =>
+                m.id === userMsg.id ? { ...m, id: serverMsg.id } : m,
+              ),
+            );
           } else {
             // Authenticated: Call RAG API (either non-collaborative or @Assistant)
-            const { assistantMsg } = await sendQuery(
+            const { assistantMsg, raw } = await sendQuery(
               session.id,
               actualText,
               currentPaper?.id,
             );
-            // Add assistant message optimistically
-            setSentMessages((prev) => [...prev, assistantMsg]);
 
-            if (isCollaborative) {
-              // In collaborative mode, schedule cleanup of optimistic messages
-              // once the WebSocket-triggered refetch brings in server copies
-              const uidRm = userMsg.id;
-              const aidRm = assistantMsg.id;
-              setTimeout(() => {
-                setSentMessages((prev) =>
-                  prev.filter((m) => m.id !== uidRm && m.id !== aidRm),
-                );
-              }, 3000);
+            // Replace optimistic user message ID with server ID for proper dedup
+            if (raw.userMessageId) {
+              setSentMessages((prev) =>
+                prev.map((m) =>
+                  m.id === userMsg.id ? { ...m, id: raw.userMessageId } : m,
+                ),
+              );
             }
+
+            // Add assistant message (already has server ID from response)
+            setSentMessages((prev) => [...prev, assistantMsg]);
 
             if (session.id && assistantMsg.id) {
               fetchFollowUps(session.id, assistantMsg.id);
@@ -698,6 +698,9 @@ export default function ChatPage() {
         role: 'user',
         content: 'Explain this region',
         imageDataUrl,
+        userId: currentUser?.id,
+        displayName: currentUser?.displayName,
+        avatarUrl: currentUser?.avatarUrl,
         createdAt: new Date().toISOString(),
       };
 
@@ -716,25 +719,23 @@ export default function ChatPage() {
 
         if (session) {
           // 4. Call explainRegion API
-          const { assistantMsg } = await explainRegion(imageDataUrl, {
+          const { assistantMsg, raw } = await explainRegion(imageDataUrl, {
             conversationId: session.id,
             paperId: currentPaper?.id,
             pageNumber,
           });
 
-          // 5. Add assistant message to same store (same as onSend)
-          setSentMessages((prev) => [...prev, assistantMsg]);
-
-          if (isCollaborative) {
-            // Schedule cleanup to prevent duplicates after WS-triggered refetch
-            const uidRm = userMsg.id;
-            const aidRm = assistantMsg.id;
-            setTimeout(() => {
-              setSentMessages((prev) =>
-                prev.filter((m) => m.id !== uidRm && m.id !== aidRm),
-              );
-            }, 3000);
+          // 5. Replace optimistic user message ID with server ID for proper dedup
+          if (raw.userMessageId) {
+            setSentMessages((prev) =>
+              prev.map((m) =>
+                m.id === userMsg.id ? { ...m, id: raw.userMessageId } : m,
+              ),
+            );
           }
+
+          // 6. Add assistant message (already has server ID from response)
+          setSentMessages((prev) => [...prev, assistantMsg]);
 
           if (session.id && assistantMsg.id) {
             fetchFollowUps(session.id, assistantMsg.id);

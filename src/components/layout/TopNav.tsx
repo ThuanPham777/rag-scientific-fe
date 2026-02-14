@@ -10,6 +10,7 @@ import {
 import { useAuthStore } from '../../store/useAuthStore';
 import { logout as apiLogout } from '../../services';
 import AuthModal from '../auth/AuthModal';
+import { UserAvatar } from '../common/UserAvatar';
 
 export default function TopNav() {
   const navigate = useNavigate();
@@ -71,23 +72,13 @@ export default function TopNav() {
     };
   }, [openMenu]);
 
-  /* ---------------- Avatar ---------------- */
-  const hasAvatar =
-    typeof user?.avatarUrl === 'string' && user.avatarUrl.trim().length > 0;
-
-  const avatar = hasAvatar ? (
-    <img
-      src={user!.avatarUrl}
-      alt='avatar'
-      className='w-8 h-8 rounded-full object-cover'
-      referrerPolicy='no-referrer'
+  /* ---------------- Avatar (shared component) ------------- */
+  const avatar = (
+    <UserAvatar
+      name={user?.displayName || user?.email}
+      avatarUrl={user?.avatarUrl}
+      size='md'
     />
-  ) : (
-    <div className='w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center'>
-      <span className='text-xs text-gray-700'>
-        {(user?.displayName || user?.email || 'U').charAt(0).toUpperCase()}
-      </span>
-    </div>
   );
 
   /* ---------------- Render ---------------- */

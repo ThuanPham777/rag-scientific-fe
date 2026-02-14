@@ -117,6 +117,7 @@ export type ChatMessage = {
   createdAt: string; // Collaborative session fields
   userId?: string;
   displayName?: string;
+  avatarUrl?: string;
 };
 
 export type Message = {
