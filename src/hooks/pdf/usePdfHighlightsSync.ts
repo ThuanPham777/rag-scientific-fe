@@ -26,6 +26,12 @@ export type LocalHighlight = {
   color?: string;
   isTemporary?: boolean;
   commentCount?: number; // Number of comments on this highlight
+  // Collaborative: author info
+  userId?: string;
+  user?: {
+    displayName?: string;
+    avatarUrl?: string | null;
+  };
 };
 
 // Map backend HighlightColor enum to hex colors
@@ -88,6 +94,8 @@ function toLocalHighlight(item: HighlightItem): LocalHighlight {
     text: item.selectedText,
     color: COLOR_MAP[item.color] || '#ffd700',
     commentCount: item._count?.comments ?? 0,
+    userId: item.userId,
+    user: item.user,
   };
 }
 

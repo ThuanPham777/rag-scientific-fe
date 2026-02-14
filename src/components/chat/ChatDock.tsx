@@ -497,15 +497,25 @@ export default function ChatDock({
               const prev = idx > 0 ? messages[idx - 1] : null;
               const next = idx < messages.length - 1 ? messages[idx + 1] : null;
 
-              // Day separator: show when this message is on a different day from the previous
-              const showDaySeparator = prev
-                ? isDifferentDay(prev.createdAt, m.createdAt)
-                : idx === 0 && !!m.createdAt;
+              // Collaborative mode: full chat-app UX (grouping, timestamps, day separators)
+              // Non-collaborative: simple Q&A — no grouping, no timestamps, no separators
+              const showDaySeparator = isCollaborative
+                ? prev
+                  ? isDifferentDay(prev.createdAt, m.createdAt)
+                  : idx === 0 && !!m.createdAt
+                : false;
 
-              // Message grouping: consecutive messages from same sender within 2 minutes
-              const isGrouped = prev ? shouldGroupMessages(prev, m) : false;
-              // Show timestamp on the last message of a group (next is different sender/gap or end)
-              const isLastInGroup = next ? !shouldGroupMessages(m, next) : true;
+              const isGrouped = isCollaborative
+                ? prev
+                  ? shouldGroupMessages(prev, m)
+                  : false
+                : false;
+
+              const isLastInGroup = isCollaborative
+                ? next
+                  ? !shouldGroupMessages(m, next)
+                  : true
+                : false;
 
               return (
                 <div key={m.id}>
@@ -530,11 +540,13 @@ export default function ChatDock({
             {isLoading && <ChatMessageLoading label={currentStepLabel} />}
             <div ref={bottomRef} />
 
-            {/* New messages floating button */}
-            <NewMessageButton
-              count={newMsgCount}
-              onClick={scrollToBottom}
-            />
+            {/* New messages floating button (collaborative only) */}
+            {isCollaborative && (
+              <NewMessageButton
+                count={newMsgCount}
+                onClick={scrollToBottom}
+              />
+            )}
           </div>
 
           <div

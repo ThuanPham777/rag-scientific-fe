@@ -1,5 +1,6 @@
 // HighlightPopup.tsx - Popup for viewing/editing highlight comments
-import { useState, useRef, useEffect, useCallback } from 'react';
+// Supports role-based actions and authorship display for collaborative sessions.
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -20,6 +21,11 @@ import {
   useUpdateComment,
   useDeleteComment,
 } from '../../hooks/queries/useCommentQueries';
+import { useSessionDetail } from '../../hooks/queries/useSessionQueries';
+import { useAuthStore } from '../../store/useAuthStore';
+import { useSessionStore } from '../../store/useSessionStore';
+import { usePaperStore } from '../../store/usePaperStore';
+import { UserAvatar } from '../common/UserAvatar';
 import type { HighlightColor } from '../../services/api/highlight.api';
 import { formatSmartDate } from '@/utils/formatSmartDate';
 
@@ -61,6 +67,22 @@ export default function HighlightPopup({
   const [editingContent, setEditingContent] = useState('');
   const [selectedColor, setSelectedColor] = useState(highlightColor);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // ── Auth & role derivation ───────────────────────────────────
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const isCollaborative = useSessionStore((s) => s.isCollaborative);
+  const conversationId = usePaperStore((s) => s.currentConversationId);
+  const { data: sessionDetail } = useSessionDetail(
+    conversationId ?? undefined,
+    isCollaborative && !!conversationId,
+  );
+
+  const isSessionOwner = useMemo(() => {
+    if (!sessionDetail || !currentUserId) return false;
+    return sessionDetail.members.some(
+      (m) => m.userId === currentUserId && m.role === 'OWNER',
+    );
+  }, [sessionDetail, currentUserId]);
 
   // Fetch highlight with comments
   const { data: highlightData, isLoading } = useHighlightWithComments(
@@ -231,6 +253,18 @@ export default function HighlightPopup({
 
   const comments = highlightData?.comments || [];
 
+  // ── Permission helpers ───────────────────────────────────────
+  const isHighlightCreator = highlightData?.userId === currentUserId;
+  // Can update color: only the creator
+  const canUpdateColor = isHighlightCreator;
+  // Can delete highlight: creator OR session owner
+  const canDeleteHighlight = isHighlightCreator || isSessionOwner;
+
+  const canEditComment = (commentUserId: string) =>
+    commentUserId === currentUserId;
+  const canDeleteComment = (commentUserId: string) =>
+    commentUserId === currentUserId || isSessionOwner;
+
   return createPortal(
     <div
       ref={popupRef}
@@ -238,7 +272,7 @@ export default function HighlightPopup({
       style={{
         left: popupStyle.left,
         top: popupStyle.top,
-        width: '320px',
+        width: '340px',
         maxHeight: `${popupStyle.maxHeight}px`,
         zIndex: 99999,
       }}
@@ -246,16 +280,36 @@ export default function HighlightPopup({
       onMouseDown={(e) => e.stopPropagation()}
       data-highlight-popup='true'
     >
-      {/* Header */}
+      {/* Header — highlight author info */}
       <div className='flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200'>
         <div className='flex items-center gap-2'>
-          <MessageCircle
-            size={16}
-            className='text-gray-500'
-          />
-          <span className='font-medium text-sm text-gray-700'>
-            {comments.length} Comment{comments.length !== 1 ? 's' : ''}
-          </span>
+          {isCollaborative && highlightData?.user ? (
+            <>
+              <UserAvatar
+                name={highlightData.user.displayName || '?'}
+                avatarUrl={highlightData.user.avatarUrl}
+                size='xs'
+              />
+              <div className='flex flex-col leading-tight'>
+                <span className='font-medium text-xs text-gray-700 truncate max-w-[140px]'>
+                  {highlightData.user.displayName || 'Unknown'}
+                </span>
+                <span className='text-[10px] text-gray-400'>
+                  {formatSmartDate(highlightData.createdAt)}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <MessageCircle
+                size={16}
+                className='text-gray-500'
+              />
+              <span className='font-medium text-sm text-gray-700'>
+                {comments.length} Comment{comments.length !== 1 ? 's' : ''}
+              </span>
+            </>
+          )}
         </div>
         <button
           onClick={onClose}
@@ -268,7 +322,7 @@ export default function HighlightPopup({
         </button>
       </div>
 
-      {/* Color picker */}
+      {/* Color picker + delete */}
       <div className='px-4 py-2 flex items-center gap-2 border-b border-gray-100'>
         <span className='text-xs text-gray-500'>Color:</span>
         <div className='flex gap-1'>
@@ -282,30 +336,35 @@ export default function HighlightPopup({
               }`}
               style={{ backgroundColor: c.hex }}
               onClick={() => handleColorChange(c.hex)}
-              disabled={updateHighlightMutation.isPending}
+              disabled={!canUpdateColor || updateHighlightMutation.isPending}
+              title={
+                canUpdateColor ? undefined : 'Only the creator can change color'
+              }
             />
           ))}
         </div>
         <div className='flex-1' />
-        <button
-          onClick={handleDeleteHighlight}
-          disabled={deleteHighlightMutation.isPending}
-          className='p-1.5 text-red-500 hover:bg-red-50 rounded transition'
-          title='Delete highlight'
-        >
-          {deleteHighlightMutation.isPending ? (
-            <Loader2
-              size={14}
-              className='animate-spin'
-            />
-          ) : (
-            <Trash2 size={14} />
-          )}
-        </button>
+        {canDeleteHighlight && (
+          <button
+            onClick={handleDeleteHighlight}
+            disabled={deleteHighlightMutation.isPending}
+            className='p-1.5 text-red-500 hover:bg-red-50 rounded transition'
+            title='Delete highlight'
+          >
+            {deleteHighlightMutation.isPending ? (
+              <Loader2
+                size={14}
+                className='animate-spin'
+              />
+            ) : (
+              <Trash2 size={14} />
+            )}
+          </button>
+        )}
       </div>
 
       {/* Comments list */}
-      <div className='max-h-[200px] overflow-y-auto'>
+      <div className='max-h-[240px] overflow-y-auto'>
         {isLoading ? (
           <div className='flex items-center justify-center py-8'>
             <Loader2
@@ -325,6 +384,7 @@ export default function HighlightPopup({
                 className='px-4 py-3'
               >
                 {editingCommentId === comment.id ? (
+                  /* ── Editing mode ────────────────────────── */
                   <div className='flex gap-2'>
                     <input
                       type='text'
@@ -359,29 +419,56 @@ export default function HighlightPopup({
                     </button>
                   </div>
                 ) : (
+                  /* ── Display mode — with authorship ─────── */
                   <>
+                    {/* Author row (collaborative only) */}
+                    {isCollaborative && comment.user && (
+                      <div className='flex items-center gap-1.5 mb-1'>
+                        <UserAvatar
+                          name={comment.user.displayName || '?'}
+                          avatarUrl={comment.user.avatarUrl}
+                          size='xs'
+                        />
+                        <span className='text-xs font-medium text-gray-600 truncate max-w-[120px]'>
+                          {comment.user.displayName || 'Unknown'}
+                        </span>
+                        <span className='text-[10px] text-gray-400'>
+                          {formatSmartDate(comment.createdAt)}
+                        </span>
+                      </div>
+                    )}
                     <p className='text-sm text-gray-700'>{comment.content}</p>
                     <div className='flex items-center justify-between mt-1'>
-                      <span className='text-xs text-gray-400'>
-                        {formatSmartDate(comment.createdAt)}
-                      </span>
+                      {/* Timestamp (non-collaborative fallback) */}
+                      {!isCollaborative && (
+                        <span className='text-xs text-gray-400'>
+                          {formatSmartDate(comment.createdAt)}
+                        </span>
+                      )}
+                      <div className='flex-1' />
                       <div className='flex gap-1'>
-                        <button
-                          onClick={() => {
-                            setEditingCommentId(comment.id);
-                            setEditingContent(comment.content);
-                          }}
-                          className='p-1 text-gray-400 hover:bg-gray-100 rounded'
-                        >
-                          <Edit2 size={12} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteComment(comment.id)}
-                          disabled={deleteCommentMutation.isPending}
-                          className='p-1 text-red-400 hover:bg-red-50 rounded'
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        {canEditComment(comment.userId) && (
+                          <button
+                            onClick={() => {
+                              setEditingCommentId(comment.id);
+                              setEditingContent(comment.content);
+                            }}
+                            className='p-1 text-gray-400 hover:bg-gray-100 rounded'
+                            title='Edit comment'
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                        )}
+                        {canDeleteComment(comment.userId) && (
+                          <button
+                            onClick={() => handleDeleteComment(comment.id)}
+                            disabled={deleteCommentMutation.isPending}
+                            className='p-1 text-red-400 hover:bg-red-50 rounded'
+                            title='Delete comment'
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </>

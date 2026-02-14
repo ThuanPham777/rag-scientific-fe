@@ -20,8 +20,13 @@ import type {
 export async function createSession(
   paperId: string,
   maxMembers?: number,
+  sourceConversationId?: string,
 ): Promise<ApiResponse<CreateSessionResult>> {
-  const { data } = await api.post('/sessions', { paperId, maxMembers });
+  const { data } = await api.post('/sessions', {
+    paperId,
+    maxMembers,
+    sourceConversationId,
+  });
   return data;
 }
 

@@ -1,5 +1,5 @@
 import { Document, Page } from 'react-pdf';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { MessageCircle } from 'lucide-react';
 import SelectionActionMenu from './SelectionActionMenu';
@@ -10,6 +10,8 @@ import {
   useAddComment,
   useDeleteHighlight,
 } from '../../hooks/queries/useHighlightQueries';
+import { useSessionStore } from '../../store/useSessionStore';
+import { UserAvatar } from '../common/UserAvatar';
 import type { HighlightColor } from '../../services/api/highlight.api';
 
 type HighlightRect = {
@@ -26,6 +28,12 @@ type Highlight = {
   color?: string;
   commentCount?: number; // Number of comments on this highlight
   isFading?: boolean; // For citation jump highlight fade animation
+  // Collaborative: author info
+  userId?: string;
+  user?: {
+    displayName?: string;
+    avatarUrl?: string | null;
+  };
 };
 
 type SelectionState = {
@@ -135,6 +143,27 @@ export default function PdfPages({
   const updateHighlightMutation = useUpdateHighlight();
   const addCommentMutation = useAddComment();
   const deleteHighlightMutation = useDeleteHighlight();
+
+  // Collaborative state
+  const isCollaborative = useSessionStore((s) => s.isCollaborative);
+
+  // Force re-render after pages finish rendering at a new scale,
+  // so highlight positions are recomputed from updated DOM dimensions.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_renderTick, setRenderTick] = useState(0);
+  const renderFrameRef = useRef<number>(0);
+
+  const handlePageRenderSuccess = useCallback(
+    (pageNumber: number) => {
+      onPageRender(pageNumber);
+      // Debounce: batch multiple page renders into one state update
+      cancelAnimationFrame(renderFrameRef.current);
+      renderFrameRef.current = requestAnimationFrame(() => {
+        setRenderTick((t) => t + 1);
+      });
+    },
+    [onPageRender],
+  );
 
   // State for clicked highlight popup/editor
   const [clickedHighlight, setClickedHighlight] = useState<{
@@ -290,7 +319,7 @@ export default function PdfPages({
                   rotate={rotation}
                   renderAnnotationLayer
                   renderTextLayer
-                  onRenderSuccess={() => onPageRender(pageNumber)}
+                  onRenderSuccess={() => handlePageRenderSuccess(pageNumber)}
                 />
 
                 {/* highlights đã lưu */}
@@ -388,6 +417,23 @@ export default function PdfPages({
                             />
                           </div>
                         )}
+                        {/* Author avatar — collaborative, first rect only */}
+                        {isFirstRect &&
+                          isCollaborative &&
+                          h.user &&
+                          !isJumpHighlight && (
+                            <div
+                              className='absolute -top-3 -left-3 pointer-events-none'
+                              style={{ zIndex: 11 }}
+                            >
+                              <UserAvatar
+                                name={h.user.displayName || '?'}
+                                avatarUrl={h.user.avatarUrl}
+                                size='xs'
+                                ring='ring-1 ring-white'
+                              />
+                            </div>
+                          )}
                       </div>
                     );
                   }),

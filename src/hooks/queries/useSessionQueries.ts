@@ -79,10 +79,12 @@ export function useCreateSession() {
     mutationFn: ({
       paperId,
       maxMembers,
+      sourceConversationId,
     }: {
       paperId: string;
       maxMembers?: number;
-    }) => createSession(paperId, maxMembers),
+      sourceConversationId?: string;
+    }) => createSession(paperId, maxMembers, sourceConversationId),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
       // Invalidate session detail for the newly created conversation

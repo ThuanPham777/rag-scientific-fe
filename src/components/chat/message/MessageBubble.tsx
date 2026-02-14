@@ -45,18 +45,38 @@ function MessageBubbleBase({
   isCollaborative = false,
   isOwnMessage = false,
 }: MessageBubbleProps) {
-  // ── Alignment ──────────────────────────────────────────────
-  // In non-collaborative mode: user → right, assistant → left (classic single-paper chat)
-  // In collaborative mode:     MY message → right, everything else → left
-  const alignRight = isCollaborative ? isOwnMessage : isUser;
-
-  // ── Avatar visibility ──────────────────────────────────────
-  // Show avatar on the left for "other" messages (first in a group only).
-  // In non-collaborative mode the assistant still gets a bot avatar.
   const isAssistant = !isUser;
-  const showLeftAvatar = isCollaborative
-    ? !alignRight && !isGrouped // other user or assistant, first in group
-    : isAssistant && !isGrouped; // single-paper: assistant, first in group
+
+  // ── Non-collaborative: simple Q&A layout ───────────────────
+  // No avatars, no timestamps, no sender name, no chat-app styling.
+  // User questions right-aligned (orange), assistant answers left-aligned (white), full width.
+  if (!isCollaborative) {
+    return (
+      <div
+        className={`flex w-full mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}
+      >
+        <div
+          className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} ${isUser ? 'max-w-[85%]' : 'max-w-full'}`}
+        >
+          <div
+            className={`relative px-4 py-2 ${
+              isUser
+                ? 'bg-orange-500 text-white rounded-2xl rounded-br-none shadow-sm border border-orange-500'
+                : 'bg-white text-gray-800 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border rounded-2xl rounded-bl-none'
+            }`}
+          >
+            {children}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Collaborative: full chat-app layout ────────────────────
+  const alignRight = isOwnMessage;
+
+  // Show avatar on the left for "other" messages (first in a group only).
+  const showLeftAvatar = !alignRight && !isGrouped;
 
   const spacing = isGrouped ? 'mb-0.5' : 'mb-4';
 
@@ -84,8 +104,8 @@ function MessageBubbleBase({
       <div
         className={`flex flex-col ${alignRight ? 'items-end' : 'items-start'} max-w-[90%] md:max-w-[85%]`}
       >
-        {/* Sender name (collaborative, first in group, NOT own message) */}
-        {isCollaborative && !isGrouped && !alignRight && displayName && (
+        {/* Sender name (first in group, NOT own message) */}
+        {!isGrouped && !alignRight && displayName && (
           <span className='text-[11px] font-semibold text-gray-500 mb-0.5 ml-1'>
             {isAssistant ? 'Assistant' : displayName}
           </span>
@@ -101,7 +121,7 @@ function MessageBubbleBase({
               : `bg-white text-gray-800 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] ${
                   isGrouped ? 'rounded-tl-lg' : 'rounded-bl-none'
                 }`
-          } ${!alignRight && !isCollaborative ? 'max-w-full' : ''}`}
+          }`}
         >
           {children}
         </div>

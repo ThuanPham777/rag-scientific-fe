@@ -116,10 +116,41 @@ export function useSessionSocket(
       }
     };
 
-    const onCommentAdded = () => {
+    const onCommentAdded = (data: { highlightId?: string }) => {
       if (paperId) {
         queryClient.invalidateQueries({
           queryKey: highlightKeys.byPaper(paperId),
+        });
+      }
+      if (data?.highlightId) {
+        queryClient.invalidateQueries({
+          queryKey: highlightKeys.byHighlight(data.highlightId),
+        });
+      }
+    };
+
+    const onCommentUpdated = (data: { highlightId?: string }) => {
+      if (paperId) {
+        queryClient.invalidateQueries({
+          queryKey: highlightKeys.byPaper(paperId),
+        });
+      }
+      if (data?.highlightId) {
+        queryClient.invalidateQueries({
+          queryKey: highlightKeys.byHighlight(data.highlightId),
+        });
+      }
+    };
+
+    const onCommentDeleted = (data: { highlightId?: string }) => {
+      if (paperId) {
+        queryClient.invalidateQueries({
+          queryKey: highlightKeys.byPaper(paperId),
+        });
+      }
+      if (data?.highlightId) {
+        queryClient.invalidateQueries({
+          queryKey: highlightKeys.byHighlight(data.highlightId),
         });
       }
     };
@@ -146,6 +177,8 @@ export function useSessionSocket(
     socket.on('session:highlight-updated', onHighlightUpdated);
     socket.on('session:highlight-deleted', onHighlightDeleted);
     socket.on('session:comment-added', onCommentAdded);
+    socket.on('session:comment-updated', onCommentUpdated);
+    socket.on('session:comment-deleted', onCommentDeleted);
     socket.on('session:member-removed', onMemberRemoved);
     socket.on('session:ended', onSessionEnded);
 
@@ -159,6 +192,8 @@ export function useSessionSocket(
       socket.off('session:highlight-updated', onHighlightUpdated);
       socket.off('session:highlight-deleted', onHighlightDeleted);
       socket.off('session:comment-added', onCommentAdded);
+      socket.off('session:comment-updated', onCommentUpdated);
+      socket.off('session:comment-deleted', onCommentDeleted);
       socket.off('session:member-removed', onMemberRemoved);
       socket.off('session:ended', onSessionEnded);
 

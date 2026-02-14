@@ -358,6 +358,7 @@ export default function ChatPage() {
       const result = await createSessionMutation.mutateAsync({
         paperId: activePaper.id,
         maxMembers: 10,
+        sourceConversationId: currentConversationId || undefined,
       });
       setShowConfirmStart(false);
 
