@@ -51,6 +51,27 @@ export async function sendQuery(
 }
 
 /**
+ * Send a plain chat message in collaborative session (no AI response).
+ * Used when user doesn't @Assistant.
+ */
+export async function sendPlainMessage(
+  conversationId: string,
+  content: string,
+): Promise<{
+  id: string;
+  content: string;
+  userId: string;
+  displayName: string;
+  createdAt: string;
+}> {
+  const { data } = await api.post('/chat/send-message', {
+    conversationId,
+    content,
+  });
+  return data.data;
+}
+
+/**
  * Get message history for a conversation (cursor-paginated)
  * Backend returns messages in DESC order (newest first).
  */
@@ -80,6 +101,8 @@ export async function getMessageHistory(
     citations: m.citations
       ? parseCitationsFromResponse(m.citations, paperId)
       : undefined,
+    userId: m.userId,
+    displayName: m.displayName,
     createdAt: m.createdAt,
   }));
 

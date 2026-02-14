@@ -76,6 +76,8 @@ export type Conversation = {
   title?: string;
   ragFileId?: string;
   paperTitle?: string;
+  type?: 'SINGLE_PAPER' | 'MULTI_PAPER' | 'GROUP';
+  isCollaborative?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -112,7 +114,9 @@ export type ChatMessage = {
   citations?: Citation[];
   modelName?: string;
   tokenCount?: number;
-  createdAt: string;
+  createdAt: string; // Collaborative session fields
+  userId?: string;
+  displayName?: string;
 };
 
 export type Message = {
@@ -189,25 +193,6 @@ export interface SummaryResult {
 }
 
 // ============================
-// 🔹 Folder Types (My Library)
-// ============================
-export type Folder = {
-  id: string;
-  userId: string;
-  name: string;
-  orderIndex: number;
-  createdAt: string;
-  updatedAt: string;
-  _count?: {
-    papers: number;
-  };
-};
-
-export type FolderWithPapers = Folder & {
-  papers: Paper[];
-};
-
-// ============================
 // 🔹 API Response Highlight
 // ============================
 
@@ -234,6 +219,11 @@ export type HighlightComment = {
   content: string;
   createdAt: string;
   updatedAt: string;
+  // Collaborative session: author info
+  user?: {
+    displayName?: string;
+    avatarUrl?: string;
+  };
 };
 
 export type HighlightItem = {
@@ -250,6 +240,11 @@ export type HighlightItem = {
   updatedAt: string;
   _count: {
     comments: number;
+  };
+  // Collaborative session: author info
+  user?: {
+    displayName?: string;
+    avatarUrl?: string;
   };
 };
 
@@ -282,3 +277,71 @@ export interface CursorPaginatedResponse<T> {
   items: T[];
   pagination: CursorPaginationMeta;
 }
+
+// ============================
+// 🔹 Collaborative Session Types
+// ============================
+export type SessionRole = 'OWNER' | 'MEMBER';
+
+export type SessionMember = {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  role: SessionRole;
+  joinedAt: string;
+};
+
+export type SessionDetail = {
+  conversationId: string;
+  sessionCode: string;
+  isCollaborative: boolean;
+  maxMembers: number;
+  memberCount: number;
+  members: SessionMember[];
+  paperId?: string;
+  paperTitle?: string;
+  paperFileName?: string;
+  paperUrl?: string;
+  createdAt: string;
+};
+
+// Result returned from POST /sessions (createSession)
+export type CreateSessionResult = {
+  conversationId: string;
+  paperId: string;
+  sessionCode: string;
+  inviteLink: string;
+  inviteToken: string;
+  expiresAt: string;
+  maxMembers: number;
+};
+
+export type SessionInvite = {
+  inviteToken: string;
+  inviteLink: string;
+  expiresAt: string;
+  maxUses: number;
+};
+
+export type OnlineMember = {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string | null;
+};
+
+export type TypingIndicator = {
+  userId: string;
+  displayName: string;
+  isTyping: boolean;
+};
+
+export type SessionMessageEvent = {
+  id: string;
+  role: string;
+  content: string;
+  userId?: string;
+  displayName?: string;
+  imageUrl?: string;
+  context?: any;
+  createdAt: string;
+};

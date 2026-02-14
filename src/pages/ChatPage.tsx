@@ -4,24 +4,32 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useSessionStore } from '../store/useSessionStore';
 
 import {
   useClearChatHistory,
   useGenerateFollowUpQuestions,
   useInfiniteMessageHistory,
   flattenMessagePages,
+  useSessionDetail,
+  useCreateSession,
+  useLeaveSession,
+  useEndSession,
+  useConversation,
+  usePaper,
 } from '../hooks';
+import { useSessionSocket } from '../hooks/useSessionSocket';
 import {
   sendQuery,
-  getConversation,
-  getPaper,
   guestAskQuestion,
   guestCheckIngestStatus,
   buildGuestAssistantMessage,
   explainRegion,
+  sendPlainMessage,
 } from '../services';
 import PdfPanel from '../components/pdf/PdfPanel';
 import ChatDock from '../components/chat/ChatDock';
+import { InviteModal, ConfirmStartSessionModal } from '../components/session';
 import type { ChatMessage } from '../utils/types';
 
 export default function ChatPage() {
@@ -97,21 +105,29 @@ export default function ChatPage() {
       : undefined
     : (currentPaper ?? undefined);
 
-  // Start as true if we have urlConversationId but no session (need to restore)
-  const [initialLoading, setInitialLoading] = useState(() => {
-    if (!urlConversationId) return false;
-    // Check if guest session exists in localStorage
-    const guestStore = useGuestStore.getState();
-    if (guestStore.currentSession?.id === urlConversationId) {
-      return false; // Guest session found
-    }
-    // Authenticated session - check paper store
-    const paperStore = usePaperStore.getState();
-    if (paperStore.currentConversationId === urlConversationId) {
-      return false;
-    }
-    return true; // Need to restore
-  });
+  // =============================================
+  // Declarative Conversation & Paper Loading
+  // React Query hooks replace the old imperative restoreSession effect.
+  // This ensures: no duplicate API calls, no race conditions,
+  // and conversation type is always derived from backend data.
+  // =============================================
+
+  // Fetch conversation detail via React Query (authenticated users only)
+  const { data: conversationData, isError: isConvError } = useConversation(
+    !isGuest && isAuthenticated && isInitialized
+      ? urlConversationId
+      : undefined,
+  );
+
+  // Derive paperId from React Query data or existing store
+  const resolvedPaperId = sessionMeta?.paperId || conversationData?.paperId;
+
+  // Fetch paper detail via React Query (may 403 for non-owners — handled below)
+  const { data: paperFromQuery, isError: isPaperError } = usePaper(
+    !isGuest && isAuthenticated && isInitialized && !!resolvedPaperId
+      ? resolvedPaperId
+      : undefined,
+  );
 
   // State for ChatDock open status (for fullscreen PDF viewer integration)
   // MUST be defined before any early returns to follow Rules of Hooks
@@ -123,20 +139,109 @@ export default function ChatPage() {
   // Capture function - will be set by PdfPanel
   const captureToggleRef = useRef<(() => void) | null>(null);
 
-  // Restore session from URL on mount/reload
-  useEffect(() => {
-    // Wait for auth to be initialized before trying to restore session
-    if (!isInitialized) return;
+  // =============================================
+  // Collaborative Session Integration
+  // =============================================
+  const isCollaborative = useSessionStore((s) => s.isCollaborative);
+  const setCollaborative = useSessionStore((s) => s.setCollaborative);
+  const isInviteModalOpen = useSessionStore((s) => s.isInviteModalOpen);
+  const setInviteModalOpen = useSessionStore((s) => s.setInviteModalOpen);
 
-    const restoreSession = async () => {
-      // Check if guest session exists in localStorage
+  // Confirm modal state for starting a session
+  const [showConfirmStart, setShowConfirmStart] = useState(false);
+
+  // Stable conversationId for session-related hooks
+  const convIdForSession = isGuest
+    ? undefined
+    : (currentConversationId ?? urlConversationId);
+
+  // Fetch session detail when conversation is loaded (members, invite codes, etc.)
+  const { data: sessionDetail } = useSessionDetail(
+    convIdForSession,
+    !isGuest && !!convIdForSession && isInitialized,
+  );
+
+  // --- Sync React Query data → Zustand stores ---
+
+  // 1. Sync conversation → session store
+  useEffect(() => {
+    if (!conversationData) return;
+    // Skip if store already has this conversation fully loaded
+    if (currentConversationId === conversationData.id && sessionMeta?.ragFileId)
+      return;
+
+    setSession({
+      id: conversationData.id,
+      paperId: conversationData.paperId,
+      ragFileId: conversationData.ragFileId,
+      title: conversationData.title,
+      messages: [],
+    });
+  }, [
+    conversationData,
+    currentConversationId,
+    sessionMeta?.ragFileId,
+    setSession,
+  ]);
+
+  // 2. Derive collaborative state from conversation type (authoritative source)
+  //    conversation.type === 'GROUP' is the single source of truth.
+  useEffect(() => {
+    if (!conversationData) return;
+    setCollaborative(
+      conversationData.type === 'GROUP' || !!conversationData.isCollaborative,
+    );
+  }, [conversationData, setCollaborative]);
+
+  // 3. Sync paper → paper store
+  useEffect(() => {
+    if (isGuest || currentPaper) return; // Already have paper data
+
+    if (paperFromQuery) {
+      setCurrentPaper(paperFromQuery);
+    } else if (isPaperError && conversationData?.papers?.[0]) {
+      // getPaper failed (non-owner) — fallback to paper data from conversation response
+      const cp = conversationData.papers[0];
+      setCurrentPaper({
+        id: cp.id,
+        ragFileId: cp.ragFileId,
+        fileName: cp.fileName || cp.title || 'Untitled',
+        fileUrl: cp.fileUrl || '',
+        localUrl: cp.fileUrl || '',
+        status: 'COMPLETED' as const,
+        createdAt: conversationData.createdAt || new Date().toISOString(),
+        updatedAt: conversationData.updatedAt || new Date().toISOString(),
+        userId: conversationData.userId || '',
+        title: cp.title,
+      } as any);
+    }
+  }, [
+    isGuest,
+    currentPaper,
+    paperFromQuery,
+    isPaperError,
+    conversationData,
+    setCurrentPaper,
+  ]);
+
+  // 4. Redirect on conversation load error (not found / access denied)
+  useEffect(() => {
+    if (isConvError && !isGuest && isAuthenticated && urlConversationId) {
+      console.error('Failed to load conversation, redirecting...');
+      navigate('/', { replace: true });
+    }
+  }, [isConvError, isGuest, isAuthenticated, urlConversationId, navigate]);
+
+  // 5. Guest session restoration (sync localStorage → paper store)
+  useEffect(() => {
+    if (!isInitialized || !urlConversationId) return;
+
+    if (isGuest) {
       const guestStore = useGuestStore.getState();
       if (
-        urlConversationId &&
         guestStore.currentSession?.id === urlConversationId &&
         guestStore.currentPaper
       ) {
-        // Session found in localStorage, sync to paper store for PDF viewer
         setCurrentPaper({
           id: guestStore.currentPaper.id,
           ragFileId: guestStore.currentPaper.ragFileId,
@@ -148,77 +253,131 @@ export default function ChatPage() {
           updatedAt: guestStore.currentPaper.createdAt,
           userId: '',
         } as any);
-
         setSession({
           id: guestStore.currentSession.id,
           paperId: guestStore.currentSession.paperId,
           ragFileId: guestStore.currentSession.ragFileId,
           messages: guestStore.currentSession.messages,
         });
-
-        setInitialLoading(false);
-        return;
-      }
-
-      // For authenticated users, try to restore from API
-      if (urlConversationId && isAuthenticated && !session) {
-        setInitialLoading(true);
-        try {
-          // Get conversation details
-          const response = await getConversation(urlConversationId);
-          const conv = response.data;
-          console.log('Restored conversation:', conv);
-
-          if (conv && conv.id) {
-            // Set session
-            setSession({
-              id: conv.id,
-              paperId: conv.paperId,
-              ragFileId: conv.ragFileId,
-              title: conv.title,
-              messages: [],
-            });
-
-            // Load paper if we have paperId
-            if (conv.paperId) {
-              try {
-                const paperResponse = await getPaper(conv.paperId);
-                if (paperResponse.data) {
-                  setCurrentPaper(paperResponse.data);
-                }
-              } catch (err) {
-                console.error('Failed to load paper:', err);
-              }
-            }
-
-            // Message history is now loaded automatically by useInfiniteMessageHistory
-          } else {
-            // No conversation found, redirect
-            console.error('Invalid conversation response:', response);
-            navigate('/', { replace: true });
-          }
-        } catch (err) {
-          console.error('Failed to restore session:', err);
-          // Invalid conversationId, redirect to home
-          navigate('/', { replace: true });
-        } finally {
-          setInitialLoading(false);
-        }
-      } else if (
-        urlConversationId &&
-        !isAuthenticated &&
-        !guestStore.currentSession
-      ) {
-        // Guest without session, redirect to home
+      } else if (!guestStore.currentSession) {
         navigate('/', { replace: true });
-        setInitialLoading(false);
-      } else {
-        setInitialLoading(false);
       }
-    };
+    } else if (!isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [
+    isInitialized,
+    urlConversationId,
+    isGuest,
+    isAuthenticated,
+    navigate,
+    setCurrentPaper,
+    setSession,
+  ]);
 
-    restoreSession();
-  }, [urlConversationId, isAuthenticated, isInitialized]);
+  // Derived loading state (replaces imperative initialLoading useState)
+  // Stays `true` until ALL of: conversation synced, paper synced, collaborative flag set.
+  const initialLoading = useMemo(() => {
+    if (!urlConversationId) return false;
+
+    // Guest: check if session exists in localStorage
+    if (isGuest) {
+      const guestStore = useGuestStore.getState();
+      return !(guestStore.currentSession?.id === urlConversationId);
+    }
+
+    // Auth not ready yet
+    if (!isInitialized) return true;
+    if (!isAuthenticated) return false; // Will redirect
+
+    // Final check: do we have everything needed to render?
+    // currentConversationId is set by effect #1 (conversation → store)
+    // sessionMeta?.ragFileId is set at the same time
+    // currentPaper is set by effect #3 (paper → store)
+    // All three must be present for the page to function correctly.
+    if (
+      currentConversationId === urlConversationId &&
+      sessionMeta?.ragFileId &&
+      currentPaper
+    ) {
+      return false; // Fully ready
+    }
+
+    // If conversation query errored, stop loading (effect #4 will redirect)
+    if (isConvError) return false;
+
+    // Otherwise we're still loading / syncing
+    return true;
+  }, [
+    urlConversationId,
+    isGuest,
+    isInitialized,
+    isAuthenticated,
+    currentConversationId,
+    sessionMeta?.ragFileId,
+    currentPaper,
+    isConvError,
+  ]);
+
+  // WebSocket connection for collaborative sessions
+  // Only pass conversationId when isCollaborative is confirmed — this ensures
+  // the socket effect re-runs when collaborative state is established after reload.
+  const { startTyping, stopTyping } = useSessionSocket(
+    isCollaborative ? convIdForSession : undefined,
+    isCollaborative,
+    activePaper?.id,
+  );
+
+  // Session mutation hooks
+  const createSessionMutation = useCreateSession();
+  const leaveSessionMutation = useLeaveSession();
+  const endSessionMutation = useEndSession();
+
+  const handleLeaveSession = useCallback(() => {
+    if (!convIdForSession) return;
+    if (!window.confirm('Leave this collaborative session?')) return;
+    leaveSessionMutation.mutate(convIdForSession, {
+      onSuccess: () => navigate('/', { replace: true }),
+    });
+  }, [convIdForSession, leaveSessionMutation, navigate]);
+
+  const handleEndSession = useCallback(() => {
+    if (!convIdForSession) return;
+    if (!window.confirm('End this session? All members will be disconnected.'))
+      return;
+    endSessionMutation.mutate(convIdForSession, {
+      onSuccess: () => {
+        setCollaborative(false);
+      },
+    });
+  }, [convIdForSession, endSessionMutation, setCollaborative]);
+
+  const handleConfirmStartSession = useCallback(async () => {
+    if (!activePaper?.id) return;
+    try {
+      const result = await createSessionMutation.mutateAsync({
+        paperId: activePaper.id,
+        maxMembers: 10,
+      });
+      setShowConfirmStart(false);
+
+      // Navigate to the NEW collaborative conversation
+      const newConvId = result.data.conversationId;
+      navigate(`/chat/${newConvId}`, { replace: true });
+
+      setCollaborative(true);
+      // Open invite modal so user can share the link right away
+      setInviteModalOpen(true);
+    } catch {
+      // Error handled by mutation hook toast
+    }
+  }, [
+    activePaper?.id,
+    createSessionMutation,
+    navigate,
+    setCollaborative,
+    setInviteModalOpen,
+  ]);
 
   // Update URL when session changes (after creating new conversation)
   useEffect(() => {
@@ -395,15 +554,38 @@ export default function ChatPage() {
     async (text: string) => {
       if (!text.trim() || !activeSession) return;
 
+      const trimmedText = text.trim();
+
+      // In collaborative mode, check for @Assistant prefix
+      const isAssistantQuery = isCollaborative
+        ? /^@Assistant\b/i.test(trimmedText)
+        : true; // Non-collaborative always queries AI
+
+      // Strip @Assistant prefix for the actual RAG query (non-collaborative only)
+      // In collaborative mode, send full text to server — server strips prefix for RAG
+      const actualText =
+        isAssistantQuery && !isCollaborative
+          ? trimmedText.replace(/^@Assistant\s*/i, '').trim()
+          : trimmedText;
+
+      if (!actualText) return;
+
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'user',
-        content: text.trim(),
+        content: trimmedText, // Show original text including @Assistant
         createdAt: new Date().toISOString(),
       };
 
       // Add user message to appropriate store
-      if (isGuest) {
+      // For plain collaborative messages, skip optimistic add — WebSocket broadcasts fast.
+      // For @Assistant queries (slow RAG), add optimistically so user sees their msg immediately.
+      if (isCollaborative && !isAssistantQuery) {
+        // Plain message: WebSocket will broadcast quickly, no local add needed
+      } else if (isCollaborative && isAssistantQuery) {
+        // @Assistant query: add optimistically for immediate display while RAG processes
+        setSentMessages((prev) => [...prev, userMsg]);
+      } else if (isGuest) {
         addGuestMessage(userMsg);
       } else {
         setSentMessages((prev) => [...prev, userMsg]);
@@ -413,13 +595,16 @@ export default function ChatPage() {
       const setLoading = isGuest ? setGuestLoading : setChatLoading;
 
       try {
-        setLoading(true);
+        // Only show loading for AI queries
+        if (isAssistantQuery) {
+          setLoading(true);
+        }
 
         if (isGuest && guestSession) {
-          // Guest: Call guest API
+          // Guest: Call guest API (always AI)
           const { answer, citations, raw } = await guestAskQuestion(
             guestSession.ragFileId,
-            text,
+            actualText,
             guestPaper?.id || '',
           );
           const assistantMsg = buildGuestAssistantMessage(
@@ -434,16 +619,35 @@ export default function ChatPage() {
             fetchFollowUps(guestSession.id, assistantMsg.id);
           }
         } else if (session) {
-          // Authenticated: Call regular API
-          const { assistantMsg } = await sendQuery(
-            session.id,
-            text,
-            currentPaper?.id,
-          );
-          setSentMessages((prev) => [...prev, assistantMsg]);
+          if (isCollaborative && !isAssistantQuery) {
+            // Collaborative mode WITHOUT @Assistant: just send plain message
+            await sendPlainMessage(session.id, trimmedText);
+            // The WebSocket will broadcast the message and invalidate the query cache
+          } else {
+            // Authenticated: Call RAG API (either non-collaborative or @Assistant)
+            const { assistantMsg } = await sendQuery(
+              session.id,
+              actualText,
+              currentPaper?.id,
+            );
+            // Add assistant message optimistically
+            setSentMessages((prev) => [...prev, assistantMsg]);
 
-          if (session.id && assistantMsg.id) {
-            fetchFollowUps(session.id, assistantMsg.id);
+            if (isCollaborative) {
+              // In collaborative mode, schedule cleanup of optimistic messages
+              // once the WebSocket-triggered refetch brings in server copies
+              const uidRm = userMsg.id;
+              const aidRm = assistantMsg.id;
+              setTimeout(() => {
+                setSentMessages((prev) =>
+                  prev.filter((m) => m.id !== uidRm && m.id !== aidRm),
+                );
+              }, 3000);
+            }
+
+            if (session.id && assistantMsg.id) {
+              fetchFollowUps(session.id, assistantMsg.id);
+            }
           }
         }
       } catch (err: any) {
@@ -466,6 +670,7 @@ export default function ChatPage() {
     },
     [
       activeSession,
+      isCollaborative,
       isGuest,
       guestSession,
       guestPaper?.id,
@@ -520,6 +725,17 @@ export default function ChatPage() {
           // 5. Add assistant message to same store (same as onSend)
           setSentMessages((prev) => [...prev, assistantMsg]);
 
+          if (isCollaborative) {
+            // Schedule cleanup to prevent duplicates after WS-triggered refetch
+            const uidRm = userMsg.id;
+            const aidRm = assistantMsg.id;
+            setTimeout(() => {
+              setSentMessages((prev) =>
+                prev.filter((m) => m.id !== uidRm && m.id !== aidRm),
+              );
+            }, 3000);
+          }
+
           if (session.id && assistantMsg.id) {
             fetchFollowUps(session.id, assistantMsg.id);
           }
@@ -545,6 +761,7 @@ export default function ChatPage() {
     },
     [
       activeSession,
+      isCollaborative,
       isGuest,
       session,
       currentPaper?.id,
@@ -612,6 +829,17 @@ export default function ChatPage() {
           );
           setSentMessages((prev) => [...prev, assistantMsg]);
 
+          if (isCollaborative) {
+            // Schedule cleanup to prevent duplicates after WS-triggered refetch
+            const uidRm = userMsg.id;
+            const aidRm = assistantMsg.id;
+            setTimeout(() => {
+              setSentMessages((prev) =>
+                prev.filter((m) => m.id !== uidRm && m.id !== aidRm),
+              );
+            }, 3000);
+          }
+
           if (session.id && assistantMsg.id) {
             fetchFollowUps(session.id, assistantMsg.id);
           }
@@ -636,6 +864,7 @@ export default function ChatPage() {
     },
     [
       activeSession,
+      isCollaborative,
       isGuest,
       guestSession,
       guestPaper?.id,
@@ -712,7 +941,36 @@ export default function ChatPage() {
         onLoadMore={!isGuest ? fetchNextPage : undefined}
         hasMore={!isGuest ? (hasNextPage ?? false) : false}
         isLoadingMore={!isGuest ? isFetchingNextPage : false}
+        isCollaborative={isCollaborative}
+        sessionDetail={sessionDetail}
+        onInvite={() => setInviteModalOpen(true)}
+        onLeaveSession={handleLeaveSession}
+        onEndSession={handleEndSession}
+        onTypingStart={startTyping}
+        onTypingStop={stopTyping}
+        onStartSession={
+          !isGuest && isAuthenticated && !isCollaborative && convIdForSession
+            ? () => setShowConfirmStart(true)
+            : undefined
+        }
       />
+
+      {/* Confirm Start Session Modal */}
+      <ConfirmStartSessionModal
+        isOpen={showConfirmStart}
+        isLoading={createSessionMutation.isPending}
+        onConfirm={handleConfirmStartSession}
+        onCancel={() => setShowConfirmStart(false)}
+      />
+
+      {/* Invite Modal */}
+      {convIdForSession && (
+        <InviteModal
+          conversationId={convIdForSession}
+          isOpen={isInviteModalOpen}
+          onClose={() => setInviteModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

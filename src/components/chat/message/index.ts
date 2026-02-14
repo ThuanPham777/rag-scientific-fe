@@ -6,3 +6,5 @@ export { SourcesSection } from './SourcesSection';
 export { SourcesModal } from './SourcesModal';
 export { MessageBubble } from './MessageBubble';
 export { MarkdownContent } from './MarkdownContent';
+export { DateSeparator } from './DateSeparator';
+export { NewMessageButton } from './NewMessageButton';

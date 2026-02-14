@@ -13,14 +13,8 @@ export * from './conversation.api';
 // Chat API
 export * from './chat.api';
 
-// RAG Direct API
-export * from './rag.api';
-
 // Guest API
 export * from './guest.api';
-
-// Folder API
-export * from './folder.api';
 
 // Highlight API
 export * from './highlight.api';

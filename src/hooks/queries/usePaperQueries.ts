@@ -16,7 +16,6 @@ import {
   deletePaper,
   uploadPdf,
 } from '../../services';
-import { folderKeys } from './useFolderQueries';
 import type { Paper } from '../../utils/types';
 
 // Query keys
@@ -79,20 +78,16 @@ export function useUploadPaper() {
   return useMutation({
     mutationFn: async ({
       file,
-      folderId,
       onProgress,
     }: {
       file: File;
-      folderId?: string;
       onProgress?: (pct: number) => void;
     }) => {
-      return uploadPdf(file, onProgress, folderId);
+      return uploadPdf(file, onProgress);
     },
     onSuccess: (data) => {
       // Invalidate and refetch papers (covers both list and infinite queries)
       queryClient.invalidateQueries({ queryKey: paperKeys.all });
-      // Invalidate folder-related queries
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
       // Add the new paper to the cache
       queryClient.setQueryData(paperKeys.detail(data.paper.id), data.paper);
     },
@@ -116,8 +111,6 @@ export function useDeletePaper() {
       queryClient.removeQueries({ queryKey: paperKeys.detail(deletedId) });
       // Refetch papers (covers both list and infinite queries)
       queryClient.invalidateQueries({ queryKey: paperKeys.all });
-      // Invalidate folder-related queries
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
       toast.success('Paper deleted');
     },
     onError: (error: any) => {
@@ -139,7 +132,6 @@ export function useCreatePaper() {
     mutationFn: createPaper,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: paperKeys.all });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.setQueryData(paperKeys.detail(data.data.id), data.data);
     },
   });

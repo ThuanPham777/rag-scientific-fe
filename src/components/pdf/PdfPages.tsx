@@ -198,7 +198,7 @@ export default function PdfPages({
   }, []);
 
   // Debug
-  console.log('PdfPages render:', { fileUrl, numPages, hasFileUrl: !!fileUrl });
+  //console.log('PdfPages render:', { fileUrl, numPages, hasFileUrl: !!fileUrl });
 
   if (!fileUrl) {
     return (

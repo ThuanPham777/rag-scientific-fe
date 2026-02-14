@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   ChevronDown,
   ChevronUp,
@@ -12,10 +12,20 @@ import ChatSuggestions from './ChatSuggestions';
 import ChatMessage from './ChatMessage';
 import ChatMessageLoading from './ChatMessageLoading';
 import ChatInput from './ChatInput';
+import type { MentionMember } from './ChatInput';
 import ChatQuickActions from './ChatQuickActions';
+import { SessionBar, StartSessionButton } from '../session';
+import { TypingIndicator } from '../session';
+import { DateSeparator, NewMessageButton } from './message';
+import {
+  shouldGroupMessages,
+  isDifferentDay,
+  formatDaySeparator,
+} from '../../utils/formatTimestamp';
 import type {
   ChatSession,
   ChatMessage as ChatMessageType,
+  SessionDetail,
 } from '../../utils/types';
 
 export type ChatMode = 'single' | 'multi';
@@ -66,6 +76,16 @@ type Props = {
   onLoadMore?: () => void;
   hasMore?: boolean;
   isLoadingMore?: boolean;
+
+  // Collaborative session props
+  isCollaborative?: boolean;
+  sessionDetail?: SessionDetail;
+  onInvite?: () => void;
+  onLeaveSession?: () => void;
+  onEndSession?: () => void;
+  onTypingStart?: () => void;
+  onTypingStop?: () => void;
+  onStartSession?: () => void;
 };
 
 const LOADING_STEPS = [
@@ -97,6 +117,14 @@ export default function ChatDock({
   onLoadMore,
   hasMore = false,
   isLoadingMore = false,
+  isCollaborative = false,
+  sessionDetail,
+  onInvite,
+  onLeaveSession,
+  onEndSession,
+  onTypingStart,
+  onTypingStop,
+  onStartSession,
 }: Props) {
   // Use messages prop if provided, otherwise fall back to session?.messages
   const messages = messagesProp ?? session?.messages ?? [];
@@ -106,6 +134,41 @@ export default function ChatDock({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [inputText, setInputText] = useState('');
+
+  // ── Smart scroll: track whether user is near the bottom ──
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [newMsgCount, setNewMsgCount] = useState(0);
+  const NEAR_BOTTOM_THRESHOLD = 120; // px
+
+  // Build mention members list for @ autocomplete
+  const mentionMembers = useMemo<MentionMember[]>(() => {
+    if (!isCollaborative) return [];
+    const members: MentionMember[] = [
+      { id: 'assistant', displayName: 'Assistant', isAssistant: true },
+    ];
+    if (sessionDetail?.members) {
+      for (const m of sessionDetail.members) {
+        members.push({
+          id: m.userId,
+          displayName: m.displayName || 'User',
+        });
+      }
+    }
+    return members;
+  }, [isCollaborative, sessionDetail?.members]);
+
+  // Helper: auto-prefix @Assistant for AI-directed actions in collaborative mode
+  // (suggestions, quick actions, follow-up questions)
+  const sendAsAssistant = useCallback(
+    (text: string) => {
+      if (isCollaborative) {
+        onSend(`@Assistant ${text}`);
+      } else {
+        onSend(text);
+      }
+    },
+    [isCollaborative, onSend],
+  );
 
   // Track suggestions panel state to close it when sending message
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
@@ -120,12 +183,21 @@ export default function ChatDock({
   const prevScrollHeightRef = useRef<number>(0);
   const isLoadingMoreRef = useRef(false);
 
-  // Handle scroll-to-top to load older messages
+  // Handle scroll: load older messages at top + track near-bottom state
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
+      const target = e.currentTarget;
+
+      // Track near-bottom for "new message" button
+      const distFromBottom =
+        target.scrollHeight - target.scrollTop - target.clientHeight;
+      const nearBottom = distFromBottom < NEAR_BOTTOM_THRESHOLD;
+      setIsNearBottom(nearBottom);
+      if (nearBottom) setNewMsgCount(0);
+
+      // Load older messages when scrolled near top
       if (!onLoadMore || !hasMore || isLoadingMore || isLoadingMoreRef.current)
         return;
-      const target = e.currentTarget;
       if (target.scrollTop < 80) {
         isLoadingMoreRef.current = true;
         prevScrollHeightRef.current = target.scrollHeight;
@@ -180,14 +252,28 @@ export default function ChatDock({
   // Auto-open only when NEW messages arrive (not on every render)
   const prevMsgCount = useRef(messages.length);
   useEffect(() => {
-    const hasNewMessages = messages.length > prevMsgCount.current;
+    const newCount = messages.length - prevMsgCount.current;
+    const hasNewMessages = newCount > 0;
     prevMsgCount.current = messages.length;
 
-    // Only auto-open if user hasn't manually closed AND there are new messages
-    if (hasNewMessages && !open && !userClosed) {
+    if (!hasNewMessages) return;
+
+    // Auto-open if user hasn't manually closed AND there are new messages
+    if (!open && !userClosed) {
       setOpen(true);
     }
+
+    // Track unread count when scrolled up
+    if (!isNearBottom && open) {
+      setNewMsgCount((c) => c + newCount);
+    }
   }, [messages.length]);
+
+  // Reset new message count when conversation changes
+  useEffect(() => {
+    setNewMsgCount(0);
+    setIsNearBottom(true);
+  }, [conversationId, session?.id]);
 
   // Reset initial scroll tracking when conversation changes
   useEffect(() => {
@@ -208,12 +294,13 @@ export default function ChatDock({
     });
   };
 
+  // Auto-scroll to bottom only when user is near the bottom (or loading finishes)
   useEffect(() => {
     if (!open) return;
     // Skip auto-scroll when prepending older messages (scroll-up load)
     if (isLoadingMoreRef.current) return;
-    // Use requestAnimationFrame to ensure DOM is painted before scrolling
-    // This fixes the issue where scrollIntoView fires before messages render
+    // Only auto-scroll if user is near the bottom already
+    if (!isNearBottom && messages.length > 1) return;
     requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     });
@@ -232,6 +319,15 @@ export default function ChatDock({
     });
   }, [open, messages.length]);
 
+  // Scroll-to-bottom helper for the "New messages" button
+  const scrollToBottom = useCallback(() => {
+    setNewMsgCount(0);
+    setIsNearBottom(true);
+    requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, []);
+
   const WIDTH = position === 'fixed' ? `w-[500px]` : 'w-full';
   const HEIGHT =
     position === 'fixed' ? (isPdfFullscreen ? 'h-full' : 'h-[81vh]') : 'h-full';
@@ -246,10 +342,13 @@ export default function ChatDock({
     : `fixed right-4 bottom-4 ${zIndex} ${WIDTH} ${HEIGHT}`;
 
   // Determine header title based on mode
+  console.log('ChatDock render:', { mode, selectedPapers, isCollaborative });
   const headerTitle =
     mode === 'multi'
       ? `Chat with ${selectedPapers.length} paper${selectedPapers.length !== 1 ? 's' : ''}`
-      : 'Chat Assistant';
+      : isCollaborative
+        ? 'Collaborative Chat'
+        : 'Chat Assistant';
 
   return (
     <>
@@ -271,25 +370,31 @@ export default function ChatDock({
               <span>{headerTitle}</span>
             </div>
             <div className='flex items-center gap-2 text-sm text-gray-500'>
-              {/* Only show clear button when there are messages */}
-              {messages.length > 0 && onClearChatHistory && (
-                <button
-                  className='p-1.5 rounded hover:bg-gray-100 transition-colors'
-                  title='Clear chat history'
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Use conversationId prop (for multi-paper) or session.id (for single)
-                    const convId = conversationId || session?.id;
-                    if (convId) {
-                      onClearChatHistory(convId);
-                    }
-                  }}
-                >
-                  <Trash2
-                    size={16}
-                    className='text-gray-500 hover:text-red-500'
-                  />
-                </button>
+              {/* Clear history: only show for non-collaborative sessions */}
+              {!isCollaborative &&
+                messages.length > 0 &&
+                onClearChatHistory && (
+                  <button
+                    className='p-1.5 rounded hover:bg-gray-100 transition-colors'
+                    title='Clear chat history'
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Use conversationId prop (for multi-paper) or session.id (for single)
+                      const convId = conversationId || session?.id;
+                      if (convId) {
+                        onClearChatHistory(convId);
+                      }
+                    }}
+                  >
+                    <Trash2
+                      size={16}
+                      className='text-gray-500 hover:text-red-500'
+                    />
+                  </button>
+                )}
+              {/* start session button — only show when not already collaborative */}
+              {!isCollaborative && onStartSession && (
+                <StartSessionButton onClick={onStartSession} />
               )}
               <button
                 className='p-1.5 rounded hover:bg-gray-100'
@@ -302,6 +407,16 @@ export default function ChatDock({
               </button>
             </div>
           </div>
+
+          {/* Collaborative Session Bar */}
+          {isCollaborative && sessionDetail && (
+            <SessionBar
+              sessionDetail={sessionDetail}
+              onInvite={onInvite || (() => {})}
+              onLeave={onLeaveSession || (() => {})}
+              onEnd={onEndSession || (() => {})}
+            />
+          )}
 
           {/* Selected Papers Badge (Multi-paper mode) */}
           {mode === 'multi' && selectedPapers.length > 0 && (
@@ -343,7 +458,7 @@ export default function ChatDock({
           <div
             ref={messagesContainerRef}
             onScroll={handleScroll}
-            className='flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0 bg-white relative'
+            className='flex-1 overflow-y-auto px-4 py-4 min-h-0 bg-white relative'
           >
             {/* Loading older messages indicator */}
             {isLoadingMore && (
@@ -368,7 +483,7 @@ export default function ChatDock({
                   </div>
                 ) : (
                   <ChatSuggestions
-                    onSelect={onSend}
+                    onSelect={sendAsAssistant}
                     disabled={
                       isLoading ||
                       (mode === 'multi' && selectedPapers.length === 0)
@@ -377,18 +492,48 @@ export default function ChatDock({
                 )}
               </div>
             )}
-            {messages.map((m) => (
-              <ChatMessage
-                key={m.id}
-                msg={m}
-                activePaperId={mode === 'single' ? activePaperId : undefined}
-                conversationId={conversationId || session?.id}
-                onFollowUpSelect={onSend}
-                followUps={followUpMap[m.id] || []}
-              />
-            ))}
+            {messages.map((m, idx) => {
+              const prev = idx > 0 ? messages[idx - 1] : null;
+              const next = idx < messages.length - 1 ? messages[idx + 1] : null;
+
+              // Day separator: show when this message is on a different day from the previous
+              const showDaySeparator = prev
+                ? isDifferentDay(prev.createdAt, m.createdAt)
+                : idx === 0 && !!m.createdAt;
+
+              // Message grouping: consecutive messages from same sender within 2 minutes
+              const isGrouped = prev ? shouldGroupMessages(prev, m) : false;
+              // Show timestamp on the last message of a group (next is different sender/gap or end)
+              const isLastInGroup = next ? !shouldGroupMessages(m, next) : true;
+
+              return (
+                <div key={m.id}>
+                  {showDaySeparator && m.createdAt && (
+                    <DateSeparator label={formatDaySeparator(m.createdAt)} />
+                  )}
+                  <ChatMessage
+                    msg={m}
+                    activePaperId={
+                      mode === 'single' ? activePaperId : undefined
+                    }
+                    conversationId={conversationId || session?.id}
+                    onFollowUpSelect={sendAsAssistant}
+                    followUps={followUpMap[m.id] || []}
+                    isCollaborative={isCollaborative}
+                    isGrouped={isGrouped}
+                    showTimestamp={isLastInGroup}
+                  />
+                </div>
+              );
+            })}
             {isLoading && <ChatMessageLoading label={currentStepLabel} />}
             <div ref={bottomRef} />
+
+            {/* New messages floating button */}
+            <NewMessageButton
+              count={newMsgCount}
+              onClick={scrollToBottom}
+            />
           </div>
 
           <div
@@ -398,13 +543,16 @@ export default function ChatDock({
 
           {/* Footer Area */}
           <div className='bg-white relative z-100 flex flex-col'>
+            {/* Typing indicator for collaborative sessions */}
+            {isCollaborative && <TypingIndicator />}
+
             {/* Quick Actions - only show in single mode with showQuickActions */}
             {showQuickActions && mode === 'single' && (
               <ChatQuickActions
                 onSelect={(text) => {
                   // When question is selected from suggestions, also close the panel
                   setIsSuggestionsOpen(false);
-                  onSend(text);
+                  sendAsAssistant(text);
                 }}
                 conversationId={conversationId || session?.id}
                 disabled={isLoading}
@@ -420,8 +568,13 @@ export default function ChatDock({
                 setIsSuggestionsOpen(false);
                 onSend(text, opts);
                 setInputText('');
+                onTypingStop?.();
               }}
-              onTextChange={setInputText}
+              onTextChange={(val) => {
+                setInputText(val);
+                if (val.trim()) onTypingStart?.();
+                else onTypingStop?.();
+              }}
               onExplainMath={onExplainMath}
               disabled={
                 isLoading || (mode === 'multi' && selectedPapers.length === 0)
@@ -429,9 +582,12 @@ export default function ChatDock({
               placeholder={
                 mode === 'multi' && selectedPapers.length === 0
                   ? 'Select papers to start chatting...'
-                  : undefined
+                  : isCollaborative
+                    ? 'Type a message... (use @Assistant to ask AI)'
+                    : undefined
               }
               showSigmaButton={mode === 'single'}
+              mentionMembers={mentionMembers}
             />
           </div>
         </div>

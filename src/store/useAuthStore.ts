@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, AuthTokens } from '../utils/types';
 import { useGuestStore } from './useGuestStore';
+import { disconnectSocket } from '../services/socket';
 
 // =====================================================
 // In-memory access token storage (NOT persisted)
@@ -48,6 +49,8 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
+        // Disconnect WebSocket before clearing auth
+        disconnectSocket();
         // Clear in-memory access token
         inMemoryAccessToken = null;
         // Clear persisted state

@@ -7,6 +7,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import GoogleCallbackPage from './pages/GoogleCallbackPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import JoinSessionPage from './pages/JoinSessionPage';
 
 export default function App() {
   return (
@@ -27,6 +28,12 @@ export default function App() {
         element={<ResetPasswordPage />}
       />
 
+      {/* Session invite join page - no layout needed */}
+      <Route
+        path='/session/join/:token'
+        element={<JoinSessionPage />}
+      />
+
       {/* Routes with layout */}
       <Route element={<AppChrome />}>
         {/* Public route - HomeUpload (login modal will show if needed) */}
@@ -38,16 +45,6 @@ export default function App() {
         {/* Protected route - My Library (requires authentication) */}
         <Route
           path='/library'
-          element={
-            <ProtectedRoute>
-              <MyLibraryPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Protected route - Folder View (folder-specific library view) */}
-        <Route
-          path='/library/folder/:folderId'
           element={
             <ProtectedRoute>
               <MyLibraryPage />

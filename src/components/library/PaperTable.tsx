@@ -2,10 +2,10 @@ import {
   FileText,
   MoreHorizontal,
   Trash2,
-  FolderInput,
   Upload,
   Loader2,
   ChevronDown,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,7 +22,6 @@ interface PaperTableProps {
   totalPapers: number;
   isLoading: boolean;
   onPaperClick: (paper: Paper) => void;
-  onMovePaper: (paper: Paper, e: React.MouseEvent) => void;
   onDeletePaper: (paper: Paper, e: React.MouseEvent) => void;
   onUploadClick: () => void;
   // Multi-selection props
@@ -35,6 +34,8 @@ interface PaperTableProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   isLoadingMore?: boolean;
+  // Group papers indicator
+  groupPaperIds?: Set<string>;
 }
 
 export function PaperTable({
@@ -42,7 +43,6 @@ export function PaperTable({
   totalPapers,
   isLoading,
   onPaperClick,
-  onMovePaper,
   onDeletePaper,
   onUploadClick,
   selectable = false,
@@ -53,6 +53,7 @@ export function PaperTable({
   onLoadMore,
   hasMore = false,
   isLoadingMore = false,
+  groupPaperIds,
 }: PaperTableProps) {
   const allSelected =
     papers.length > 0 && papers.every((p) => selectedPaperIds.includes(p.id));
@@ -150,9 +151,17 @@ export function PaperTable({
                   <FileText className='h-5 w-5 text-red-600' />
                 </div>
                 <div className='min-w-0 flex-1'>
-                  <p className='text-sm font-medium text-gray-900 truncate'>
-                    {paper.fileName}
-                  </p>
+                  <div className='flex items-center gap-2'>
+                    <p className='text-sm font-medium text-gray-900 truncate'>
+                      {paper.fileName}
+                    </p>
+                    {groupPaperIds?.has(paper.id) && (
+                      <span className='inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-semibold whitespace-nowrap'>
+                        <Users size={10} />
+                        Group
+                      </span>
+                    )}
+                  </div>
                   <p className='text-xs text-gray-500 mt-1'>
                     {new Date(paper.createdAt).toLocaleDateString('en-US', {
                       day: 'numeric',
@@ -183,12 +192,6 @@ export function PaperTable({
                     align='end'
                     className='w-36'
                   >
-                    <DropdownMenuItem
-                      onClick={(e: React.MouseEvent) => onMovePaper(paper, e)}
-                    >
-                      <FolderInput className='mr-2 h-4 w-4' />
-                      Move
-                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={(e: React.MouseEvent) => onDeletePaper(paper, e)}
                       className='text-red-600'

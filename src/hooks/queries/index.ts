@@ -35,17 +35,6 @@ export {
   useClearChatHistory,
 } from './useChatQueries';
 
-// Folder queries and keys
-export {
-  folderKeys,
-  useFolders,
-  useFolder,
-  useCreateFolder,
-  useUpdateFolder,
-  useDeleteFolder,
-  useMovePaper,
-} from './useFolderQueries';
-
 // Highlight queries and keys
 export {
   highlightKeys,
@@ -72,3 +61,17 @@ export {
   useForgotPassword,
   useResetPassword,
 } from './useAuthMutations';
+
+// Session queries and keys
+export {
+  sessionKeys,
+  useSessions,
+  useSessionDetail,
+  useCreateSession,
+  useJoinSession,
+  useLeaveSession,
+  useEndSession,
+  useRemoveMember,
+  useCreateInvite,
+  useRevokeInvite,
+} from './useSessionQueries';

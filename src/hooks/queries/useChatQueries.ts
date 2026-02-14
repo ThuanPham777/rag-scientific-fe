@@ -196,7 +196,8 @@ export function useExplainRegion() {
 }
 
 /**
- * Hook to clear chat history
+ * Hook to clear chat history for a single conversation.
+ * Only used for SINGLE_PAPER / MULTI_PAPER conversations (not GROUP).
  */
 export function useClearChatHistory() {
   const queryClient = useQueryClient();
@@ -204,10 +205,14 @@ export function useClearChatHistory() {
   return useMutation({
     mutationFn: (conversationId: string) => clearChatHistory(conversationId),
     onSuccess: (_, conversationId) => {
+      // Clear both flat and infinite query caches for this conversation
       queryClient.setQueryData<ChatMessage[]>(
         chatKeys.messageList(conversationId),
         () => [],
       );
+      queryClient.removeQueries({
+        queryKey: chatKeys.infiniteMessages(conversationId),
+      });
       toast.success('Chat history cleared');
     },
     onError: (error: any) => {

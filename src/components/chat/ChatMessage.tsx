@@ -27,6 +27,12 @@ interface ChatMessageProps {
   onFollowUpSelect?: (question: string) => void;
   /** Follow-up questions to display (passed from parent, not fetched internally) */
   followUps?: string[];
+  /** Whether this message is in a collaborative session (shows sender name) */
+  isCollaborative?: boolean;
+  /** Whether this message is grouped with the previous one (same sender, close time) */
+  isGrouped?: boolean;
+  /** Whether to show the timestamp (last in group / standalone) */
+  showTimestamp?: boolean;
 }
 
 export default function ChatMessage({
@@ -34,9 +40,17 @@ export default function ChatMessage({
   activePaperId,
   onFollowUpSelect,
   followUps = [],
+  isCollaborative = false,
+  isGrouped = false,
+  showTimestamp = false,
 }: ChatMessageProps) {
   const isUser = msg.role === 'user';
   const navigate = useNavigate();
+  const currentUserId = useAuthStore((s) => s.user?.id);
+
+  // In collaborative mode, determine if this message is from the current user
+  // If msg.userId is not set (e.g. optimistic/local messages), assume it's ours
+  const isOwnMessage = isUser && (!msg.userId || msg.userId === currentUserId);
 
   // State for sources section and modal
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -181,7 +195,15 @@ export default function ChatMessage({
   const isLoading = !isUser && (!msg.content || msg.content.trim() === '');
 
   return (
-    <MessageBubble isUser={isUser}>
+    <MessageBubble
+      isUser={isUser}
+      isGrouped={isGrouped}
+      displayName={msg.displayName}
+      timestamp={msg.createdAt}
+      showTimestamp={showTimestamp}
+      isCollaborative={isCollaborative}
+      isOwnMessage={isOwnMessage}
+    >
       {isLoading ? (
         <ChatMessageLoading />
       ) : (
@@ -200,7 +222,16 @@ export default function ChatMessage({
           {/* Message content */}
           {isUser ? (
             <div className='text-sm leading-relaxed whitespace-pre-wrap break-words'>
-              {msg.content}
+              {isCollaborative && msg.content.match(/^@Assistant\b/i) ? (
+                <>
+                  <span className='font-semibold text-yellow-200'>
+                    @Assistant
+                  </span>
+                  {msg.content.replace(/^@Assistant\s*/i, ' ')}
+                </>
+              ) : (
+                msg.content
+              )}
             </div>
           ) : (
             <MarkdownContent

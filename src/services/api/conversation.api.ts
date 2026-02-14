@@ -11,7 +11,7 @@ import type {
 
 // Extended conversation type with multi-paper support
 export interface ConversationWithPapers extends Conversation {
-  type?: 'SINGLE_PAPER' | 'MULTI_PAPER';
+  type?: 'SINGLE_PAPER' | 'MULTI_PAPER' | 'GROUP';
   papers?: Array<{
     id: string;
     ragFileId: string;
