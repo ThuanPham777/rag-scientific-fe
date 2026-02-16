@@ -8,6 +8,7 @@ import {
   Edit2,
   Trash2,
   Loader2,
+  BookOpen,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -60,6 +61,20 @@ export function FolderSidebar({
         >
           <File className='h-4 w-4' />
           <span>All files</span>
+        </button>
+
+        {/* Notebooks quick entry */}
+        <button
+          onClick={() => onSelectView('notebooks')}
+          className={cn(
+            'w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm mt-2 transition-colors',
+            selectedView === 'notebooks'
+              ? 'bg-orange-100 text-orange-700'
+              : 'text-gray-700 hover:bg-gray-100',
+          )}
+        >
+          <BookOpen className='h-4 w-4' />
+          <span>Notebooks</span>
         </button>
 
         <div className='mt-4'>

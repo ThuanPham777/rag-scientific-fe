@@ -28,6 +28,7 @@ import {
   DeletePaperDialog,
   MovePaperDialog,
 } from '../components/library';
+import NotebookListTable from '@/components/notebook/NotebookListTable';
 import ChatDock from '../components/chat/ChatDock';
 
 export default function MyLibraryPage() {
@@ -240,7 +241,11 @@ export default function MyLibraryPage() {
     selectedView === 'all' ? allPapers : selectedFolder?.papers || [];
 
   const currentViewName =
-    selectedView === 'all' ? 'All files' : selectedFolder?.name || 'Loading...';
+    selectedView === 'all'
+      ? 'All files'
+      : selectedView === 'notebooks'
+      ? 'Notebooks'
+      : selectedFolder?.name || 'Loading...';
 
   // Multi-select handlers
   const selectedPaperIds = selectedPapers.map((p) => p.id);
@@ -309,25 +314,29 @@ export default function MyLibraryPage() {
         </header>
 
         <div className='flex-1 overflow-auto'>
-          <PaperTable
-            papers={displayPapers}
-            totalPapers={allPapers.length}
-            isLoading={isLoadingAllPapers || isLoadingFolderPapers}
-            onPaperClick={paperActions.handlePaperClick}
-            onMovePaper={paperActions.openMovePaperDialog}
-            onDeletePaper={paperActions.openDeletePaperDialog}
-            onUploadClick={upload.handleUploadClick}
-            selectable
-            selectedPaperIds={selectedPaperIds}
-            onToggleSelect={togglePaper}
-            onSelectAll={handleSelectAll}
-            onDeselectAll={handleDeselectAll}
-            onLoadMore={
-              selectedView === 'all' ? () => fetchNextPage() : undefined
-            }
-            hasMore={selectedView === 'all' ? (hasNextPage ?? false) : false}
-            isLoadingMore={selectedView === 'all' ? isFetchingNextPage : false}
-          />
+          {selectedView === 'notebooks' ? (
+            <NotebookListTable />
+          ) : (
+            <PaperTable
+              papers={displayPapers}
+              totalPapers={allPapers.length}
+              isLoading={isLoadingAllPapers || isLoadingFolderPapers}
+              onPaperClick={paperActions.handlePaperClick}
+              onMovePaper={paperActions.openMovePaperDialog}
+              onDeletePaper={paperActions.openDeletePaperDialog}
+              onUploadClick={upload.handleUploadClick}
+              selectable
+              selectedPaperIds={selectedPaperIds}
+              onToggleSelect={togglePaper}
+              onSelectAll={handleSelectAll}
+              onDeselectAll={handleDeselectAll}
+              onLoadMore={
+                selectedView === 'all' ? () => fetchNextPage() : undefined
+              }
+              hasMore={selectedView === 'all' ? (hasNextPage ?? false) : false}
+              isLoadingMore={selectedView === 'all' ? isFetchingNextPage : false}
+            />
+          )}
         </div>
       </main>
 

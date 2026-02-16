@@ -151,7 +151,7 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
 
   return (
     <div className='flex-1 flex flex-col border-l'>
-      <div className='px-6 py-4 border-b bg-white'>
+      <div className='px-4 py-4 border-b bg-white'>
         {/* Title Row */}
         <div className='mb-4'>
           <input
@@ -319,7 +319,7 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
         </div>
       </div>
 
-      <div className='p-6 overflow-auto'>
+      <div className='p-4 overflow-auto'>
         <style>{`
           .tiptap table {
             border-collapse: collapse;
@@ -339,7 +339,7 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
             background-color: #f9f9f9;
           }
         `}</style>
-        <div className='prose max-w-none'>
+        <div className='prose max-w-none mx-0'>
           <EditorContent editor={editor} />
         </div>
       </div>

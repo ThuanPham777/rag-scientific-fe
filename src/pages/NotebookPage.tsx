@@ -56,7 +56,7 @@ export default function NotebookPage() {
 
   return (
     <div className='flex h-full'>
-      <div className='w-80 border-r bg-gray-50 p-4 overflow-auto'>
+      <div className='w-80 border-r bg-gray-50 overflow-auto'>
         <div className='flex items-center justify-between mb-4'>
           <h3 className='font-semibold'>My Notebooks</h3>
           <button
