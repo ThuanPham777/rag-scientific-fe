@@ -15,6 +15,11 @@ import { useSessionStore } from '../store/useSessionStore';
 import { sessionKeys } from './queries/useSessionQueries';
 import { highlightKeys } from './queries/useHighlightQueries';
 import { chatKeys } from './queries/useChatQueries';
+import {
+  updateMessageReactionsInCache,
+  markMessageDeletedInCache,
+} from './queries/useChatQueries';
+import type { ReactionAggregate } from '../utils/types';
 
 /**
  * Connect to a collaborative session's WebSocket room.
@@ -155,6 +160,26 @@ export function useSessionSocket(
       }
     };
 
+    const onReactionUpdate = (data: {
+      messageId: string;
+      reactions: ReactionAggregate[];
+    }) => {
+      if (conversationId) {
+        updateMessageReactionsInCache(
+          queryClient,
+          conversationId,
+          data.messageId,
+          data.reactions,
+        );
+      }
+    };
+
+    const onMessageDeleted = (data: { messageId: string }) => {
+      if (conversationId) {
+        markMessageDeletedInCache(queryClient, conversationId, data.messageId);
+      }
+    };
+
     const onMemberRemoved = (data: { userId: string }) => {
       removeOnlineMember(data.userId);
       queryClient.invalidateQueries({
@@ -179,6 +204,8 @@ export function useSessionSocket(
     socket.on('session:comment-added', onCommentAdded);
     socket.on('session:comment-updated', onCommentUpdated);
     socket.on('session:comment-deleted', onCommentDeleted);
+    socket.on('session:reaction-update', onReactionUpdate);
+    socket.on('session:message-deleted', onMessageDeleted);
     socket.on('session:member-removed', onMemberRemoved);
     socket.on('session:ended', onSessionEnded);
 
@@ -194,6 +221,8 @@ export function useSessionSocket(
       socket.off('session:comment-added', onCommentAdded);
       socket.off('session:comment-updated', onCommentUpdated);
       socket.off('session:comment-deleted', onCommentDeleted);
+      socket.off('session:reaction-update', onReactionUpdate);
+      socket.off('session:message-deleted', onMessageDeleted);
       socket.off('session:member-removed', onMemberRemoved);
       socket.off('session:ended', onSessionEnded);
 

@@ -1,12 +1,14 @@
 // src/pages/ChatPage.tsx
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSessionStore } from '../store/useSessionStore';
 
 import {
+  chatKeys,
   useClearChatHistory,
   useGenerateFollowUpQuestions,
   useInfiniteMessageHistory,
@@ -17,6 +19,9 @@ import {
   useEndSession,
   useConversation,
   usePaper,
+  useToggleReaction,
+  useReplyToMessage,
+  useDeleteMessage,
 } from '../hooks';
 import { useSessionSocket } from '../hooks/useSessionSocket';
 import {
@@ -33,6 +38,7 @@ import { InviteModal, ConfirmStartSessionModal } from '../components/session';
 import type { ChatMessage } from '../utils/types';
 
 export default function ChatPage() {
+  const queryClient = useQueryClient();
   const { conversationId: urlConversationId } = useParams<{
     conversationId?: string;
   }>();
@@ -134,10 +140,12 @@ export default function ChatPage() {
   const [isChatDockOpen, setIsChatDockOpen] = useState(true);
   // State for PDF fullscreen mode
   const [isPdfFullscreen, setIsPdfFullscreen] = useState(false);
-  const CHAT_DOCK_WIDTH = 500;
+  const CHAT_DOCK_WIDTH = 550;
 
   // Capture function - will be set by PdfPanel
   const captureToggleRef = useRef<(() => void) | null>(null);
+  // Ref to force ChatDock scroll to bottom (for explain region, etc.)
+  const chatScrollRef = useRef<(() => void) | null>(null);
 
   // =============================================
   // Collaborative Session Integration
@@ -352,6 +360,120 @@ export default function ChatPage() {
     });
   }, [convIdForSession, endSessionMutation, setCollaborative]);
 
+  // =============================================
+  // Reaction, Reply, Delete hooks
+  // =============================================
+  const toggleReactionMutation = useToggleReaction();
+  const replyToMessageMutation = useReplyToMessage();
+  const deleteMessageMutation = useDeleteMessage();
+
+  const handleReact = useCallback(
+    (messageId: string, emoji: string) => {
+      const convId = convIdForSession || currentConversationId;
+      if (!convId || !currentUser?.id) return;
+
+      // Optimistically update sentMessages so reactions show instantly on
+      // just-sent messages that aren't yet in the React Query cache.
+      setSentMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== messageId) return msg;
+          const reactions = [...(msg.reactions || [])];
+          const existingIdx = reactions.findIndex((r) => r.hasReacted);
+
+          if (existingIdx >= 0 && reactions[existingIdx].emoji === emoji) {
+            // Toggle off
+            if (reactions[existingIdx].count <= 1) {
+              reactions.splice(existingIdx, 1);
+            } else {
+              reactions[existingIdx] = {
+                ...reactions[existingIdx],
+                count: reactions[existingIdx].count - 1,
+                hasReacted: false,
+              };
+            }
+          } else {
+            // Remove old reaction if exists
+            if (existingIdx >= 0) {
+              if (reactions[existingIdx].count <= 1) {
+                reactions.splice(existingIdx, 1);
+              } else {
+                reactions[existingIdx] = {
+                  ...reactions[existingIdx],
+                  count: reactions[existingIdx].count - 1,
+                  hasReacted: false,
+                };
+              }
+            }
+            // Add new reaction
+            const newTargetIdx = reactions.findIndex((r) => r.emoji === emoji);
+            if (newTargetIdx >= 0) {
+              reactions[newTargetIdx] = {
+                ...reactions[newTargetIdx],
+                count: reactions[newTargetIdx].count + 1,
+                hasReacted: true,
+              };
+            } else {
+              reactions.push({ emoji, count: 1, hasReacted: true });
+            }
+          }
+          return { ...msg, reactions };
+        }),
+      );
+
+      toggleReactionMutation.mutate({
+        messageId,
+        emoji,
+        conversationId: convId,
+        currentUserId: currentUser.id,
+      });
+    },
+    [
+      convIdForSession,
+      currentConversationId,
+      currentUser?.id,
+      toggleReactionMutation,
+    ],
+  );
+
+  // handleReplyMessage is defined after sentMessages state (below)
+
+  const handleDeleteMessage = useCallback(
+    (messageId: string) => {
+      const convId = convIdForSession || currentConversationId;
+      if (!convId) return;
+      // Also remove from local sentMessages (for optimistic messages)
+      setSentMessages((prev) => prev.filter((m) => m.id !== messageId));
+      deleteMessageMutation.mutate({ conversationId: convId, messageId });
+    },
+    [convIdForSession, currentConversationId, deleteMessageMutation],
+  );
+
+  const canDeleteMessage = useCallback(
+    (msg: ChatMessage) => {
+      if (!currentUser?.id) return false;
+      // User can always delete their own messages
+      if (msg.userId === currentUser.id) return true;
+      // Session owner can delete assistant messages
+      if (isCollaborative && sessionDetail) {
+        const myMembership = sessionDetail.members.find(
+          (m) => m.userId === currentUser.id,
+        );
+        if (myMembership?.role === 'OWNER' && msg.role === 'assistant')
+          return true;
+      }
+      // Non-collaborative: conversation owner can delete assistant messages
+      if (
+        !isCollaborative &&
+        conversationData?.userId === currentUser.id &&
+        msg.role === 'assistant'
+      ) {
+        return true;
+      }
+      return false;
+    },
+    [currentUser?.id, isCollaborative, sessionDetail, conversationData?.userId],
+  );
+
   const handleConfirmStartSession = useCallback(async () => {
     if (!activePaper?.id) return;
     try {
@@ -501,6 +623,21 @@ export default function ChatPage() {
     const uniqueSent = sentMessages.filter((m) => !serverIds.has(m.id));
     return [...serverMessages, ...uniqueSent];
   }, [isGuest, guestSession?.messages, serverMessages, sentMessages]);
+
+  // Reply handler — no optimistic insert.
+  // The mutation's onSuccess invalidates the React Query cache, and the
+  // socket "session:new-message" event also invalidates it,
+  // so the reply appears once the server confirms it.
+  const handleReplyMessage = useCallback(
+    (conversationId: string, replyToMessageId: string, content: string) => {
+      replyToMessageMutation.mutate({
+        conversationId,
+        replyToMessageId,
+        content,
+      });
+    },
+    [replyToMessageMutation],
+  );
 
   // Handle clear chat history - MUST be defined before early returns (Rules of Hooks)
   const handleClearChatHistory = useCallback(
@@ -667,6 +804,14 @@ export default function ChatPage() {
         }
       } finally {
         setLoading(false);
+        // Invalidate infinite cache so sentMessages get replaced by server
+        // versions. This ensures subsequent react/delete operations work on
+        // the React Query cache (where optimistic updates apply).
+        if (!isGuest && session?.id) {
+          queryClient.invalidateQueries({
+            queryKey: chatKeys.infiniteMessages(session.id),
+          });
+        }
       }
     },
     [
@@ -681,6 +826,7 @@ export default function ChatPage() {
       setGuestLoading,
       setChatLoading,
       fetchFollowUps,
+      queryClient,
     ],
   );
 
@@ -711,6 +857,9 @@ export default function ChatPage() {
       } else {
         setSentMessages((prev) => [...prev, userMsg]);
       }
+
+      // Scroll to bottom after adding user message
+      chatScrollRef.current?.();
 
       // 3. Set loading state (same as onSend)
       const setLoading = isGuest ? setGuestLoading : setChatLoading;
@@ -759,6 +908,12 @@ export default function ChatPage() {
       } finally {
         setLoading(false);
         completeProcessing?.();
+        // Invalidate cache so sentMessages get replaced by server versions
+        if (!isGuest && session?.id) {
+          queryClient.invalidateQueries({
+            queryKey: chatKeys.infiniteMessages(session.id),
+          });
+        }
       }
     },
     [
@@ -771,6 +926,7 @@ export default function ChatPage() {
       setGuestLoading,
       setChatLoading,
       fetchFollowUps,
+      queryClient,
     ],
   );
 
@@ -797,6 +953,9 @@ export default function ChatPage() {
       } else {
         setSentMessages((prev) => [...prev, userMsg]);
       }
+
+      // Scroll to bottom after adding user message
+      chatScrollRef.current?.();
 
       // Set loading state on appropriate store
       const setLoadingPdf = isGuest ? setGuestLoading : setChatLoading;
@@ -862,6 +1021,12 @@ export default function ChatPage() {
         }
       } finally {
         setLoadingPdf(false);
+        // Invalidate cache so sentMessages get replaced by server versions
+        if (!isGuest && session?.id) {
+          queryClient.invalidateQueries({
+            queryKey: chatKeys.infiniteMessages(session.id),
+          });
+        }
       }
     },
     [
@@ -876,6 +1041,7 @@ export default function ChatPage() {
       setGuestLoading,
       setChatLoading,
       fetchFollowUps,
+      queryClient,
     ],
   );
 
@@ -910,7 +1076,7 @@ export default function ChatPage() {
 
   return (
     <div className='pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2'>
-      <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_500px] gap-2'>
+      <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_550px] gap-2'>
         <PdfPanel
           activePaper={activePaper}
           onPdfAction={handlePdfAction}
@@ -955,6 +1121,11 @@ export default function ChatPage() {
             ? () => setShowConfirmStart(true)
             : undefined
         }
+        onReact={handleReact}
+        onReplyMessage={handleReplyMessage}
+        onDeleteMessage={handleDeleteMessage}
+        canDeleteMessage={canDeleteMessage}
+        scrollToBottomRef={chatScrollRef}
       />
 
       {/* Confirm Start Session Modal */}

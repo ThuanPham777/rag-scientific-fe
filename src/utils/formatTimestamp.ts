@@ -1,83 +1,64 @@
 // src/utils/formatTimestamp.ts
 // Smart timestamp formatting for chat messages
 
+type TimestampMode = 'hover' | 'daySeparator';
+
 /**
- * Returns a human-friendly relative timestamp string.
- *  - "Just now"        → within 1 minute
- *  - "2m ago"          → within 1 hour
- *  - "2:34 PM"         → today
- *  - "Yesterday 2:34 PM" → yesterday
- *  - "Mon 2:34 PM"     → within the last 7 days
- *  - "Jan 5, 2:34 PM"  → same year
- *  - "Jan 5, 2024"     → older
+ * Unified timestamp formatter.
+ *
+ * mode = 'hover'  (MessageBubble hover)
+ *   - Today:      "3:25 PM"
+ *   - Yesterday:  "Yesterday at 3:25 PM"
+ *   - Other:      "Feb 12, 2026 at 3:25 PM"
+ *
+ * mode = 'daySeparator'  (DateSeparator between messages)
+ *   - Today:      "Today"
+ *   - Yesterday:  "Yesterday"
+ *   - Other:      "February 12, 2026"
  */
-export function formatMessageTime(dateStr: string | undefined): string {
+export function formatTimestamp(
+  dateStr: string | undefined,
+  mode: TimestampMode,
+): string {
   if (!dateStr) return '';
 
   const date = new Date(dateStr);
   const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  const diffHour = Math.floor(diffMs / 3_600_000);
-
-  if (diffMin < 1) return 'Just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-
   const isToday = isSameDay(date, now);
   const isYesterday = isSameDay(date, addDays(now, -1));
 
+  if (mode === 'daySeparator') {
+    if (isToday) return 'Today';
+    if (isYesterday) return 'Yesterday';
+    return date.toLocaleDateString([], {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  // mode === 'hover'
   const timeStr = date.toLocaleTimeString([], {
     hour: 'numeric',
     minute: '2-digit',
   });
 
   if (isToday) return timeStr;
-  if (isYesterday) return `Yesterday ${timeStr}`;
+  if (isYesterday) return `Yesterday at ${timeStr}`;
 
-  if (diffHour < 7 * 24) {
-    const dayName = date.toLocaleDateString([], { weekday: 'short' });
-    return `${dayName} ${timeStr}`;
-  }
-
-  if (date.getFullYear() === now.getFullYear()) {
-    const monthDay = date.toLocaleDateString([], {
-      month: 'short',
-      day: 'numeric',
-    });
-    return `${monthDay}, ${timeStr}`;
-  }
-
-  return date.toLocaleDateString([], {
+  const datePartStr = date.toLocaleDateString([], {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
+  return `${datePartStr} at ${timeStr}`;
 }
 
-/**
- * Returns a date separator label for day boundaries in chat.
- *  - "Today"
- *  - "Yesterday"
- *  - "Monday, January 5" (within same year)
- *  - "Monday, January 5, 2024" (different year)
- */
-export function formatDaySeparator(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-
-  if (isSameDay(date, now)) return 'Today';
-  if (isSameDay(date, addDays(now, -1))) return 'Yesterday';
-
-  const opts: Intl.DateTimeFormatOptions = {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  };
-  if (date.getFullYear() !== now.getFullYear()) {
-    opts.year = 'numeric';
-  }
-  return date.toLocaleDateString([], opts);
-}
+/* Convenience aliases so callers stay readable */
+export const formatHoverTimestamp = (d: string | undefined) =>
+  formatTimestamp(d, 'hover');
+export const formatDaySeparator = (d: string) =>
+  formatTimestamp(d, 'daySeparator');
 
 /**
  * Check whether two messages should be grouped (same sender, within 2 minutes).

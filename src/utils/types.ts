@@ -105,6 +105,21 @@ export type Citation = {
   sourceFileUrl?: string; // PDF URL for navigation
 };
 
+export type ReactionAggregate = {
+  emoji: string;
+  count: number;
+  hasReacted: boolean;
+  reactedBy?: Array<{ userId: string; displayName: string }>;
+};
+
+export type ReplyToMessage = {
+  id: string;
+  content: string;
+  role: string;
+  displayName?: string;
+  isDeleted?: boolean;
+};
+
 export type ChatMessage = {
   id: string;
   role: ChatRole;
@@ -118,6 +133,11 @@ export type ChatMessage = {
   userId?: string;
   displayName?: string;
   avatarUrl?: string;
+  // Reaction, reply, delete fields
+  reactions?: ReactionAggregate[];
+  replyTo?: ReplyToMessage;
+  replyToMessageId?: string;
+  isDeleted?: boolean;
 };
 
 export type Message = {
@@ -342,7 +362,23 @@ export type SessionMessageEvent = {
   content: string;
   userId?: string;
   displayName?: string;
+  avatarUrl?: string;
   imageUrl?: string;
   context?: any;
+  replyToMessageId?: string;
+  replyTo?: ReplyToMessage;
   createdAt: string;
+};
+
+export type ReactionUpdateEvent = {
+  messageId: string;
+  reactions: ReactionAggregate[];
+  action: 'added' | 'removed' | 'updated';
+  userId: string;
+  emoji: string;
+};
+
+export type MessageDeletedEvent = {
+  messageId: string;
+  userId: string;
 };

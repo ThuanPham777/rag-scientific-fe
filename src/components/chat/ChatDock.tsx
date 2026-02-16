@@ -16,7 +16,7 @@ import type { MentionMember } from './ChatInput';
 import ChatQuickActions from './ChatQuickActions';
 import { SessionBar, StartSessionButton } from '../session';
 import { TypingIndicator } from '../session';
-import { DateSeparator, NewMessageButton } from './message';
+import { DateSeparator, NewMessageButton, ReplyInputPreview } from './message';
 import {
   shouldGroupMessages,
   isDifferentDay,
@@ -86,6 +86,19 @@ type Props = {
   onTypingStart?: () => void;
   onTypingStop?: () => void;
   onStartSession?: () => void;
+
+  // Reactions, Reply, Delete callbacks
+  onReact?: (messageId: string, emoji: string) => void;
+  onReplyMessage?: (
+    conversationId: string,
+    replyToMessageId: string,
+    content: string,
+  ) => void;
+  onDeleteMessage?: (messageId: string) => void;
+  /** Function to check if current user can delete a message */
+  canDeleteMessage?: (msg: ChatMessageType) => boolean;
+  /** Ref that parent can call to force scroll to bottom (e.g. after explain region) */
+  scrollToBottomRef?: React.MutableRefObject<(() => void) | null>;
 };
 
 const LOADING_STEPS = [
@@ -125,6 +138,11 @@ export default function ChatDock({
   onTypingStart,
   onTypingStop,
   onStartSession,
+  onReact,
+  onReplyMessage,
+  onDeleteMessage,
+  canDeleteMessage,
+  scrollToBottomRef,
 }: Props) {
   // Use messages prop if provided, otherwise fall back to session?.messages
   const messages = messagesProp ?? session?.messages ?? [];
@@ -134,6 +152,9 @@ export default function ChatDock({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [inputText, setInputText] = useState('');
+
+  // Reply state
+  const [replyingTo, setReplyingTo] = useState<ChatMessageType | null>(null);
 
   // ── Smart scroll: track whether user is near the bottom ──
   const [isNearBottom, setIsNearBottom] = useState(true);
@@ -167,9 +188,31 @@ export default function ChatDock({
       } else {
         onSend(text);
       }
+      // Always scroll to bottom after sending
+      forceScrollToBottom();
     },
     [isCollaborative, onSend],
   );
+
+  // ── Reply / Scroll-to-message handlers ──
+
+  const handleReply = useCallback((msg: ChatMessageType) => {
+    setReplyingTo(msg);
+  }, []);
+
+  const handleCancelReply = useCallback(() => {
+    setReplyingTo(null);
+  }, []);
+
+  const handleScrollToMessage = useCallback((messageId: string) => {
+    const el = document.getElementById(`msg-${messageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Flash highlight
+      el.classList.add('bg-orange-50');
+      setTimeout(() => el.classList.remove('bg-orange-50'), 1500);
+    }
+  }, []);
 
   // Track suggestions panel state to close it when sending message
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
@@ -329,7 +372,26 @@ export default function ChatDock({
     });
   }, []);
 
-  const WIDTH = position === 'fixed' ? `w-[500px]` : 'w-full';
+  // Force scroll to bottom (used after sending a message so it always scrolls)
+  const forceScrollToBottom = useCallback(() => {
+    setIsNearBottom(true);
+    setNewMsgCount(0);
+    // Use double-rAF to wait for the new message to render
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
+    });
+  }, []);
+
+  // Expose forceScrollToBottom to parent via ref
+  useEffect(() => {
+    if (scrollToBottomRef) {
+      scrollToBottomRef.current = forceScrollToBottom;
+    }
+  }, [scrollToBottomRef, forceScrollToBottom]);
+
+  const WIDTH = position === 'fixed' ? `w-[550px]` : 'w-full';
   const HEIGHT =
     position === 'fixed' ? (isPdfFullscreen ? 'h-full' : 'h-[81vh]') : 'h-full';
   const currentStepLabel =
@@ -459,7 +521,7 @@ export default function ChatDock({
           <div
             ref={messagesContainerRef}
             onScroll={handleScroll}
-            className='flex-1 overflow-y-auto px-4 py-4 min-h-0 bg-white relative'
+            className='flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 min-h-0 bg-white relative'
           >
             {/* Loading older messages indicator */}
             {isLoadingMore && (
@@ -498,12 +560,10 @@ export default function ChatDock({
               const next = idx < messages.length - 1 ? messages[idx + 1] : null;
 
               // Collaborative mode: full chat-app UX (grouping, timestamps, day separators)
-              // Non-collaborative: simple Q&A — no grouping, no timestamps, no separators
-              const showDaySeparator = isCollaborative
-                ? prev
-                  ? isDifferentDay(prev.createdAt, m.createdAt)
-                  : idx === 0 && !!m.createdAt
-                : false;
+              // Non-collaborative: day separators shown, but no grouping or timestamps
+              const showDaySeparator = prev
+                ? isDifferentDay(prev.createdAt, m.createdAt)
+                : idx === 0 && !!m.createdAt;
 
               const isGrouped = isCollaborative
                 ? prev
@@ -518,7 +578,11 @@ export default function ChatDock({
                 : false;
 
               return (
-                <div key={m.id}>
+                <div
+                  key={m.id}
+                  id={`msg-${m.id}`}
+                  className='transition-colors duration-500'
+                >
                   {showDaySeparator && m.createdAt && (
                     <DateSeparator label={formatDaySeparator(m.createdAt)} />
                   )}
@@ -533,6 +597,11 @@ export default function ChatDock({
                     isCollaborative={isCollaborative}
                     isGrouped={isGrouped}
                     showTimestamp={isLastInGroup}
+                    onReact={onReact}
+                    onReply={handleReply}
+                    onDelete={onDeleteMessage}
+                    canDelete={canDeleteMessage ? canDeleteMessage(m) : false}
+                    onScrollToMessage={handleScrollToMessage}
                   />
                 </div>
               );
@@ -575,13 +644,34 @@ export default function ChatDock({
               />
             )}
 
+            {/* Reply preview bar */}
+            {replyingTo && (
+              <ReplyInputPreview
+                message={replyingTo}
+                onCancel={handleCancelReply}
+              />
+            )}
+
             <ChatInput
               onSend={(text, opts) => {
                 // Close suggestions panel when sending message
                 setIsSuggestionsOpen(false);
-                onSend(text, opts);
+
+                if (replyingTo && onReplyMessage) {
+                  // Send as reply
+                  const convId = conversationId || session?.id;
+                  if (convId) {
+                    onReplyMessage(convId, replyingTo.id, text);
+                  }
+                  setReplyingTo(null);
+                } else {
+                  onSend(text, opts);
+                }
+
                 setInputText('');
                 onTypingStop?.();
+                // Always scroll to bottom after sending
+                forceScrollToBottom();
               }}
               onTextChange={(val) => {
                 setInputText(val);

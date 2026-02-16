@@ -33,6 +33,11 @@ export {
   useSendMultiPaperMessage,
   useExplainRegion,
   useClearChatHistory,
+  useToggleReaction,
+  useReplyToMessage,
+  useDeleteMessage,
+  updateMessageReactionsInCache,
+  markMessageDeletedInCache,
 } from './useChatQueries';
 
 // Highlight queries and keys

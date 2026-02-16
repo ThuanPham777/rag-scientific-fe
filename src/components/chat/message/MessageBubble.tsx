@@ -9,10 +9,11 @@
 // `isOwnMessage` is the ONLY signal for alignment in collaborative mode,
 // NOT `isUser` or `role`.
 
-import { memo } from 'react';
+import { memo, useState, useRef, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { UserAvatar, AssistantAvatar } from '../../common/UserAvatar';
-import { formatMessageTime } from '../../../utils/formatTimestamp';
+import { formatHoverTimestamp } from '../../../utils/formatTimestamp';
+import { HoverTimestamp } from './HoverTimestamp';
 
 interface MessageBubbleProps {
   /** true when msg.role === 'user' */
@@ -26,12 +27,16 @@ interface MessageBubbleProps {
   avatarUrl?: string;
   /** ISO timestamp */
   timestamp?: string;
-  /** Show the timestamp line */
+  /** Show the timestamp line (kept for API compat, but now timestamp shows on hover) */
   showTimestamp?: boolean;
   /** Collaborative session? (shows avatars + sender name) */
   isCollaborative?: boolean;
   /** This message belongs to the current user */
   isOwnMessage?: boolean;
+  /** Hover action toolbar rendered relative to the bubble */
+  hoverActions?: ReactNode;
+  /** Reaction badges rendered at the bottom corner of the bubble */
+  reactionBadges?: ReactNode;
 }
 
 function MessageBubbleBase({
@@ -41,31 +46,67 @@ function MessageBubbleBase({
   displayName,
   avatarUrl,
   timestamp,
-  showTimestamp = false,
   isCollaborative = false,
   isOwnMessage = false,
+  hoverActions,
+  reactionBadges,
 }: MessageBubbleProps) {
   const isAssistant = !isUser;
+  const [showTs, setShowTs] = useState(false);
+  const tsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bubbleContentRef = useRef<HTMLDivElement>(null);
+
+  // Show timestamp only when hovering the actual message bubble content
+  const handleBubbleEnter = useCallback(() => {
+    if (tsTimerRef.current) clearTimeout(tsTimerRef.current);
+    setShowTs(true);
+  }, []);
+
+  const handleBubbleLeave = useCallback(() => {
+    tsTimerRef.current = setTimeout(() => setShowTs(false), 150);
+  }, []);
+
+  const hoverTimeStr = formatHoverTimestamp(timestamp);
 
   // ── Non-collaborative: simple Q&A layout ───────────────────
-  // No avatars, no timestamps, no sender name, no chat-app styling.
-  // User questions right-aligned (orange), assistant answers left-aligned (white), full width.
   if (!isCollaborative) {
     return (
       <div
-        className={`flex w-full mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}
+        className={`relative flex w-full ${reactionBadges ? 'mb-6' : 'mb-4'} ${isUser ? 'justify-end' : 'justify-start'}`}
       >
         <div
-          className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} ${isUser ? 'max-w-[85%]' : 'max-w-full'}`}
+          className={`flex flex-col min-w-0 ${isUser ? 'items-end' : 'items-start'} ${isUser ? 'max-w-[60%]' : 'max-w-full'}`}
         >
-          <div
-            className={`relative px-4 py-2 ${
-              isUser
-                ? 'bg-orange-500 text-white rounded-2xl rounded-br-none shadow-sm border border-orange-500'
-                : 'bg-white text-gray-800 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border rounded-2xl rounded-bl-none'
-            }`}
-          >
-            {children}
+          <div className='group relative max-w-full'>
+            {/* Hover timestamp — portal, anchored to the bubble content */}
+            {showTs && hoverTimeStr && (
+              <HoverTimestamp
+                text={hoverTimeStr}
+                anchorEl={bubbleContentRef.current}
+                alignRight={isUser}
+              />
+            )}
+            {/* Hover actions */}
+            {hoverActions}
+            {reactionBadges && (
+              <div
+                className={`absolute -bottom-4 ${isUser ? 'right-1' : 'left-1'} z-10`}
+              >
+                {reactionBadges}
+              </div>
+            )}
+            <div
+              ref={bubbleContentRef}
+              onMouseEnter={handleBubbleEnter}
+              onMouseLeave={handleBubbleLeave}
+              className={`relative px-4 py-2 break-all overflow-hidden cursor-default ${
+                isUser
+                  ? 'bg-orange-500 text-white rounded-2xl rounded-br-none shadow-sm border border-orange-500'
+                  : 'bg-white text-gray-800 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border rounded-2xl rounded-bl-none'
+              }`}
+            >
+              {children}
+            </div>
           </div>
         </div>
       </div>
@@ -78,11 +119,11 @@ function MessageBubbleBase({
   // Show avatar on the left for "other" messages (first in a group only).
   const showLeftAvatar = !alignRight && !isGrouped;
 
-  const spacing = isGrouped ? 'mb-0.5' : 'mb-4';
+  const spacing = isGrouped ? 'mb-0.5' : reactionBadges ? 'mb-6' : 'mb-4';
 
   return (
     <div
-      className={`flex w-full ${spacing} ${alignRight ? 'justify-end' : 'justify-start'}`}
+      className={`relative flex w-full ${spacing} ${alignRight ? 'justify-end' : 'justify-start'}`}
     >
       {/* ── Left avatar column ───────────────────────────────── */}
       {!alignRight && (
@@ -102,7 +143,7 @@ function MessageBubbleBase({
 
       {/* ── Message column ───────────────────────────────────── */}
       <div
-        className={`flex flex-col ${alignRight ? 'items-end' : 'items-start'} max-w-[90%] md:max-w-[85%]`}
+        className={`flex flex-col min-w-0 ${alignRight ? 'items-end' : 'items-start'} ${isUser ? 'max-w-[60%]' : 'max-w-[90%] md:max-w-[85%]'}`}
       >
         {/* Sender name (first in group, NOT own message) */}
         {!isGrouped && !alignRight && displayName && (
@@ -112,26 +153,41 @@ function MessageBubbleBase({
         )}
 
         {/* Bubble */}
-        <div
-          className={`relative rounded-2xl px-4 py-2 shadow-sm border transition-all ${
-            alignRight
-              ? `bg-orange-500 text-white border-orange-500 ${
-                  isGrouped ? 'rounded-tr-lg' : 'rounded-br-none'
-                }`
-              : `bg-white text-gray-800 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] ${
-                  isGrouped ? 'rounded-tl-lg' : 'rounded-bl-none'
-                }`
-          }`}
-        >
-          {children}
+        <div className='group relative max-w-full'>
+          {/* Hover timestamp */}
+          {showTs && hoverTimeStr && (
+            <HoverTimestamp
+              text={hoverTimeStr}
+              anchorEl={bubbleContentRef.current}
+              alignRight={alignRight}
+            />
+          )}
+          {/* Hover actions */}
+          {hoverActions}
+          {reactionBadges && (
+            <div
+              className={`absolute -bottom-4 ${alignRight ? 'right-1' : 'left-1'} z-10`}
+            >
+              {reactionBadges}
+            </div>
+          )}
+          <div
+            ref={bubbleContentRef}
+            onMouseEnter={handleBubbleEnter}
+            onMouseLeave={handleBubbleLeave}
+            className={`relative rounded-2xl px-4 py-2 shadow-sm border transition-all break-all overflow-hidden cursor-default ${
+              alignRight
+                ? `bg-orange-500 text-white border-orange-500 ${
+                    isGrouped ? 'rounded-tr-lg' : 'rounded-br-none'
+                  }`
+                : `bg-white text-gray-800 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] ${
+                    isGrouped ? 'rounded-tl-lg' : 'rounded-bl-none'
+                  }`
+            }`}
+          >
+            {children}
+          </div>
         </div>
-
-        {/* Timestamp */}
-        {showTimestamp && timestamp && (
-          <span className='text-[10px] text-gray-400 mt-0.5 mx-1 select-none'>
-            {formatMessageTime(timestamp)}
-          </span>
-        )}
       </div>
     </div>
   );
