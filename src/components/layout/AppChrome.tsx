@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import TopNav from './TopNav';
 import LeftDock from './LeftDock';
+import NotebookPanel from '@/components/notebook/NotebookPanel';
 
 /**
  * Fixed navbar (h-16) + fixed left dock (w-16).
@@ -17,6 +18,7 @@ export default function AppChrome() {
           <Outlet />
         </div>
       </main>
+      <NotebookPanel />
     </div>
   );
 }

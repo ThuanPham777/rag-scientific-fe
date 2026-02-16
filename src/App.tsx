@@ -3,6 +3,7 @@ import AppChrome from './components/layout/AppChrome';
 import HomeUpload from './pages/HomeUpload';
 import ChatPage from './pages/ChatPage';
 import MyLibraryPage from './pages/MyLibraryPage';
+import NotebookPage from './pages/NotebookPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import GoogleCallbackPage from './pages/GoogleCallbackPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -41,6 +42,16 @@ export default function App() {
           element={
             <ProtectedRoute>
               <MyLibraryPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Protected route - Notebooks */}
+        <Route
+          path='/notebooks'
+          element={
+            <ProtectedRoute>
+              <NotebookPage />
             </ProtectedRoute>
           }
         />
