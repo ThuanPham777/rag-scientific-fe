@@ -343,11 +343,30 @@ export default function ChatPage() {
 
   const handleLeaveSession = useCallback(() => {
     if (!convIdForSession) return;
-    if (!window.confirm('Leave this collaborative session?')) return;
+
+    // Check if current user is the owner
+    const myMembership = sessionDetail?.members.find(
+      (m) => m.userId === currentUser?.id,
+    );
+    const isOwner = myMembership?.role === 'OWNER';
+
+    // Enhanced warning for owner
+    const confirmMessage = isOwner
+      ? 'You are the owner of this session. Leaving will hide this paper from your library until you are invited back. Continue?'
+      : 'Leave this collaborative session?';
+
+    if (!window.confirm(confirmMessage)) return;
+
     leaveSessionMutation.mutate(convIdForSession, {
       onSuccess: () => navigate('/', { replace: true }),
     });
-  }, [convIdForSession, leaveSessionMutation, navigate]);
+  }, [
+    convIdForSession,
+    leaveSessionMutation,
+    navigate,
+    sessionDetail,
+    currentUser,
+  ]);
 
   const handleEndSession = useCallback(() => {
     if (!convIdForSession) return;

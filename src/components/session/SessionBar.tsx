@@ -60,17 +60,15 @@ export default function SessionBar({
 
       <div className='flex-1' />
 
-      {/* Invite button (owner only) */}
-      {isOwner && (
-        <button
-          onClick={onInvite}
-          className='flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors'
-          title='Copy invite link'
-        >
-          <Link2 size={13} />
-          Invite
-        </button>
-      )}
+      {/* Invite button */}
+      <button
+        onClick={onInvite}
+        className='flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors'
+        title='Copy invite link'
+      >
+        <Link2 size={13} />
+        Invite
+      </button>
 
       {/* Leave / End Session */}
       <div className='relative'>
@@ -85,16 +83,29 @@ export default function SessionBar({
         {showMenu && (
           <div className='absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-40 py-1'>
             {isOwner ? (
-              <button
-                onClick={() => {
-                  setShowMenu(false);
-                  onEnd();
-                }}
-                className='w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2'
-              >
-                <X size={14} />
-                End Session
-              </button>
+              <>
+                {/* Owner can both leave or end the session */}
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    onLeave();
+                  }}
+                  className='w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2'
+                >
+                  <LogOut size={14} />
+                  Leave Session
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    onEnd();
+                  }}
+                  className='w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2'
+                >
+                  <X size={14} />
+                  End Session
+                </button>
+              </>
             ) : (
               <button
                 onClick={() => {

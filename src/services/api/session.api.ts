@@ -117,7 +117,37 @@ export async function createInvite(
 }
 
 /**
- * Revoke an invite link (owner only).
+ * Get the current active invite for a session.
+ */
+export async function getActiveInvite(
+  conversationId: string,
+): Promise<ApiResponse<SessionInvite | null>> {
+  const { data } = await api.get(`/sessions/${conversationId}/invites/active`);
+  return data;
+}
+
+/**
+ * Reset invite link — revoke old and create new.
+ */
+export async function resetInvite(
+  conversationId: string,
+): Promise<ApiResponse<SessionInvite>> {
+  const { data } = await api.post(`/sessions/${conversationId}/invites/reset`);
+  return data;
+}
+
+/**
+ * Delete all active invites for a session.
+ */
+export async function deleteInvite(
+  conversationId: string,
+): Promise<ApiResponse<null>> {
+  const { data } = await api.delete(`/sessions/${conversationId}/invites`);
+  return data;
+}
+
+/**
+ * Revoke an invite link.
  */
 export async function revokeInvite(
   inviteToken: string,

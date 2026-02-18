@@ -79,4 +79,7 @@ export {
   useRemoveMember,
   useCreateInvite,
   useRevokeInvite,
+  useActiveInvite,
+  useResetInvite,
+  useDeleteInvite,
 } from './useSessionQueries';

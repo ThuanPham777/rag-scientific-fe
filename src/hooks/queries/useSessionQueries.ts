@@ -12,6 +12,9 @@ import {
   removeMember,
   createInvite,
   revokeInvite,
+  getActiveInvite,
+  resetInvite,
+  deleteInvite,
   listSessions,
 } from '../../services';
 
@@ -25,6 +28,8 @@ export const sessionKeys = {
   details: () => [...sessionKeys.all, 'detail'] as const,
   detail: (conversationId: string) =>
     [...sessionKeys.details(), conversationId] as const,
+  activeInvite: (conversationId: string) =>
+    [...sessionKeys.all, 'activeInvite', conversationId] as const,
 };
 
 // ============================================================================
@@ -216,7 +221,7 @@ export function useCreateInvite() {
 }
 
 /**
- * Revoke an invite link (owner only).
+ * Revoke an invite link.
  */
 export function useRevokeInvite() {
   return useMutation({
@@ -226,6 +231,58 @@ export function useRevokeInvite() {
     },
     onError: (error: any) => {
       const msg = error.response?.data?.message || 'Failed to revoke invite';
+      toast.error(msg);
+    },
+  });
+}
+
+/**
+ * Get the current active invite for a conversation.
+ */
+export function useActiveInvite(conversationId: string | undefined) {
+  return useQuery({
+    queryKey: sessionKeys.activeInvite(conversationId!),
+    queryFn: () => getActiveInvite(conversationId!),
+    enabled: !!conversationId,
+    staleTime: 30_000, // 30 seconds
+  });
+}
+
+/**
+ * Reset invite link — revoke old and create new.
+ */
+export function useResetInvite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) => resetInvite(conversationId),
+    onSuccess: (_, conversationId) => {
+      queryClient.invalidateQueries({
+        queryKey: sessionKeys.activeInvite(conversationId),
+      });
+      toast.success('Invite link has been reset');
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to reset invite';
+      toast.error(msg);
+    },
+  });
+}
+
+/**
+ * Delete all active invites for a conversation.
+ */
+export function useDeleteInvite() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) => deleteInvite(conversationId),
+    onSuccess: (_, conversationId) => {
+      queryClient.invalidateQueries({
+        queryKey: sessionKeys.activeInvite(conversationId),
+      });
+      toast.success('Invite link deleted');
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to delete invite';
       toast.error(msg);
     },
   });
