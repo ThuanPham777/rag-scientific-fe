@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { LogOut, X, Trash2 } from 'lucide-react';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -35,6 +36,7 @@ import {
 import PdfPanel from '../components/pdf/PdfPanel';
 import ChatDock from '../components/chat/ChatDock';
 import { InviteModal, ConfirmStartSessionModal } from '../components/session';
+import { ConfirmModal } from '../components/common';
 import type { ChatMessage } from '../utils/types';
 
 export default function ChatPage() {
@@ -157,6 +159,11 @@ export default function ChatPage() {
 
   // Confirm modal state for starting a session
   const [showConfirmStart, setShowConfirmStart] = useState(false);
+
+  // Confirm modals for leave/end session and clear history
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Stable conversationId for session-related hooks
   const convIdForSession = isGuest
@@ -343,35 +350,25 @@ export default function ChatPage() {
 
   const handleLeaveSession = useCallback(() => {
     if (!convIdForSession) return;
+    setShowLeaveConfirm(true);
+  }, [convIdForSession]);
 
-    // Check if current user is the owner
-    const myMembership = sessionDetail?.members.find(
-      (m) => m.userId === currentUser?.id,
-    );
-    const isOwner = myMembership?.role === 'OWNER';
-
-    // Enhanced warning for owner
-    const confirmMessage = isOwner
-      ? 'You are the owner of this session. Leaving will hide this paper from your library until you are invited back. Continue?'
-      : 'Leave this collaborative session?';
-
-    if (!window.confirm(confirmMessage)) return;
-
+  const confirmLeaveSession = useCallback(() => {
+    if (!convIdForSession) return;
+    setShowLeaveConfirm(false);
     leaveSessionMutation.mutate(convIdForSession, {
       onSuccess: () => navigate('/', { replace: true }),
     });
-  }, [
-    convIdForSession,
-    leaveSessionMutation,
-    navigate,
-    sessionDetail,
-    currentUser,
-  ]);
+  }, [convIdForSession, leaveSessionMutation, navigate]);
 
   const handleEndSession = useCallback(() => {
     if (!convIdForSession) return;
-    if (!window.confirm('End this session? All members will be disconnected.'))
-      return;
+    setShowEndConfirm(true);
+  }, [convIdForSession]);
+
+  const confirmEndSession = useCallback(() => {
+    if (!convIdForSession) return;
+    setShowEndConfirm(false);
     endSessionMutation.mutate(convIdForSession, {
       onSuccess: () => {
         setCollaborative(false);
@@ -666,32 +663,37 @@ export default function ChatPage() {
   );
 
   // Handle clear chat history - MUST be defined before early returns (Rules of Hooks)
-  const handleClearChatHistory = useCallback(
-    async (conversationId: string) => {
-      if (!conversationId) return;
+  const handleClearChatHistory = useCallback((conversationId: string) => {
+    if (!conversationId) return;
+    setShowClearConfirm(true);
+  }, []);
 
-      // Confirm before clearing
-      if (!window.confirm('Are you sure you want to clear all chat history?')) {
-        return;
-      }
+  const confirmClearChatHistory = useCallback(async () => {
+    setShowClearConfirm(false);
+    const conversationId = convIdForSession || currentConversationId;
+    if (!conversationId) return;
 
-      if (isGuest) {
-        // For guest users, just clear messages from local store
-        setGuestMessages([]);
-      } else {
-        // For authenticated users, call API
-        try {
-          await clearChatHistoryMutation.mutateAsync(conversationId);
-          // Clear local sent messages
-          setSentMessages([]);
-        } catch (err) {
-          console.error('Failed to clear chat history:', err);
-          alert('Failed to clear chat history. Please try again.');
-        }
+    if (isGuest) {
+      // For guest users, just clear messages from local store
+      setGuestMessages([]);
+    } else {
+      // For authenticated users, call API
+      try {
+        await clearChatHistoryMutation.mutateAsync(conversationId);
+        // Clear local sent messages
+        setSentMessages([]);
+      } catch (err) {
+        console.error('Failed to clear chat history:', err);
+        alert('Failed to clear chat history. Please try again.');
       }
-    },
-    [isGuest, setGuestMessages, clearChatHistoryMutation],
-  );
+    }
+  }, [
+    isGuest,
+    setGuestMessages,
+    clearChatHistoryMutation,
+    convIdForSession,
+    currentConversationId,
+  ]);
 
   // Helper: fetch follow-up questions for an assistant message (fire-and-forget)
   const fetchFollowUps = useCallback(
@@ -1170,6 +1172,50 @@ export default function ChatPage() {
           onClose={() => setInviteModalOpen(false)}
         />
       )}
+
+      {/* Leave Session Confirm Modal */}
+      <ConfirmModal
+        isOpen={showLeaveConfirm}
+        title='Leave Session?'
+        message={
+          sessionDetail?.members.find((m) => m.userId === currentUser?.id)
+            ?.role === 'OWNER'
+            ? 'You are the owner of this session. Leaving will hide this paper from your library until you are invited back.'
+            : 'Are you sure you want to leave this collaborative session?'
+        }
+        confirmLabel='Leave'
+        cancelLabel='Cancel'
+        variant='warning'
+        icon={LogOut}
+        onConfirm={confirmLeaveSession}
+        onCancel={() => setShowLeaveConfirm(false)}
+      />
+
+      {/* End Session Confirm Modal */}
+      <ConfirmModal
+        isOpen={showEndConfirm}
+        title='End Session?'
+        message='This will end the session for all members. Everyone will be disconnected.'
+        confirmLabel='End Session'
+        cancelLabel='Cancel'
+        variant='danger'
+        icon={X}
+        onConfirm={confirmEndSession}
+        onCancel={() => setShowEndConfirm(false)}
+      />
+
+      {/* Clear Chat History Confirm Modal */}
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        title='Clear Chat History?'
+        message='This will permanently delete all messages in this conversation. This action cannot be undone.'
+        confirmLabel='Clear History'
+        cancelLabel='Cancel'
+        variant='danger'
+        icon={Trash2}
+        onConfirm={confirmClearChatHistory}
+        onCancel={() => setShowClearConfirm(false)}
+      />
     </div>
   );
 }

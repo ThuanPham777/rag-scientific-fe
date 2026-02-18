@@ -1,9 +1,10 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, Loader2 } from 'lucide-react';
+import { Upload, Loader2, Trash2 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useMultiPaperChatStore } from '../store/useMultiPaperChatStore';
 import { Button } from '../components/ui/button';
+import { ConfirmModal } from '../components/common';
 import {
   useUpload,
   usePaperActions,
@@ -41,6 +42,9 @@ export default function MyLibraryPage() {
   const { selectedPapers, togglePaper, deselectPaper, clearSelection } =
     useMultiPaperChatStore();
 
+  // Confirm modal state
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
   const {
     messages: multiChatMessages,
     isLoading: isMultiChatLoading,
@@ -53,23 +57,22 @@ export default function MyLibraryPage() {
   } = useMultiPaperChat();
 
   // Handle clear chat history for multi-paper mode
-  const handleClearMultiChatHistory = useCallback(
-    async (conversationId: string) => {
-      if (!conversationId) return;
+  const handleClearMultiChatHistory = useCallback((conversationId: string) => {
+    if (!conversationId) return;
+    setShowClearConfirm(true);
+  }, []);
 
-      if (!window.confirm('Are you sure you want to clear all chat history?')) {
-        return;
-      }
+  const confirmClearMultiChatHistory = useCallback(async () => {
+    setShowClearConfirm(false);
+    if (!multiChatConversationId) return;
 
-      try {
-        await clearChatHistoryMutation.mutateAsync(conversationId);
-        clearMultiChat();
-      } catch (err) {
-        console.error('Failed to clear multi-paper chat history:', err);
-      }
-    },
-    [clearChatHistoryMutation, clearMultiChat],
-  );
+    try {
+      await clearChatHistoryMutation.mutateAsync(multiChatConversationId);
+      clearMultiChat();
+    } catch (err) {
+      console.error('Failed to clear multi-paper chat history:', err);
+    }
+  }, [clearChatHistoryMutation, clearMultiChat, multiChatConversationId]);
 
   // Upload hook (simplified, no folder context)
   const upload = useUpload({});
@@ -211,6 +214,19 @@ export default function MyLibraryPage() {
           </div>
         </div>
       )}
+
+      {/* Clear Chat History Confirm Modal */}
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        title='Clear Chat History?'
+        message='This will permanently delete all messages in this multi-paper conversation. This action cannot be undone.'
+        confirmLabel='Clear History'
+        cancelLabel='Cancel'
+        variant='danger'
+        icon={Trash2}
+        onConfirm={confirmClearMultiChatHistory}
+        onCancel={() => setShowClearConfirm(false)}
+      />
     </div>
   );
 }
