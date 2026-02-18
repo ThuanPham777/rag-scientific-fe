@@ -7,6 +7,7 @@ import { Users, Link2, LogOut, X } from 'lucide-react';
 import { useSessionStore } from '../../store/useSessionStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { UserAvatar } from '../common/UserAvatar';
+import MembersModal from './MembersModal';
 import type { SessionDetail, OnlineMember } from '../../utils/types';
 
 interface SessionBarProps {
@@ -29,62 +30,89 @@ export default function SessionBar({
   );
 
   const [showMenu, setShowMenu] = useState(false);
+  const [showMembersModal, setShowMembersModal] = useState(false);
 
   if (!sessionDetail) return null;
 
   return (
-    <div className='flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border-b border-indigo-100 text-sm'>
-      {/* Session badge */}
-      <span className='flex items-center gap-1 text-indigo-700 font-medium'>
-        <Users size={14} />
-        <span>Session</span>
-        <span className='ml-1 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 text-xs font-semibold'>
-          {sessionDetail.members.length}/{sessionDetail.maxMembers}
-        </span>
-      </span>
-
-      {/* Online member avatars */}
-      <div className='flex -space-x-1.5 ml-1'>
-        {onlineMembers.slice(0, 5).map((m) => (
-          <MemberAvatar
-            key={m.userId}
-            member={m}
-          />
-        ))}
-        {onlineMembers.length > 5 && (
-          <span className='w-6 h-6 rounded-full bg-gray-200 text-gray-600 text-[10px] font-semibold flex items-center justify-center ring-2 ring-white'>
-            +{onlineMembers.length - 5}
-          </span>
-        )}
-      </div>
-
-      <div className='flex-1' />
-
-      {/* Invite button */}
-      <button
-        onClick={onInvite}
-        className='flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors'
-        title='Copy invite link'
-      >
-        <Link2 size={13} />
-        Invite
-      </button>
-
-      {/* Leave / End Session */}
-      <div className='relative'>
+    <>
+      <div className='flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border-b border-indigo-100 text-sm'>
+        {/* Member button */}
         <button
-          onClick={() => setShowMenu((v) => !v)}
-          className='p-1 rounded hover:bg-indigo-100 text-indigo-500 transition-colors'
-          title='Session options'
+          onClick={() => setShowMembersModal(true)}
+          className='flex items-center gap-1 text-indigo-700 font-medium hover:bg-indigo-100 px-2 py-1 rounded transition-colors'
         >
-          <LogOut size={14} />
+          <Users size={14} />
+          <span>Members</span>
+          <span className='ml-1 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 text-xs font-semibold'>
+            {sessionDetail.members.length}/{sessionDetail.maxMembers}
+          </span>
         </button>
 
-        {showMenu && (
-          <div className='absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-40 py-1'>
-            {isOwner ? (
-              <>
-                {/* Owner can both leave or end the session */}
+        {/* Online member avatars */}
+        <div className='flex -space-x-1.5 ml-1'>
+          {onlineMembers.slice(0, 5).map((m) => (
+            <MemberAvatar
+              key={m.userId}
+              member={m}
+            />
+          ))}
+          {onlineMembers.length > 5 && (
+            <span className='w-6 h-6 rounded-full bg-gray-200 text-gray-600 text-[10px] font-semibold flex items-center justify-center ring-2 ring-white'>
+              +{onlineMembers.length - 5}
+            </span>
+          )}
+        </div>
+
+        <div className='flex-1' />
+
+        {/* Invite button */}
+        <button
+          onClick={onInvite}
+          className='flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors'
+          title='Copy invite link'
+        >
+          <Link2 size={13} />
+          Invite
+        </button>
+
+        {/* Leave / End Session */}
+        <div className='relative'>
+          <button
+            onClick={() => setShowMenu((v) => !v)}
+            className='p-1 rounded hover:bg-indigo-100 text-indigo-500 transition-colors'
+            title='Session options'
+          >
+            <LogOut size={14} />
+          </button>
+
+          {showMenu && (
+            <div className='absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-40 py-1'>
+              {isOwner ? (
+                <>
+                  {/* Owner can both leave or end the session */}
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onLeave();
+                    }}
+                    className='w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2'
+                  >
+                    <LogOut size={14} />
+                    Leave Session
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onEnd();
+                    }}
+                    className='w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2'
+                  >
+                    <X size={14} />
+                    End Session
+                  </button>
+                </>
+              ) : (
                 <button
                   onClick={() => {
                     setShowMenu(false);
@@ -95,33 +123,21 @@ export default function SessionBar({
                   <LogOut size={14} />
                   Leave Session
                 </button>
-                <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    onEnd();
-                  }}
-                  className='w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2'
-                >
-                  <X size={14} />
-                  End Session
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => {
-                  setShowMenu(false);
-                  onLeave();
-                }}
-                className='w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2'
-              >
-                <LogOut size={14} />
-                Leave Session
-              </button>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Members Modal */}
+      <MembersModal
+        isOpen={showMembersModal}
+        onClose={() => setShowMembersModal(false)}
+        sessionDetail={sessionDetail}
+        onlineMembers={onlineMembers}
+        onInvite={onInvite}
+      />
+    </>
   );
 }
 

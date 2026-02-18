@@ -98,21 +98,36 @@ export function useSessionSocket(
       socket.id,
     );
 
-    // Join the session room
-    joinSessionRoom(conversationId)
-      .then(({ onlineMembers }) => {
-        console.log(
-          '[useSessionSocket] ✅ Joined room for',
-          conversationId,
-          '| onlineMembers:',
-          JSON.stringify(onlineMembers),
-        );
-        setOnlineMembers(onlineMembers.map((m) => ({ ...m, avatarUrl: null })));
-        joinedRef.current = conversationId;
-      })
-      .catch((err) => {
-        console.error('[useSessionSocket] ❌ Failed to join room:', err);
-      });
+    // Helper function to join the session room
+    const joinRoom = () => {
+      joinSessionRoom(conversationId)
+        .then(({ onlineMembers }) => {
+          console.log(
+            '[useSessionSocket] ✅ Joined room for',
+            conversationId,
+            '| onlineMembers:',
+            JSON.stringify(onlineMembers),
+          );
+          setOnlineMembers(onlineMembers);
+          joinedRef.current = conversationId;
+        })
+        .catch((err) => {
+          console.error('[useSessionSocket] ❌ Failed to join room:', err);
+        });
+    };
+
+    // Join the session room on mount
+    joinRoom();
+
+    // Handle socket reconnection - rejoin room automatically
+    const onReconnect = () => {
+      console.log(
+        '[useSessionSocket] 🔄 Socket reconnected, rejoining room:',
+        conversationId,
+      );
+      joinRoom();
+    };
+    socket.on('reconnect', onReconnect);
 
     // ---------------------------------------------------------------
     // Helper: clear all typing timers
@@ -545,6 +560,7 @@ export function useSessionSocket(
         joinedRef.current,
       );
 
+      socket.off('reconnect', onReconnect);
       socket.off('session:user-joined', onUserJoined);
       socket.off('session:user-left', onUserLeft);
       socket.off('session:typing', onTyping);

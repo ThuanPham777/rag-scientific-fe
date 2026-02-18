@@ -128,7 +128,11 @@ export function reconnectSocket() {
  */
 export function joinSessionRoom(conversationId: string): Promise<{
   conversationId: string;
-  onlineMembers: Array<{ userId: string; displayName: string }>;
+  onlineMembers: Array<{
+    userId: string;
+    displayName: string;
+    avatarUrl?: string | null;
+  }>;
 }> {
   const s = getSocket();
   console.log(
@@ -159,10 +163,13 @@ export function joinSessionRoom(conversationId: string): Promise<{
           console.error('[Socket] session:join ERROR:', response.error);
           reject(new Error(response.error));
         } else {
-          const data = response?.data || {
-            conversationId,
-            onlineMembers: [],
-          };
+          // Backend returns { conversationId, onlineMembers } directly
+          // OR wrapped in { data: { conversationId, onlineMembers } }
+          const data = response?.data ||
+            response || {
+              conversationId,
+              onlineMembers: [],
+            };
           console.log(
             '[Socket] ✅ Joined room. Online members:',
             data.onlineMembers,
