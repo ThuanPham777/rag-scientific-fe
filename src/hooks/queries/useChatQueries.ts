@@ -289,8 +289,10 @@ export function useToggleReaction() {
                     };
                   }
                 } else {
-                  // Remove old reaction if exists
+                  // Remove old reaction if exists, inherit its timestamp
+                  let inheritedTimestamp: string | undefined;
                   if (existingIdx >= 0) {
+                    inheritedTimestamp = reactions[existingIdx].firstReactedAt;
                     if (reactions[existingIdx].count <= 1) {
                       reactions.splice(existingIdx, 1);
                     } else {
@@ -312,7 +314,13 @@ export function useToggleReaction() {
                       hasReacted: true,
                     };
                   } else {
-                    reactions.push({ emoji, count: 1, hasReacted: true });
+                    reactions.push({
+                      emoji,
+                      count: 1,
+                      hasReacted: true,
+                      firstReactedAt:
+                        inheritedTimestamp || new Date().toISOString(),
+                    });
                   }
                 }
 
@@ -335,11 +343,17 @@ export function useToggleReaction() {
       toast.error('Failed to toggle reaction');
     },
     onSettled: (_data, _err, { conversationId }) => {
-      // Always refetch from server after toggle completes so that:
-      // 1) Messages still in local sentMessages get server-truth reactions
-      // 2) Non-collaborative sessions (no WebSocket) still sync
+      // Mark cache as stale so next time the query is accessed it refetches.
+      // We do NOT force an immediate refetch because:
+      //   - Collaborative sessions get authoritative reactions via WebSocket
+      //     (session:reaction-update → updateMessageReactionsInCache)
+      //   - Non-collaborative sessions will refetch on next window focus or
+      //     component mount.
+      // Using refetchType: 'none' avoids the race condition where a refetch
+      // overwrites the optimistic/socket-driven cache update.
       queryClient.invalidateQueries({
         queryKey: chatKeys.infiniteMessages(conversationId),
+        refetchType: 'none',
       });
     },
   });

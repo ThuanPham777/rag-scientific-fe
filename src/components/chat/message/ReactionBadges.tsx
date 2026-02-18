@@ -1,23 +1,13 @@
 // src/components/chat/message/ReactionBadges.tsx
 // Reaction summary pill.
 //
-// Shows top 3 most-popular emojis + total count.
-// Position: absolute at bottom corner of bubble (does not affect bubble height).
+// Shows emojis in chronological order (firstReactedAt) + total count.
+// Position: in-flow at bottom of bubble with negative margin (Facebook-style).
 // Hover to show tooltip with who reacted.
 
 import { memo, useState, useRef, useCallback } from 'react';
 import type { ReactionAggregate } from '../../../utils/types';
 import { ReactionTooltip } from './ReactionTooltip';
-import { QUICK_EMOJIS } from './EmojiReactionPicker';
-
-// System-defined emoji priority (tiebreaker when counts are equal)
-const EMOJI_PRIORITY: Record<string, number> = QUICK_EMOJIS.reduce(
-  (acc, emoji, index) => {
-    acc[emoji] = index;
-    return acc;
-  },
-  {} as Record<string, number>,
-);
 
 interface ReactionBadgesProps {
   reactions: ReactionAggregate[];
@@ -39,13 +29,15 @@ function ReactionBadgesBase({
 
   if (!reactions || reactions.length === 0) return null;
 
-  // Sort by count DESC, then by system priority ASC
+  // Sort strictly by firstReactedAt (chronological) — first emoji to appear stays first.
+  // When timestamps are equal or missing, preserve the array order from the server.
   const sorted = [...reactions].sort((a, b) => {
-    if (b.count !== a.count) return b.count - a.count;
-    return (EMOJI_PRIORITY[a.emoji] ?? 99) - (EMOJI_PRIORITY[b.emoji] ?? 99);
+    const tA = a.firstReactedAt ? new Date(a.firstReactedAt).getTime() : 0;
+    const tB = b.firstReactedAt ? new Date(b.firstReactedAt).getTime() : 0;
+    return tA - tB;
   });
 
-  // Top 3 emojis for display
+  // Top 3 emojis for display (chronological order)
   const top3 = sorted.slice(0, 3);
   const totalCount = sorted.reduce((sum, r) => sum + r.count, 0);
 

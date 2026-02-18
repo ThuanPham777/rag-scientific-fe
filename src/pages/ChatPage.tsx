@@ -392,8 +392,10 @@ export default function ChatPage() {
               };
             }
           } else {
-            // Remove old reaction if exists
+            // Remove old reaction if exists, inherit its timestamp
+            let inheritedTimestamp: string | undefined;
             if (existingIdx >= 0) {
+              inheritedTimestamp = reactions[existingIdx].firstReactedAt;
               if (reactions[existingIdx].count <= 1) {
                 reactions.splice(existingIdx, 1);
               } else {
@@ -413,7 +415,12 @@ export default function ChatPage() {
                 hasReacted: true,
               };
             } else {
-              reactions.push({ emoji, count: 1, hasReacted: true });
+              reactions.push({
+                emoji,
+                count: 1,
+                hasReacted: true,
+                firstReactedAt: inheritedTimestamp || new Date().toISOString(),
+              });
             }
           }
           return { ...msg, reactions };

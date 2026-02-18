@@ -34,6 +34,8 @@ interface ChatMessageProps {
   isCollaborative?: boolean;
   /** Whether this message is grouped with the previous one (same sender, close time) */
   isGrouped?: boolean;
+  /** Whether this is the last message in its group */
+  isLastInGroup?: boolean;
   /** Whether to show the timestamp (last in group / standalone) */
   showTimestamp?: boolean;
   /** Callback to toggle a reaction emoji */
@@ -233,6 +235,7 @@ export default function ChatMessage({
               isAssistant={!isUser}
               canDelete={canDelete}
               canReply={true}
+              reactions={msg.reactions}
               onReact={(emoji) => onReact?.(msg.id, emoji)}
               onReply={() => onReply?.(msg)}
               onDelete={() => onDelete?.(msg.id)}
@@ -263,10 +266,10 @@ export default function ChatMessage({
             )}
 
             {/* Image attachment */}
-            {msg.imageDataUrl && (
+            {(msg.imageDataUrl || msg.imageUrl) && (
               <div className='mb-4'>
                 <img
-                  src={msg.imageDataUrl}
+                  src={msg.imageDataUrl || msg.imageUrl}
                   alt='selected region'
                   className='rounded-lg border border-gray-200/50 shadow-sm max-h-60 object-contain bg-gray-50 mx-auto sm:mx-0'
                 />

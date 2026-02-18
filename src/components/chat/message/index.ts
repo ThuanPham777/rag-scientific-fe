@@ -14,3 +14,4 @@ export { ReactionTooltip } from './ReactionTooltip';
 export { ReplyPreview } from './ReplyPreview';
 export { ReplyInputPreview } from './ReplyInputPreview';
 export { MessageHoverActions } from './MessageHoverActions';
+export { SystemMessage } from './SystemMessage';

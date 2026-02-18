@@ -2,7 +2,8 @@
 // quick emoji reaction bar.
 // Appears above the message bubble on hover with fade + scale animation.
 
-import { memo, useRef, useEffect } from 'react';
+import { memo, useRef, useEffect, useMemo } from 'react';
+import type { ReactionAggregate } from '../../../utils/types';
 
 export const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'] as const;
 
@@ -11,13 +12,26 @@ interface EmojiReactionPickerProps {
   onClose: () => void;
   /** Align the picker to the right (for own messages) */
   alignRight?: boolean;
+  /** Reactions on this message — used to highlight emojis the current user has reacted with */
+  reactions?: ReactionAggregate[];
 }
 
 function EmojiReactionPickerBase({
   onSelect,
   onClose,
   alignRight = false,
+  reactions,
 }: EmojiReactionPickerProps) {
+  // Build a set of emojis the logged-in user has reacted with
+  const myReactedEmojis = useMemo(() => {
+    const set = new Set<string>();
+    if (reactions) {
+      for (const r of reactions) {
+        if (r.hasReacted) set.add(r.emoji);
+      }
+    }
+    return set;
+  }, [reactions]);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,25 +56,32 @@ function EmojiReactionPickerBase({
           'reactionBarIn 200ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
       }}
     >
-      {QUICK_EMOJIS.map((emoji, i) => (
-        <button
-          key={emoji}
-          type='button'
-          onClick={() => {
-            onSelect(emoji);
-            onClose();
-          }}
-          className='w-8 h-8 flex items-center justify-center rounded-full
-            hover:bg-gray-100 active:scale-90
-            transition-all duration-150 text-lg
-            hover:scale-[1.35] hover:-translate-y-1'
-          style={{
-            animation: `emojiPopIn 200ms cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 30}ms both`,
-          }}
-        >
-          {emoji}
-        </button>
-      ))}
+      {QUICK_EMOJIS.map((emoji, i) => {
+        const isActive = myReactedEmojis.has(emoji);
+        return (
+          <button
+            key={emoji}
+            type='button'
+            onClick={() => {
+              onSelect(emoji);
+              onClose();
+            }}
+            className={`w-8 h-8 flex items-center justify-center rounded-full
+              active:scale-90 transition-all duration-150 text-lg
+              hover:scale-[1.35] hover:-translate-y-1
+              ${
+                isActive
+                  ? 'bg-orange-100 ring-2 ring-orange-400 scale-110'
+                  : 'hover:bg-gray-100'
+              }`}
+            style={{
+              animation: `emojiPopIn 200ms cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 30}ms both`,
+            }}
+          >
+            {emoji}
+          </button>
+        );
+      })}
 
       {/* Inline keyframes */}
       <style>{`

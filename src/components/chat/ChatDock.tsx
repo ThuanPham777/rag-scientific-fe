@@ -16,11 +16,18 @@ import type { MentionMember } from './ChatInput';
 import ChatQuickActions from './ChatQuickActions';
 import { SessionBar, StartSessionButton } from '../session';
 import { TypingIndicator } from '../session';
-import { DateSeparator, NewMessageButton, ReplyInputPreview } from './message';
+import {
+  DateSeparator,
+  NewMessageButton,
+  ReplyInputPreview,
+  SystemMessage,
+} from './message';
 import {
   shouldGroupMessages,
   isDifferentDay,
   formatDaySeparator,
+  shouldShowTimeSeparator,
+  formatTimeSeparator,
 } from '../../utils/formatTimestamp';
 import type {
   ChatSession,
@@ -157,7 +164,7 @@ export default function ChatDock({
   const [replyingTo, setReplyingTo] = useState<ChatMessageType | null>(null);
 
   // ── Smart scroll: track whether user is near the bottom ──
-  const [isNearBottom, setIsNearBottom] = useState(true);
+  const isNearBottomRef = useRef(true);
   const [newMsgCount, setNewMsgCount] = useState(0);
   const NEAR_BOTTOM_THRESHOLD = 120; // px
 
@@ -236,7 +243,7 @@ export default function ChatDock({
       const distFromBottom =
         target.scrollHeight - target.scrollTop - target.clientHeight;
       const nearBottom = distFromBottom < NEAR_BOTTOM_THRESHOLD;
-      setIsNearBottom(nearBottom);
+      isNearBottomRef.current = nearBottom;
       if (nearBottom) setNewMsgCount(0);
 
       // Load older messages when scrolled near top
@@ -293,30 +300,56 @@ export default function ChatDock({
     };
   }, [isLoading]);
 
-  // Auto-open only when NEW messages arrive (not on every render)
-  const prevMsgCount = useRef(messages.length);
+  // Track the last message ID. When it changes → a new message was appended.
+  // Older messages from infinite scroll are prepended so they don't change the
+  // last ID. Simple and reliable.
+  const lastMsgIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    const newCount = messages.length - prevMsgCount.current;
-    const hasNewMessages = newCount > 0;
-    prevMsgCount.current = messages.length;
+    if (messages.length === 0) {
+      lastMsgIdRef.current = null;
+      return;
+    }
 
-    if (!hasNewMessages) return;
+    const lastMsg = messages[messages.length - 1];
+    const prevLastId = lastMsgIdRef.current;
+    lastMsgIdRef.current = lastMsg.id;
 
-    // Auto-open if user hasn't manually closed AND there are new messages
+    // First render or conversation switch — just seed, don't count.
+    if (!prevLastId) return;
+
+    // Same last message — nothing new at the tail (e.g. refetch, prepend older).
+    if (lastMsg.id === prevLastId) return;
+
+    // A genuinely new message appeared at the end.
+    // Auto-open if user hasn't manually closed.
     if (!open && !userClosed) {
       setOpen(true);
     }
 
-    // Track unread count when scrolled up
-    if (!isNearBottom && open) {
-      setNewMsgCount((c) => c + newCount);
+    // Bump unread counter only when the user has scrolled away from the bottom.
+    // Use ref to avoid stale closure — the effect only depends on [messages].
+    if (!isNearBottomRef.current && open) {
+      console.log(
+        '[ChatDock] New message while scrolled up — bumping newMsgCount. isNearBottom:',
+        isNearBottomRef.current,
+        '| lastMsg.id:',
+        lastMsg.id,
+      );
+      setNewMsgCount((c) => c + 1);
+    } else {
+      console.log(
+        '[ChatDock] New message but near bottom — not bumping. isNearBottom:',
+        isNearBottomRef.current,
+      );
     }
-  }, [messages.length]);
+  }, [messages]);
 
   // Reset new message count when conversation changes
   useEffect(() => {
     setNewMsgCount(0);
-    setIsNearBottom(true);
+    isNearBottomRef.current = true;
+    lastMsgIdRef.current = null;
   }, [conversationId, session?.id]);
 
   // Reset initial scroll tracking when conversation changes
@@ -343,8 +376,8 @@ export default function ChatDock({
     if (!open) return;
     // Skip auto-scroll when prepending older messages (scroll-up load)
     if (isLoadingMoreRef.current) return;
-    // Only auto-scroll if user is near the bottom already
-    if (!isNearBottom && messages.length > 1) return;
+    // Only auto-scroll if user is near the bottom already — use ref for fresh value
+    if (!isNearBottomRef.current && messages.length > 1) return;
     requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     });
@@ -366,7 +399,7 @@ export default function ChatDock({
   // Scroll-to-bottom helper for the "New messages" button
   const scrollToBottom = useCallback(() => {
     setNewMsgCount(0);
-    setIsNearBottom(true);
+    isNearBottomRef.current = true;
     requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     });
@@ -374,7 +407,7 @@ export default function ChatDock({
 
   // Force scroll to bottom (used after sending a message so it always scrolls)
   const forceScrollToBottom = useCallback(() => {
-    setIsNearBottom(true);
+    isNearBottomRef.current = true;
     setNewMsgCount(0);
     // Use double-rAF to wait for the new message to render
     requestAnimationFrame(() => {
@@ -559,23 +592,46 @@ export default function ChatDock({
               const prev = idx > 0 ? messages[idx - 1] : null;
               const next = idx < messages.length - 1 ? messages[idx + 1] : null;
 
-              // Collaborative mode: full chat-app UX (grouping, timestamps, day separators)
-              // Non-collaborative: day separators shown, but no grouping or timestamps
+              /* ── separators ─────────────────────────────────── */
               const showDaySeparator = prev
                 ? isDifferentDay(prev.createdAt, m.createdAt)
                 : idx === 0 && !!m.createdAt;
 
+              // Smart time separator: >15 min gap on the SAME day
+              const showTimeSeparator =
+                !showDaySeparator &&
+                prev &&
+                prev.createdAt &&
+                m.createdAt &&
+                shouldShowTimeSeparator(prev.createdAt, m.createdAt);
+
+              // Any visual break resets message grouping
+              const hasSeparator = showDaySeparator || showTimeSeparator;
+
+              /* ── grouping (collaborative only) ──────────────── */
               const isGrouped = isCollaborative
-                ? prev
+                ? !hasSeparator && prev
                   ? shouldGroupMessages(prev, m)
                   : false
                 : false;
 
               const isLastInGroup = isCollaborative
                 ? next
-                  ? !shouldGroupMessages(m, next)
+                  ? (() => {
+                      const nextIsDiffDay = isDifferentDay(
+                        m.createdAt,
+                        next.createdAt,
+                      );
+                      const nextHasTimeSep =
+                        !nextIsDiffDay &&
+                        m.createdAt &&
+                        next.createdAt &&
+                        shouldShowTimeSeparator(m.createdAt, next.createdAt);
+                      if (nextIsDiffDay || nextHasTimeSep) return true;
+                      return !shouldGroupMessages(m, next);
+                    })()
                   : true
-                : false;
+                : true;
 
               return (
                 <div
@@ -586,37 +642,50 @@ export default function ChatDock({
                   {showDaySeparator && m.createdAt && (
                     <DateSeparator label={formatDaySeparator(m.createdAt)} />
                   )}
-                  <ChatMessage
-                    msg={m}
-                    activePaperId={
-                      mode === 'single' ? activePaperId : undefined
-                    }
-                    conversationId={conversationId || session?.id}
-                    onFollowUpSelect={sendAsAssistant}
-                    followUps={followUpMap[m.id] || []}
-                    isCollaborative={isCollaborative}
-                    isGrouped={isGrouped}
-                    showTimestamp={isLastInGroup}
-                    onReact={onReact}
-                    onReply={handleReply}
-                    onDelete={onDeleteMessage}
-                    canDelete={canDeleteMessage ? canDeleteMessage(m) : false}
-                    onScrollToMessage={handleScrollToMessage}
-                  />
+                  {showTimeSeparator && m.createdAt && (
+                    <DateSeparator label={formatTimeSeparator(m.createdAt)} />
+                  )}
+                  {m.role === 'system' ? (
+                    <SystemMessage
+                      text={m.content}
+                      timestamp={m.createdAt}
+                    />
+                  ) : (
+                    <ChatMessage
+                      msg={m}
+                      activePaperId={
+                        mode === 'single' ? activePaperId : undefined
+                      }
+                      conversationId={conversationId || session?.id}
+                      onFollowUpSelect={sendAsAssistant}
+                      followUps={followUpMap[m.id] || []}
+                      isCollaborative={isCollaborative}
+                      isGrouped={isGrouped}
+                      isLastInGroup={isLastInGroup}
+                      showTimestamp={isLastInGroup}
+                      onReact={onReact}
+                      onReply={handleReply}
+                      onDelete={onDeleteMessage}
+                      canDelete={canDeleteMessage ? canDeleteMessage(m) : false}
+                      onScrollToMessage={handleScrollToMessage}
+                    />
+                  )}
                 </div>
               );
             })}
             {isLoading && <ChatMessageLoading label={currentStepLabel} />}
             <div ref={bottomRef} />
+          </div>
 
-            {/* New messages floating button (collaborative only) */}
-            {isCollaborative && (
+          {/* New messages floating button — positioned over the messages area */}
+          {isCollaborative && newMsgCount > 0 && (
+            <div className='absolute bottom-14 left-1/2 -translate-x-1/2 z-30'>
               <NewMessageButton
                 count={newMsgCount}
                 onClick={scrollToBottom}
               />
-            )}
-          </div>
+            </div>
+          )}
 
           <div
             id='chat-dock-overlay'

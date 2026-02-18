@@ -72,7 +72,7 @@ function MessageBubbleBase({
   if (!isCollaborative) {
     return (
       <div
-        className={`relative flex w-full ${reactionBadges ? 'mb-6' : 'mb-4'} ${isUser ? 'justify-end' : 'justify-start'}`}
+        className={`relative flex w-full mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}
       >
         <div
           className={`flex flex-col min-w-0 ${isUser ? 'items-end' : 'items-start'} ${isUser ? 'max-w-[60%]' : 'max-w-full'}`}
@@ -88,13 +88,6 @@ function MessageBubbleBase({
             )}
             {/* Hover actions */}
             {hoverActions}
-            {reactionBadges && (
-              <div
-                className={`absolute -bottom-4 ${isUser ? 'right-1' : 'left-1'} z-10`}
-              >
-                {reactionBadges}
-              </div>
-            )}
             <div
               ref={bubbleContentRef}
               onMouseEnter={handleBubbleEnter}
@@ -108,6 +101,14 @@ function MessageBubbleBase({
               {children}
             </div>
           </div>
+          {/* Reaction badges — in-flow with negative margin to overlap bubble edge (Facebook-style) */}
+          {reactionBadges && (
+            <div
+              className={`-mt-2 ${isUser ? 'mr-1' : 'ml-1'} z-10`}
+            >
+              {reactionBadges}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -119,11 +120,9 @@ function MessageBubbleBase({
   // Show avatar on the left for "other" messages (first in a group only).
   const showLeftAvatar = !alignRight && !isGrouped;
 
-  const spacing = isGrouped ? 'mb-0.5' : reactionBadges ? 'mb-6' : 'mb-4';
-
   return (
     <div
-      className={`relative flex w-full ${spacing} ${alignRight ? 'justify-end' : 'justify-start'}`}
+      className={`relative flex w-full mb-0.5 ${alignRight ? 'justify-end' : 'justify-start'}`}
     >
       {/* ── Left avatar column ───────────────────────────────── */}
       {!alignRight && (
@@ -164,13 +163,6 @@ function MessageBubbleBase({
           )}
           {/* Hover actions */}
           {hoverActions}
-          {reactionBadges && (
-            <div
-              className={`absolute -bottom-4 ${alignRight ? 'right-1' : 'left-1'} z-10`}
-            >
-              {reactionBadges}
-            </div>
-          )}
           <div
             ref={bubbleContentRef}
             onMouseEnter={handleBubbleEnter}
@@ -188,6 +180,14 @@ function MessageBubbleBase({
             {children}
           </div>
         </div>
+        {/* Reaction badges — in-flow with negative margin (Facebook-style: overlaps bubble, doesn't overlap next message) */}
+        {reactionBadges && (
+          <div
+            className={`-mt-2 ${alignRight ? 'mr-1' : 'ml-1'} z-10`}
+          >
+            {reactionBadges}
+          </div>
+        )}
       </div>
     </div>
   );

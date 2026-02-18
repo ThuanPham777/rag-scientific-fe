@@ -15,7 +15,7 @@ function NewMessageButtonBase({ count, onClick }: NewMessageButtonProps) {
   return (
     <button
       onClick={onClick}
-      className='absolute bottom-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500 text-white text-xs font-medium shadow-lg hover:bg-orange-600 transition-all animate-in slide-in-from-bottom-2 fade-in duration-200'
+      className='flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-500 text-white text-xs font-medium shadow-lg hover:bg-orange-600 transition-all animate-in slide-in-from-bottom-2 fade-in duration-200'
     >
       <ArrowDown size={14} />
       <span>

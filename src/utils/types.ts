@@ -110,6 +110,7 @@ export type ReactionAggregate = {
   count: number;
   hasReacted: boolean;
   reactedBy?: Array<{ userId: string; displayName: string }>;
+  firstReactedAt?: string; // ISO timestamp - for chronological ordering
 };
 
 export type ReplyToMessage = {
@@ -353,6 +354,7 @@ export type OnlineMember = {
 export type TypingIndicator = {
   userId: string;
   displayName: string;
+  avatarUrl?: string | null;
   isTyping: boolean;
 };
 

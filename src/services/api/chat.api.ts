@@ -92,7 +92,7 @@ export async function getMessageHistory(
 
   const items: ChatMessage[] = (response.items || []).map((m: any) => ({
     id: m.id,
-    role: m.role.toLowerCase() as 'user' | 'assistant',
+    role: m.role.toLowerCase() as 'user' | 'assistant' | 'system',
     content: m.content,
     imageUrl: m.imageUrl,
     imageDataUrl: m.imageUrl || undefined,

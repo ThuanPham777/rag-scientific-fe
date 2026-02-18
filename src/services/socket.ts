@@ -12,11 +12,32 @@ let socket: Socket | null = null;
 /**
  * Get or create the singleton Socket.IO connection for the /session namespace.
  * Authenticates via JWT token from the auth store.
+ *
+ * IMPORTANT: We check `socket` existence, NOT `socket.connected`.
+ * Socket.IO auto-reconnects; creating a new socket while the old one
+ * is still connecting/reconnecting causes listener mismatches where
+ * event handlers end up on a different socket than the one in the room.
  */
 export function getSocket(): Socket {
-  if (socket?.connected) return socket;
+  if (socket) {
+    console.log(
+      '[Socket] Reusing existing socket, id:',
+      socket.id,
+      '| connected:',
+      socket.connected,
+    );
+    return socket;
+  }
 
   const token = useAuthStore.getState().getAccessToken();
+  console.log(
+    '[Socket] Creating new socket connection to',
+    `${API_BASE_URL}/session`,
+    '| token present:',
+    !!token,
+    '| token preview:',
+    token ? token.substring(0, 20) + '...' : 'NONE',
+  );
 
   socket = io(`${API_BASE_URL}/session`, {
     auth: { token },
@@ -28,15 +49,45 @@ export function getSocket(): Socket {
   });
 
   socket.on('connect', () => {
-    console.log('[Socket] Connected to /session namespace');
+    console.log(
+      '[Socket] ✅ Connected to /session namespace | socketId:',
+      socket?.id,
+    );
   });
 
   socket.on('disconnect', (reason) => {
-    console.log('[Socket] Disconnected:', reason);
+    console.warn('[Socket] ❌ Disconnected:', reason);
   });
 
   socket.on('connect_error', (err) => {
-    console.error('[Socket] Connection error:', err.message);
+    console.error(
+      '[Socket] 🔴 Connection error:',
+      err.message,
+      '| Description:',
+      (err as any).description,
+    );
+  });
+
+  socket.on('reconnect_attempt', (attempt) => {
+    console.log('[Socket] 🔄 Reconnect attempt:', attempt);
+  });
+
+  socket.on('reconnect', (attempt) => {
+    console.log('[Socket] ✅ Reconnected after', attempt, 'attempts');
+  });
+
+  socket.on('reconnect_failed', () => {
+    console.error('[Socket] 🔴 Reconnect failed after all attempts');
+  });
+
+  // Log ALL incoming events for debugging
+  socket.onAny((eventName, ...args) => {
+    console.log(`[Socket] 📨 RECEIVED event: "${eventName}"`, args);
+  });
+
+  // Log ALL outgoing events for debugging
+  socket.onAnyOutgoing((eventName, ...args) => {
+    console.log(`[Socket] 📤 SENDING event: "${eventName}"`, args);
   });
 
   return socket;
@@ -46,10 +97,15 @@ export function getSocket(): Socket {
  * Disconnect the socket entirely. Call on logout or when leaving all sessions.
  */
 export function disconnectSocket() {
+  console.log(
+    '[Socket] disconnectSocket() called. Current socket:',
+    socket?.id || 'none',
+  );
   if (socket) {
     socket.removeAllListeners();
     socket.disconnect();
     socket = null;
+    console.log('[Socket] Socket disconnected and nullified');
   }
 }
 
@@ -57,6 +113,7 @@ export function disconnectSocket() {
  * Reconnect with a fresh token (e.g. after token refresh).
  */
 export function reconnectSocket() {
+  console.log('[Socket] reconnectSocket() called');
   disconnectSocket();
   return getSocket();
 }
@@ -67,24 +124,70 @@ export function reconnectSocket() {
 
 /**
  * Join a session room. Returns a promise that resolves with online members.
+ * Waits for the socket to be connected before emitting.
  */
-export function joinSessionRoom(
-  conversationId: string,
-): Promise<{
+export function joinSessionRoom(conversationId: string): Promise<{
   conversationId: string;
   onlineMembers: Array<{ userId: string; displayName: string }>;
 }> {
   const s = getSocket();
+  console.log(
+    '[Socket] joinSessionRoom() | conversationId:',
+    conversationId,
+    '| socket connected:',
+    s.connected,
+    '| socketId:',
+    s.id,
+  );
+
   return new Promise((resolve, reject) => {
-    s.emit('session:join', { conversationId }, (response: any) => {
-      if (response?.error) {
-        reject(new Error(response.error));
-      } else {
-        resolve(response?.data || { conversationId, onlineMembers: [] });
-      }
-    });
+    let resolved = false;
+
+    const doJoin = () => {
+      console.log(
+        '[Socket] doJoin() — emitting session:join | socketId:',
+        s.id,
+      );
+      s.emit('session:join', { conversationId }, (response: any) => {
+        if (resolved) return;
+        resolved = true;
+        console.log(
+          '[Socket] 📨 session:join ACK response:',
+          JSON.stringify(response),
+        );
+        if (response?.error) {
+          console.error('[Socket] session:join ERROR:', response.error);
+          reject(new Error(response.error));
+        } else {
+          const data = response?.data || {
+            conversationId,
+            onlineMembers: [],
+          };
+          console.log(
+            '[Socket] ✅ Joined room. Online members:',
+            data.onlineMembers,
+          );
+          resolve(data);
+        }
+      });
+    };
+
+    if (s.connected) {
+      doJoin();
+    } else {
+      console.log('[Socket] Socket not connected yet — waiting for connect…');
+      s.once('connect', doJoin);
+    }
+
     // Fallback timeout
-    setTimeout(() => resolve({ conversationId, onlineMembers: [] }), 5000);
+    setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      console.warn(
+        '[Socket] ⚠️ session:join ACK timeout (5s) — resolving with empty members',
+      );
+      resolve({ conversationId, onlineMembers: [] });
+    }, 5000);
   });
 }
 
@@ -93,6 +196,12 @@ export function joinSessionRoom(
  */
 export function leaveSessionRoom(conversationId: string) {
   const s = getSocket();
+  console.log(
+    '[Socket] leaveSessionRoom() | conversationId:',
+    conversationId,
+    '| socket connected:',
+    s.connected,
+  );
   s.emit('session:leave', { conversationId });
 }
 
@@ -101,6 +210,7 @@ export function leaveSessionRoom(conversationId: string) {
  */
 export function emitTypingStart(conversationId: string) {
   const s = getSocket();
+  console.log('[Socket] emitTypingStart() | conversationId:', conversationId);
   s.emit('session:typing-start', { conversationId });
 }
 
@@ -109,6 +219,7 @@ export function emitTypingStart(conversationId: string) {
  */
 export function emitTypingStop(conversationId: string) {
   const s = getSocket();
+  console.log('[Socket] emitTypingStop() | conversationId:', conversationId);
   s.emit('session:typing-stop', { conversationId });
 }
 

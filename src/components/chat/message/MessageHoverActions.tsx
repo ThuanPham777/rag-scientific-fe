@@ -4,6 +4,7 @@
 import { memo, useState, useCallback } from 'react';
 import { SmilePlus, Reply, Trash2 } from 'lucide-react';
 import { EmojiReactionPicker } from './EmojiReactionPicker';
+import type { ReactionAggregate } from '@/utils/types';
 
 interface MessageHoverActionsProps {
   /** Show on the right side (own message) */
@@ -16,6 +17,8 @@ interface MessageHoverActionsProps {
   canReply?: boolean;
   /** Render inline (no absolute positioning) — used when parent handles layout */
   inline?: boolean;
+  /** Reactions on this message — passed to picker to highlight user's reacted emojis */
+  reactions?: ReactionAggregate[];
   /** Callbacks */
   onReact: (emoji: string) => void;
   onReply: () => void;
@@ -28,6 +31,7 @@ function MessageHoverActionsBase({
   canDelete = false,
   canReply = true,
   inline = false,
+  reactions,
   onReact,
   onReply,
   onDelete,
@@ -49,7 +53,7 @@ function MessageHoverActionsBase({
   const positionClasses = inline
     ? '' // parent handles positioning
     : isAssistant
-      ? 'absolute top-full mt-4 left-0'
+      ? `absolute top-full ${reactions && reactions.length > 0 ? 'mt-4' : ''} left-0`
       : alignRight
         ? 'absolute right-full mr-1 top-[50%] -translate-y-1/2'
         : 'absolute left-full ml-1 top-[50%] -translate-y-1/2';
@@ -73,6 +77,7 @@ function MessageHoverActionsBase({
             onSelect={handleReact}
             onClose={() => setShowEmojiPicker(false)}
             alignRight={alignRight}
+            reactions={reactions}
           />
         )}
       </div>
