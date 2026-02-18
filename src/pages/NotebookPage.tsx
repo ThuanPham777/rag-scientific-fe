@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2, ExternalLink } from 'lucide-react';
 import notebookService from '@/services/notebookService';
 import NotebookEditor from '@/components/notebook/NotebookEditor';
 
@@ -113,7 +113,17 @@ export default function NotebookPage() {
                 )}
                 <div className='text-xs text-gray-500 mt-1 truncate'>{nb.contentPreview}</div>
               </div>
-              <div>
+              <div className='flex items-center gap-1'>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(`/notebooks/${nb.id}`, '_blank');
+                  }}
+                  className='opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded flex-shrink-0'
+                  title='Open in new tab'
+                >
+                  <ExternalLink size={14} />
+                </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
