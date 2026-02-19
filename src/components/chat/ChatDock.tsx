@@ -639,10 +639,10 @@ export default function ChatDock({
                   id={`msg-${m.id}`}
                   className='transition-colors duration-500'
                 >
-                  {showDaySeparator && m.createdAt && (
+                  {isCollaborative && showDaySeparator && m.createdAt && (
                     <DateSeparator label={formatDaySeparator(m.createdAt)} />
                   )}
-                  {showTimeSeparator && m.createdAt && (
+                  {isCollaborative && showTimeSeparator && m.createdAt && (
                     <DateSeparator label={formatTimeSeparator(m.createdAt)} />
                   )}
                   {m.role === 'system' ? (

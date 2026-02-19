@@ -229,7 +229,7 @@ export default function ChatMessage({
         isCollaborative={isCollaborative}
         isOwnMessage={isOwnMessage}
         hoverActions={
-          !isLoading ? (
+          !isLoading && isCollaborative ? (
             <MessageHoverActions
               alignRight={isOwnMessage}
               isAssistant={!isUser}

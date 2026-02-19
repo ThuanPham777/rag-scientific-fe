@@ -78,20 +78,10 @@ function MessageBubbleBase({
           className={`flex flex-col min-w-0 ${isUser ? 'items-end' : 'items-start'} ${isUser ? 'max-w-[60%]' : 'max-w-full'}`}
         >
           <div className='group relative max-w-full'>
-            {/* Hover timestamp — portal, anchored to the bubble content */}
-            {showTs && hoverTimeStr && (
-              <HoverTimestamp
-                text={hoverTimeStr}
-                anchorEl={bubbleContentRef.current}
-                alignRight={isUser}
-              />
-            )}
             {/* Hover actions */}
             {hoverActions}
             <div
               ref={bubbleContentRef}
-              onMouseEnter={handleBubbleEnter}
-              onMouseLeave={handleBubbleLeave}
               className={`relative px-4 py-2 break-all overflow-hidden cursor-default ${
                 isUser
                   ? 'bg-orange-500 text-white rounded-2xl rounded-br-none shadow-sm border border-orange-500'
@@ -103,9 +93,7 @@ function MessageBubbleBase({
           </div>
           {/* Reaction badges — in-flow with negative margin to overlap bubble edge (Facebook-style) */}
           {reactionBadges && (
-            <div
-              className={`-mt-2 ${isUser ? 'mr-1' : 'ml-1'} z-10`}
-            >
+            <div className={`-mt-2 ${isUser ? 'mr-1' : 'ml-1'} z-10`}>
               {reactionBadges}
             </div>
           )}
@@ -182,9 +170,7 @@ function MessageBubbleBase({
         </div>
         {/* Reaction badges — in-flow with negative margin (Facebook-style: overlaps bubble, doesn't overlap next message) */}
         {reactionBadges && (
-          <div
-            className={`-mt-2 ${alignRight ? 'mr-1' : 'ml-1'} z-10`}
-          >
+          <div className={`-mt-2 ${alignRight ? 'mr-1' : 'ml-1'} z-10`}>
             {reactionBadges}
           </div>
         )}
