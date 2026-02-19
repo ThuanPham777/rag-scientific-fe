@@ -98,11 +98,17 @@ export function useUpload(options: UseUploadOptions = {}) {
       }
     }
 
-    // Invalidate React Query caches to refetch data
-    queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
+    // Invalidate React Query caches to refetch data (including infinite queries)
+    queryClient.invalidateQueries({ queryKey: paperKeys.all });
 
     setIsUploading(false);
     onUploadComplete?.();
+
+    // Auto-close dialog after brief delay to show completion state
+    setTimeout(() => {
+      setShowUploadDialog(false);
+      setUploadQueue([]);
+    }, 800);
   }, [isUploading, uploadQueue, queryClient, onUploadComplete]);
 
   const closeUploadDialog = useCallback(() => {

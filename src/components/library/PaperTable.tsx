@@ -6,6 +6,7 @@ import {
   Loader2,
   ChevronDown,
   Users,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -171,10 +172,21 @@ export function PaperTable({
                   </p>
                 </div>
               </div>
-              <div className='col-span-4 flex items-center min-w-0'>
-                <p className='text-sm text-gray-600 truncate'>
-                  {paper.title || '-'}
-                </p>
+              <div className='col-span-4 flex items-center gap-2 min-w-0'>
+                {paper.status === 'PROCESSING' || paper.status === 'PENDING' ? (
+                  <div className='flex items-center gap-2'>
+                    <Clock className='h-3.5 w-3.5 text-orange-500 animate-pulse shrink-0' />
+                    <span className='text-sm text-orange-600 truncate'>
+                      Processing...
+                    </span>
+                  </div>
+                ) : (
+                  <p className='text-sm text-gray-600 truncate'>
+                    {paper.title ||
+                      paper.fileName.replace(/\.pdf$/i, '') ||
+                      'Untitled'}
+                  </p>
+                )}
               </div>
               <div className='col-span-2 flex items-center justify-end'>
                 <DropdownMenu>

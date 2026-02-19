@@ -40,8 +40,8 @@ export default function HomeUpload() {
       const paperWithLocalUrl = { ...paper, localUrl };
       setCurrentPaper(paperWithLocalUrl);
 
-      // Invalidate papers cache to refresh list
-      queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
+      // Invalidate papers cache to refresh list (use paperKeys.all to invalidate all paper queries)
+      queryClient.invalidateQueries({ queryKey: paperKeys.all });
 
       // Create a new conversation/session for this paper
       const { conversationId } = await startSession(paper.id, paper.ragFileId);

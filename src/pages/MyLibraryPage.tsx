@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, Loader2, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/useAuthStore';
 import { useMultiPaperChatStore } from '../store/useMultiPaperChatStore';
 import { Button } from '../components/ui/button';
@@ -12,6 +13,7 @@ import {
   usePapers,
   useClearChatHistory,
   useSessions,
+  paperKeys,
 } from '../hooks';
 import {
   PaperTable,
@@ -23,6 +25,7 @@ import ChatDock from '../components/chat/ChatDock';
 export default function MyLibraryPage() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();
+  const queryClient = useQueryClient();
 
   // =========================================
   // React Query hooks (server state)
@@ -33,6 +36,7 @@ export default function MyLibraryPage() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    hasProcessingPapers,
   } = usePapers();
 
   // React Query mutations
@@ -94,6 +98,17 @@ export default function MyLibraryPage() {
       navigate('/');
     }
   }, [isAuthenticated, navigate]);
+
+  // Auto-refresh papers when there are processing papers
+  useEffect(() => {
+    if (!hasProcessingPapers) return;
+
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: paperKeys.infinite() });
+    }, 5000); // Refresh every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [hasProcessingPapers, queryClient]);
 
   // Multi-select handlers
   const selectedPaperIds = selectedPapers.map((p) => p.id);
