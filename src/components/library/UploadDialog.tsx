@@ -7,15 +7,15 @@ import {
   CheckCircle,
   AlertCircle,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/UI/button';
+import { Input } from '@/components/UI/input';
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@/components/UI/dialog';
 import { cn } from '../../lib/utils';
 import type { Folder as FolderType } from '../../utils/types';
 import type { UploadItem } from '../../types/upload';
@@ -221,3 +221,4 @@ export function UploadDialog({
     </Dialog>
   );
 }
+

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import notebookService from '@/services/notebookService';

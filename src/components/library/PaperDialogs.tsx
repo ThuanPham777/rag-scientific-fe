@@ -1,5 +1,5 @@
 import { Folder } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/UI/button';
 import {
   Dialog,
   DialogContent,
@@ -7,7 +7,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@/components/UI/dialog';
 import type { Paper, Folder as FolderType } from '../../utils/types';
 
 interface DeletePaperDialogProps {
@@ -142,3 +142,4 @@ export function MovePaperDialog({
     </Dialog>
   );
 }
+

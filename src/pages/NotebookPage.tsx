@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Trash2, ExternalLink } from 'lucide-react';
+import { Pencil, Plus, Trash2, ExternalLink, Maximize2, AlertTriangle } from 'lucide-react';
 import notebookService from '@/services/notebookService';
 import NotebookEditor from '@/components/notebook/NotebookEditor';
 
@@ -11,6 +11,7 @@ export default function NotebookPage() {
   const [detail, setDetail] = useState<any | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState<string>('');
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
 
   useEffect(() => {
     // If there are notebooks, select the most recent. If none, auto-create one so UI isn't blank.
@@ -42,12 +43,13 @@ export default function NotebookPage() {
     setDetail(created);
   };
 
-  const remove = async (id: string) => {
-    if (!confirm('Delete this note?')) return;
-    await notebookService.remove(id);
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    await notebookService.remove(deleteTarget.id);
     await refetch();
-    if (selectedId === id) setSelectedId(null);
-  };
+    if (selectedId === deleteTarget.id) setSelectedId(null);
+    setDeleteTarget(null);
+  }, [deleteTarget, refetch, selectedId]);
 
   const handleUpdated = (updated: any) => {
     setDetail(updated);
@@ -55,16 +57,16 @@ export default function NotebookPage() {
   };
 
   return (
+    <>
     <div className='flex h-full'>
       <div className='w-80 border-r bg-gray-50 overflow-auto'>
-        <div className='flex items-center justify-between mb-4'>
-          <h3 className='font-semibold'>My Notebooks</h3>
+        <div className='flex items-center justify-start mb-4'>
           <button
             onClick={createNew}
-            className='text-sm px-2 py-1 bg-black text-white rounded hover:bg-gray-800'
+            className='p-1.5 rounded-full text-gray-500 hover:text-black hover:bg-gray-200 transition-colors'
             title='Add new notebook'
           >
-            <Plus size={16} />
+            <Plus size={18} />
           </button>
         </div>
 
@@ -127,7 +129,7 @@ export default function NotebookPage() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    remove(nb.id);
+                    setDeleteTarget(nb);
                   }}
                   className='opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded text-red-500 flex-shrink-0'
                   title='Delete'
@@ -141,8 +143,57 @@ export default function NotebookPage() {
       </div>
 
       <div className='flex-1 flex flex-col'>
+        {selectedId && (
+          <div className='flex justify-end px-3 py-1.5 border-b'>
+            <button
+              onClick={() => window.open(`/notebooks/${selectedId}`, '_blank')}
+              className='p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors'
+              title='Open full screen'
+            >
+              <Maximize2 size={16} />
+            </button>
+          </div>
+        )}
         <NotebookEditor notebook={detail} onUpdated={handleUpdated} />
       </div>
     </div>
+
+      {/* Custom delete confirmation modal */}
+      {deleteTarget && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center' onClick={() => setDeleteTarget(null)}>
+          <div className='absolute inset-0 bg-black/40 backdrop-blur-sm' />
+          <div
+            className='relative bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className='flex items-start gap-4'>
+              <div className='p-2 bg-red-100 rounded-full flex-shrink-0'>
+                <AlertTriangle size={22} className='text-red-600' />
+              </div>
+              <div className='flex-1'>
+                <h3 className='text-lg font-semibold text-gray-900'>Delete Notebook</h3>
+                <p className='mt-2 text-sm text-gray-600'>
+                  Are you sure you want to delete <span className='font-medium text-gray-900'>"{deleteTarget.title || 'Untitled'}"</span>? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className='flex justify-end gap-3 mt-6'>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className='px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors'
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className='px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors'
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

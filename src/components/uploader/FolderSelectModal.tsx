@@ -3,8 +3,8 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, Folder, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/UI/button';
+import { Input } from '@/components/UI/input';
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from '@/components/ui/dialog';
+} from '@/components/UI/dialog';
 import { cn } from '../../lib/utils';
 import { useFolders, useCreateFolder } from '../../hooks';
 
@@ -214,3 +214,4 @@ export function FolderSelectModal({
     </Dialog>
   );
 }
+

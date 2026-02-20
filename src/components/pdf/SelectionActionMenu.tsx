@@ -11,7 +11,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
+} from '@/components/UI/tooltip';
 import HighlightEditor from './HighlightEditor';
 import { useAuthStore } from '@/store/useAuthStore';
 
@@ -243,3 +243,4 @@ export default function SelectionActionMenu({
   // Render via portal to escape overflow clipping
   return createPortal(popupContent, document.body);
 }
+

@@ -1,5 +1,5 @@
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/UI/button';
+import { Input } from '@/components/UI/input';
 import {
   Dialog,
   DialogContent,
@@ -7,7 +7,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@/components/UI/dialog';
 import type { Folder as FolderType } from '../../utils/types';
 
 interface CreateFolderDialogProps {
@@ -170,3 +170,4 @@ export function DeleteFolderDialog({
     </Dialog>
   );
 }
+

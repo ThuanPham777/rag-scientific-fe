@@ -3,7 +3,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
+} from '@/components/UI/tooltip';
 import { Send, Sigma } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '@radix-ui/react-switch';
@@ -137,3 +137,4 @@ export default function ChatInput({
     </div>
   );
 }
+

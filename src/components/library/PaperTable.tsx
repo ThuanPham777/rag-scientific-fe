@@ -7,14 +7,14 @@ import {
   Loader2,
   ChevronDown,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/UI/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Checkbox } from '@/components/ui/checkbox';
+} from '@/components/UI/dropdown-menu';
+import { Checkbox } from '@/components/UI/checkbox';
 import type { Paper } from '../../utils/types';
 
 interface PaperTableProps {
@@ -231,3 +231,4 @@ export function PaperTable({
     </>
   );
 }
+

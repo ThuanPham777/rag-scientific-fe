@@ -20,10 +20,10 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+} from '@/components/UI/tooltip';
+import { Input } from '@/components/UI/input';
+import { Button } from '@/components/UI/button';
+import { Checkbox } from '@/components/UI/checkbox';
 
 type Props = {
   showSearch: boolean;
@@ -495,3 +495,4 @@ export default function PdfToolbar({
     </div>
   );
 }
+

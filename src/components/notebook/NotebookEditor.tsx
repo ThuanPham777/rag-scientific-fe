@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Heading from '@tiptap/extension-heading';
 import LinkExtension from '@tiptap/extension-link';
+import Underline from '@tiptap/extension-underline';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import TextAlign from '@tiptap/extension-text-align';
-import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
@@ -36,8 +36,13 @@ import {
   CheckSquare,
 } from 'lucide-react';
 import notebookService from '@/services/notebookService';
-import { listPapers } from '@/services/api/paper.api';
-import { sendQuery, askMultiPaper } from '@/services/api/chat.api';
+import { listPapers, searchPapers } from '@/services/api/paper.api';
+import { sendQuery } from '@/services/api/chat.api';
+import { sanitizeLatex } from '@/utils/latexSanitizer';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import renderMathInElement from 'katex/contrib/auto-render';
+import { Node as TiptapNode, mergeAttributes } from '@tiptap/core';
 
 type Props = {
   notebook: { id: string; title: string; content: string } | null;
@@ -46,7 +51,8 @@ type Props = {
 
 export default function NotebookEditor({ notebook, onUpdated }: Props) {
   const [showFileMenu, setShowFileMenu] = useState(false);
-  const [showOpenDialog, setShowOpenDialog] = useState(false);
+  // open dialog state is only written; actual dialog UI handled elsewhere
+  const [, setShowOpenDialog] = useState(false);
   const [allNotebooks, setAllNotebooks] = useState<any[]>([]);
   const [showFormatMenu, setShowFormatMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -59,6 +65,7 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
   const [citeQuery, setCiteQuery] = useState('');
   const [citeResults, setCiteResults] = useState<any[]>([]);
   const [citeSearchResults, setCiteSearchResults] = useState<any | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [showAskAIDialog, setShowAskAIDialog] = useState(false);
   const [askAIQuery, setAskAIQuery] = useState('');
   const [askAILoading, setAskAILoading] = useState(false);
@@ -66,15 +73,111 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
   const [tableRows, setTableRows] = useState(3);
   const [tableCols, setTableCols] = useState(3);
   const saveTimer = useRef<number | null>(null);
+  const editorRef = useRef<any>(null); // must be declared before useEditor to be available in handlePaste
+
+  // extension to allow arbitrary <span> markup (e.g. KaTeX output)
+  const SpanNode = TiptapNode.create({
+    name: 'span',
+    inline: true,
+    group: 'inline',
+    atom: false,
+    // allow nested inline content (KaTeX spans, styled text, etc.)
+    content: 'inline*',
+    addAttributes() {
+      return {
+        class: { default: null },
+        style: { default: null },
+      };
+    },
+    parseHTML() {
+      return [{ tag: 'span' }];
+    },
+    renderHTML({ HTMLAttributes }) {
+      return ['span', mergeAttributes(HTMLAttributes), 0];
+    },
+  });
+
+  // Atomic node for KaTeX-rendered math. Being `atom: true` prevents TipTap
+  // from parsing/editing the nested KaTeX span tree, which would flatten the
+  // DOM and break superscript/subscript positioning.
+  const MathInline = TiptapNode.create({
+    name: 'mathInline',
+    inline: true,
+    group: 'inline',
+    atom: true,
+    selectable: true,
+    draggable: false,
+    addAttributes() {
+      return {
+        latex: {
+          default: '',
+          parseHTML: (element: HTMLElement) => {
+            const annotation = element.querySelector('annotation');
+            if (annotation?.textContent) return annotation.textContent;
+            return element.getAttribute('data-latex') || element.textContent || '';
+          },
+          renderHTML: (attributes: Record<string, any>) => ({
+            'data-latex': attributes.latex,
+          }),
+        },
+        display: {
+          default: false,
+          parseHTML: (element: HTMLElement) => element.getAttribute('data-display') === 'true',
+          renderHTML: (attributes: Record<string, any>) => (
+            attributes.display ? { 'data-display': 'true' } : {}
+          ),
+        },
+      };
+    },
+    parseHTML() {
+      return [{ tag: 'span.katex', priority: 60 }];
+    },
+    renderHTML({ node }: { node: any }) {
+      const attrs: Record<string, any> = { class: 'katex', 'data-latex': node.attrs.latex };
+      if (node.attrs.display) attrs['data-display'] = 'true';
+      return ['span', attrs];
+    },
+    addNodeView() {
+      return ({ node }: { node: any }) => {
+        const dom = document.createElement('span');
+        const latex = (node.attrs.latex || '').replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
+        const isDisplay = !!node.attrs.display;
+        if (!latex) {
+          return { dom };
+        }
+        try {
+          dom.innerHTML = katex.renderToString(latex, {
+            throwOnError: false,
+            displayMode: isDisplay,
+            output: 'htmlAndMathml' as const,
+          });
+          if (isDisplay) {
+            dom.style.display = 'block';
+            dom.style.textAlign = 'center';
+            dom.style.margin = '0.5em 0';
+          }
+        } catch {
+          dom.textContent = latex;
+        }
+        return { dom };
+      };
+    },
+  });
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        heading: false,
+        link: false,
+        underline: false,
+      }),
       Heading.configure({ levels: [1, 2, 3, 4] }),
       LinkExtension,
+      Underline,
+      SpanNode,
+      MathInline,
       TaskList,
       TaskItem,
-      Underline,
       TextStyle,
       FontFamily.configure({
         types: ['textStyle'],
@@ -90,7 +193,36 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
       Placeholder.configure({ placeholder: 'Untitled note...' }),
     ],
     content: notebook?.content || '',
+    editorProps: {
+      handlePaste(view, event) {
+        const clipboard = event.clipboardData;
+        if (!clipboard) return false;
+        // only paste plain text, never HTML (prevent pasting nasty KaTeX markup)
+        let text = clipboard.getData('text/plain') || '';
+        if (!text) return false;
+        
+        console.log('paste raw (first 150 chars):', text.substring(0, 150));
+        
+        // clean any HTML/KaTeX markup from pasted text
+        const cleaned = cleanPastedText(text);
+        console.log('cleaned paste (first 150 chars):', cleaned.substring(0, 150));
+        
+        view.dom.focus();
+        const ed = editorRef.current;
+        if (ed) {
+          ed.chain().focus().insertContent(cleaned).run();
+          event.preventDefault();
+          return true;
+        }
+        return false;
+      },
+    },
   });
+
+  // Sync editor instance to ref when it's available
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   // When notebook prop changes, update editor content and title
   useEffect(() => {
@@ -102,13 +234,66 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
     }
   }, [notebook, editor]);
 
+  // Debounced search-as-you-type for citation dialog
+  useEffect(() => {
+    if (!showCiteDialog) {
+      // if dialog closed, reset results but don't query
+      setCiteSearchResults(null);
+      return;
+    }
+    if (citeQuery.trim() === '') {
+      setCiteSearchResults(null);
+      return;
+    }
+
+    const handle = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const resp = await searchPapers(citeQuery);
+        setCiteSearchResults(resp);
+      } catch (err) {
+        console.error('Search failed', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(handle);
+  }, [citeQuery, showCiteDialog]);
+
   // Debounced autosave for content and title
   const scheduleSave = async () => {
     if (!notebook) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(async () => {
       try {
-        const payload: any = { title, content: editor?.getHTML() || '' };
+        let html = '';
+        try {
+          html = editor?.getHTML() || '';
+        } catch (serializationError) {
+          // sometimes ProseMirror throws when the document contains a node
+          // that violates its schema (e.g. a leaf node with children). try a
+          // JSON round‑trip as a fallback to patch the bad state.
+          console.warn('Primary serialization failed, attempting JSON fallback', serializationError);
+          if (editor) {
+            try {
+              const doc = editor.getJSON();
+              editor.commands.setContent(doc);
+              html = editor.getHTML();
+            } catch (fallbackError) {
+              console.error('Fallback serialization also failed', fallbackError);
+              // give up on this autosave cycle
+              return;
+            }
+          }
+        }
+        // Only run LaTeX sanitizer on content that hasn't already been rendered
+        // to KaTeX/MathML. This avoids stripping KaTeX HTML or generic tags,
+        // which would make formulas show up as raw text.
+        if (!html.includes('class="katex"') && !html.includes('<math')) {
+          html = sanitizeLatex(html);
+        }
+        const payload: any = { title, content: html };
         const updated = await notebookService.update(notebook.id, payload);
         onUpdated?.(updated);
       } catch (err) {
@@ -120,7 +305,31 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
   // Listen to editor updates
   useEffect(() => {
     if (!editor) return;
-    const handler = () => scheduleSave();
+    const handler = () => {
+      scheduleSave();
+      // After each update, re-render LaTeX inside the editor using KaTeX auto-render.
+      // Use editor.view.dom instead of containerRef to target the actual TipTap content
+      setTimeout(() => {
+        if (editor?.view?.dom) {
+          try {
+            renderMathInElement(editor.view.dom, {
+              delimiters: [
+                { left: '$$', right: '$$', display: true },
+                { left: '\\[', right: '\\]', display: true },
+                { left: '\\(', right: '\\)', display: false },
+                { left: '$', right: '$', display: false },
+              ],
+              throwOnError: false,
+              // Ignore already rendered math
+              ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+              ignoredClasses: ['katex'],
+            });
+          } catch (err) {
+            console.error('KaTeX auto-render failed', err);
+          }
+        }
+      }, 50);
+    };
     editor.on('update', handler);
     return () => {
       editor.off('update', handler);
@@ -215,7 +424,7 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
       }
 
       // ensure selection is inside the editor container
-      const anchorNode = sel.anchorNode as Node | null;
+      const anchorNode = sel.anchorNode as Node | null; // DOM Node type now unambiguous
       if (!anchorNode || !containerRef.current.contains(anchorNode)) {
         setShowSelectionToolbar(false);
         return;
@@ -383,9 +592,10 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
                       // open cite dialog and preload papers
                       try {
                         const res = await listPapers(undefined, 200);
-                        const items = res.items || [];
+                        const items = (res.items || []).filter((p) => p.status === 'COMPLETED');
                         setCiteResults(items);
                         setCiteSearchResults(null);
+                        setCiteQuery('');
                       } catch (err) {
                         console.error('Failed to load papers for cite', err);
                       }
@@ -448,7 +658,8 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
               if (val === 'paragraph') {
                 editor?.chain().focus().setParagraph().run();
               } else {
-                editor?.chain().focus().toggleHeading({ level: Number(val) }).run();
+                const lvl = (parseInt(val, 10) as 1 | 2 | 3 | 4 | 5 | 6);
+                editor?.chain().focus().toggleHeading({ level: lvl }).run();
               }
             }}
             className='border rounded px-2 py-1 text-sm'
@@ -670,6 +881,22 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
           .tiptap table tr:hover {
             background-color: #f9f9f9;
           }
+          /* Ensure KaTeX renders correctly in TipTap */
+          .tiptap .katex {
+            font-size: 1em !important;
+            line-height: 1.2 !important;
+            font-family: KaTeX_Main, "Times New Roman", serif !important;
+          }
+          .tiptap .katex-display {
+            margin: 0.5em 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+          }
+          .tiptap .katex-display > .katex {
+            white-space: nowrap;
+          }
+          /* KaTeX's own CSS (katex.min.css) handles all positioning
+             correctly. The atomic MathInline node preserves KaTeX DOM. */
         `}</style>
         <div ref={containerRef} className='prose max-w-none mx-0 relative'>
           <EditorContent editor={editor} />
@@ -800,23 +1027,21 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
               <input
                 value={citeQuery}
                 onChange={(e) => setCiteQuery(e.target.value)}
-                placeholder='Search across your library content and titles'
+                placeholder='Enter phrase (exact match) to search inside papers'
                 className='flex-1 border rounded px-3 py-2'
               />
               <button
                 className='px-3 py-2 bg-black text-white rounded'
                 onClick={async () => {
-                  // perform semantic/content search across user's papers using askMulti
+                  // manual override if user prefers button
+                  setIsSearching(true);
                   try {
-                    const paperIds = (citeResults || []).map((p: any) => p.id);
-                    if (paperIds.length === 0) {
-                      console.warn('No papers to search');
-                      return;
-                    }
-                    const resp = await askMultiPaper(paperIds, citeQuery || 'Find passages that contain this phrase and return short snippets');
+                    const resp = await searchPapers(citeQuery || '');
                     setCiteSearchResults(resp);
                   } catch (err) {
                     console.error('Search failed', err);
+                  } finally {
+                    setIsSearching(false);
                   }
                 }}
               >
@@ -824,7 +1049,7 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
               </button>
             </div>
             <div className='max-h-64 overflow-auto space-y-2'>
-              {/* If search results exist, render citations/snippets */}
+              {isSearching && <div className='text-sm text-gray-500 mb-2'>Searching…</div>}
               {citeSearchResults ? (
                 <div className='space-y-2'>
                   {((citeSearchResults.citations || []) as any[]).map((c, idx) => (
@@ -837,9 +1062,8 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
                         <button
                           className='px-3 py-1 rounded border text-sm'
                           onClick={() => {
-                            // insert snippet + source link
                             const snippet = c.snippet || c.text || '';
-                            const source = c.sourceFileUrl ? ` (<a href="${c.sourceFileUrl}" target="_blank">source</a>)` : '';
+                            const source = c.sourceFileUrl ? ` (<a href=\"${c.sourceFileUrl}\" target=\"_blank\">source</a>)` : '';
                             editor?.chain().focus().insertContent(`<p>${snippet}${source}</p>`).run();
                             setShowCiteDialog(false);
                           }}
@@ -849,7 +1073,6 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
                       </div>
                     </div>
                   ))}
-                  {/* also show sources list */}
                   {citeSearchResults.sources && (
                     <div className='mt-2 border-t pt-2'>
                       <div className='text-sm font-medium mb-1'>Sources</div>
@@ -883,7 +1106,6 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
                         <button
                           className='px-3 py-1 rounded border text-sm'
                           onClick={() => {
-                            // insert citation text into editor
                             const text = `${p.title || p.fileName}${p.fileUrl ? ' — ' + p.fileUrl : ''}`;
                             editor?.chain().focus().insertContent(`<p>${text}</p>`).run();
                             setShowCiteDialog(false);
@@ -899,7 +1121,6 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
           </div>
         </div>
       )}
-
       {/* Ask AI Dialog (floating) */}
       {showAskAIDialog && (
         <div className='fixed inset-0 z-50 flex items-start justify-center pt-24'>
@@ -930,9 +1151,10 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
                   if (!askAIQuery) return;
                   try {
                     setAskAILoading(true);
-                    const { assistantMsg } = await sendQuery('', askAIQuery);
-                    const content = assistantMsg?.content || '';
-                    // insert generated content into editor at current position
+                    const { assistantMsg } = await sendQuery(null, askAIQuery);
+                    const raw = assistantMsg?.content || '';
+                    // format the AI response before inserting (KaTeX is already rendered)
+                    const content = formatAIGeneration(raw);
                     editor?.chain().focus().insertContent(content).run();
                     setShowAskAIDialog(false);
                     setAskAIQuery('');
@@ -951,4 +1173,81 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
       )}
     </div>
   );
+}
+
+// Simple plain-text cleaner for pasted content (strips KaTeX markup)
+function cleanPastedText(text: string): string {
+  if (!text) return text;
+  // if it contains HTML/KaTeX markup, strip all tags
+  if (text.includes('<') && text.includes('>')) {
+    return text.replace(/<[^>]*>/g, '');
+  }
+  return text;
+}
+
+// Utility to massage AI freeform output so it renders nicely in the notebook editor.
+// - sanitizeLatex ensures any $..$ math remains balanced and safe
+// - convert double newlines into separate paragraphs
+// - convert single newlines into <br/> so poetry/line‑oriented text preserves line breaks
+function formatAIGeneration(text: string): string {
+  if (!text) return text;
+
+  // if the AI response already contains KaTeX-generated HTML, strip it back to
+  // raw LaTeX/markdown so we don’t double‑render or end up với HTML rác.
+  let formatted = text
+    // fix missing space after <span (some copy/pastes collapse them)
+    .replace(/<span(?=[A-Za-z])/g, '<span ')
+    // extract original TeX from any existing KaTeX output
+    .replace(
+      /<span[^>]*class="?katex[^>]*>[\s\S]*?<annotation[^>]*>([\s\S]*?)<\/annotation>[\s\S]*?<\/span>/g,
+      '$1',
+    )
+    // extract bare annotations even if span structure is broken
+    .replace(
+      /<annotation[^>]*>([\s\S]*?)<\/annotation>/g,
+      '$1',
+    )
+    // remove MathML and SVG markup
+    .replace(/<\/?math[^>]*>/g, '')
+    .replace(/<\/?semantics[^>]*>/g, '')
+    .replace(/<\/?mrow[^>]*>/g, '')
+    .replace(/<\/?mi[^>]*>/g, '')
+    .replace(/<\/?mo[^>]*>/g, '')
+    .replace(/<\/?mn[^>]*>/g, '')
+    .replace(/<\/?msup[^>]*>/g, '')
+    .replace(/<\/?msupsub[^>]*>/g, '')
+    .replace(/<svg[^>]*>[\s\S]*?<\/svg>/g, '')
+    // remove any remaining span tags
+    .replace(/<\/?span[^>]*>/g, '');
+
+  // Strip zero-width spaces that AI responses sometimes include
+  formatted = formatted.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
+
+  // Convert LaTeX delimiters to <span class="katex" data-latex="..."> tags
+  // that the MathInline atom node will pick up and render via its NodeView.
+  // We do NOT use renderMathInElement here to avoid double-rendering
+  // (pre-render + NodeView), which caused formulas to appear multiple times.
+  const escAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Display math: $$...$$ and \[...\]
+  formatted = formatted.replace(/\$\$([\s\S]*?)\$\$/g, (_, tex: string) =>
+    `<span class="katex" data-latex="${escAttr(tex.trim())}" data-display="true"></span>`,
+  );
+  formatted = formatted.replace(/\\\[([\s\S]*?)\\\]/g, (_, tex: string) =>
+    `<span class="katex" data-latex="${escAttr(tex.trim())}" data-display="true"></span>`,
+  );
+  // Inline math: $...$ and \(...\)
+  formatted = formatted.replace(/\$([^\$\n]+?)\$/g, (_, tex: string) =>
+    `<span class="katex" data-latex="${escAttr(tex.trim())}"></span>`,
+  );
+  formatted = formatted.replace(/\\\(([\s\S]*?)\\\)/g, (_, tex: string) =>
+    `<span class="katex" data-latex="${escAttr(tex.trim())}"></span>`,
+  );
+
+  // split on two or more newlines for paragraphs, giữ \n đơn thành <br/>
+  const paragraphs: string[] = formatted.split(/\n{2,}/);
+  formatted = paragraphs
+    .map((p: string) => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
+    .join('');
+
+  return formatted;
 }
