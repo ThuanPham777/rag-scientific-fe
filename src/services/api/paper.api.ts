@@ -48,6 +48,19 @@ export async function listPapers(
 }
 
 /**
+ * Perform semantic search across user papers.
+ * Backend returns AskMultiPaperResultDto-like object.
+ */
+export async function searchPapers(
+  term: string,
+): Promise<{ answer: string; citations: any[]; sources: any[] }> {
+  const { data } = await api.get('/papers/search', {
+    params: { term },
+  });
+  return data.data; // raw result
+}
+
+/**
  * Get a single paper by ID
  */
 export async function getPaper(id: string): Promise<ApiResponse<Paper>> {

@@ -17,6 +17,30 @@ export function sanitizeLatex(content: string): string {
   // Step 1: Normalize line endings
   result = result.replace(/\r\n/g, '\n');
 
+  // Nuclear option: if text contains mangled KaTeX markup, try to extract any TeX
+  // that might be trapped inside. Aggressively pull annotations and strip markup.
+  if (result.includes('katex')) {
+    // extract from annotations anywhere they appear (even outside proper spans)
+    result = result.replace(/<annotation[^>]*encoding="[^"]*"[^>]*>([^<]*)<\/annotation>/g, '$1');
+    result = result.replace(/<annotation[^>]*>([^<]*)<\/annotation>/g, '$1');
+    // now strip all KaTeX markup tags aggressively
+    result = result.replace(/<span[^>]*class="?katex[^>]*>/g, '');
+    result = result.replace(/<\/?span[^>]*>/g, '');
+    result = result.replace(/<\/?math[^>]*>/g, '');
+    result = result.replace(/<\/?semantics[^>]*>/g, '');
+    result = result.replace(/<\/?mrow[^>]*>/g, '');
+    result = result.replace(/<\/?mi[^>]*>/g, '');
+    result = result.replace(/<\/?mo[^>]*>/g, '');
+    result = result.replace(/<\/?mn[^>]*>/g, '');
+    result = result.replace(/<\/?msup[^>]*>/g, '');
+    // final nuclear pass: strip any remaining orphaned < > that looks like HTML
+    result = result.replace(/<[^>]*>/g, '');
+  }
+
+  // fix malformed HTML that can appear when AI spits KaTeX or users paste HTML
+  // (e.g. `<spanclass="katex">` without a space). doing this after KaTeX cleanup.
+  result = result.replace(/<span(?=[A-Za-z])/g, '<span ');
+
   // Step 2: Fix common LaTeX command mistakes
   result = fixCommonLatexMistakes(result);
 
@@ -313,7 +337,6 @@ function balanceInlineMath(content: string): string {
   // Now handle single $
   let result = '';
   let inMath = false;
-  let mathStart = -1;
   let i = 0;
 
   while (i < temp.length) {
@@ -327,7 +350,6 @@ function balanceInlineMath(content: string): string {
 
       if (!inMath) {
         inMath = true;
-        mathStart = i;
         result += '$';
       } else {
         inMath = false;

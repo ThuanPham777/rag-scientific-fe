@@ -9,15 +9,10 @@ import {
   Clock,
   FolderInput,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Checkbox } from '@/components/UI/checkbox';
 import type { Paper } from '../../utils/types';
+import { Button } from '../ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 
 interface PaperTableProps {
   papers: Paper[];
@@ -257,3 +252,4 @@ export function PaperTable({
     </>
   );
 }
+

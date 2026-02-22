@@ -15,7 +15,9 @@ import {
 import { usePaperStore } from '../../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../../store/useGuestStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useUiStore } from '../../store/useUiStore';
 import PdfViewer from './PdfViewer';
+import notebookService from '@/services/notebookService';
 
 type Props = {
   activePaper?: Paper;
@@ -243,6 +245,26 @@ export default function PdfPanel({
             // Expose capture toggle function to parent
             onCaptureRefChange={onCaptureRefChange}
             onAction={(action, payload) => {
+              // Handle 'save to notebook' early — auto-create a new notebook
+              if (action === 'save' && (payload as any).text) {
+                const selectedText = (payload as any).text as string;
+                const paperTitle = activePaper?.title || activePaper?.fileName || 'PDF';
+                (async () => {
+                  try {
+                    const created = await notebookService.create({
+                      title: `Note from ${paperTitle}`,
+                      content: `<p>${selectedText}</p>`,
+                    });
+                    const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
+                    setPendingNotebookId(created.id);
+                    openNotebooks();
+                  } catch (err) {
+                    console.error('Failed to save to notebook', err);
+                  }
+                })();
+                return;
+              }
+
               // Check if guest mode (from localStorage) or authenticated
               const isAuthenticated = useAuthStore.getState().isAuthenticated;
               const guestSession = useGuestStore.getState().currentSession;

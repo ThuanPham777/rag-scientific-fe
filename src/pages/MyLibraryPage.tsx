@@ -19,12 +19,23 @@ import {
   useUpdateFolder,
   useDeleteFolder,
 } from '../hooks';
-import { PaperTable, DeletePaperDialog } from '../components/library';
+// import {
+//   FolderSidebar,
+//   PaperTable,
+//   UploadDialog,
+//   CreateFolderDialog,
+//   EditFolderDialog,
+//   DeleteFolderDialog,
+//   DeletePaperDialog,
+//   MovePaperDialog,
+// } from '../components/library';
+import NotebookListTable from '@/components/notebook/NotebookListTable';
 import ChatDock from '../components/chat/ChatDock';
-import { FolderSidebar } from '@/components/library/FolderSidebar';
 import { FolderSelectModal } from '@/components/uploader/FolderSelectModal';
 import { useFolderStore } from '@/store/useFolderStore';
 import type { Folder as FolderType } from '../utils/types';
+import { FolderSidebar } from '@/components/library/FolderSidebar';
+import { DeletePaperDialog, PaperTable } from '@/components/library';
 import {
   CreateFolderDialog,
   DeleteFolderDialog,
@@ -253,7 +264,6 @@ export default function MyLibraryPage() {
   // Auto-refresh papers when there are processing papers
   useEffect(() => {
     if (!hasProcessingPapers) return;
-
     const interval = setInterval(() => {
       queryClient.invalidateQueries({ queryKey: paperKeys.infinite() });
     }, 5000); // Refresh every 5 seconds
@@ -268,6 +278,14 @@ export default function MyLibraryPage() {
     }
     return allPapers;
   }, [isInFolderView, selectedFolder, allPapers]);
+
+  // Determine current view name for header
+  const currentViewName =
+    selectedView === 'all'
+      ? 'All files'
+      : selectedView === 'notebooks'
+        ? 'Notebooks'
+        : selectedFolder?.name || 'Loading...';
 
   // Multi-select handlers
   const selectedPaperIds = selectedPapers.map((p) => p.id);
@@ -307,20 +325,24 @@ export default function MyLibraryPage() {
       <main className='flex-1 flex flex-col overflow-hidden'>
         <header className='flex items-center justify-between px-6 py-4 border-b'>
           <div className='flex items-center gap-4'>
-            <h2 className='text-xl font-semibold text-gray-900'>My Library</h2>
+            <h2 className='text-xl font-semibold text-gray-900'>
+              My Library - {currentViewName}
+            </h2>
             {selectedPapers.length > 0 && (
               <span className='px-2 py-1 text-sm bg-orange-100 text-orange-700 rounded-full'>
                 {selectedPapers.length} selected
               </span>
             )}
           </div>
-          <Button
-            onClick={upload.handleUploadClick}
-            className='gap-2'
-          >
-            <Upload className='h-4 w-4' />
-            Upload PDFs
-          </Button>
+          {selectedView !== 'notebooks' && (
+            <Button
+              onClick={upload.handleUploadClick}
+              className='gap-2'
+            >
+              <Upload className='h-4 w-4' />
+              Upload PDFs
+            </Button>
+          )}
           <input
             ref={upload.uploadInputRef}
             type='file'
@@ -332,26 +354,30 @@ export default function MyLibraryPage() {
         </header>
 
         <div className='flex-1 overflow-auto'>
-          <PaperTable
-            papers={displayPapers}
-            totalPapers={displayPapers.length}
-            isLoading={
-              isInFolderView ? isLoadingFolderPapers : isLoadingAllPapers
-            }
-            onPaperClick={paperActions.handlePaperClick}
-            onMovePaper={paperActions.openMovePaperDialog}
-            onDeletePaper={paperActions.openDeletePaperDialog}
-            onUploadClick={upload.handleUploadClick}
-            selectable
-            selectedPaperIds={selectedPaperIds}
-            onToggleSelect={togglePaper}
-            onSelectAll={handleSelectAll}
-            onDeselectAll={handleDeselectAll}
-            onLoadMore={isInFolderView ? undefined : () => fetchNextPage()}
-            hasMore={isInFolderView ? false : (hasNextPage ?? false)}
-            isLoadingMore={isInFolderView ? false : isFetchingNextPage}
-            groupPaperIds={groupPaperIds}
-          />
+          {selectedView === 'notebooks' ? (
+            <NotebookListTable />
+          ) : (
+            <PaperTable
+              papers={displayPapers}
+              totalPapers={displayPapers.length}
+              isLoading={
+                isInFolderView ? isLoadingFolderPapers : isLoadingAllPapers
+              }
+              onPaperClick={paperActions.handlePaperClick}
+              onMovePaper={paperActions.openMovePaperDialog}
+              onDeletePaper={paperActions.openDeletePaperDialog}
+              onUploadClick={upload.handleUploadClick}
+              selectable
+              selectedPaperIds={selectedPaperIds}
+              onToggleSelect={togglePaper}
+              onSelectAll={handleSelectAll}
+              onDeselectAll={handleDeselectAll}
+              onLoadMore={isInFolderView ? undefined : () => fetchNextPage()}
+              hasMore={isInFolderView ? false : (hasNextPage ?? false)}
+              isLoadingMore={isInFolderView ? false : isFetchingNextPage}
+              groupPaperIds={groupPaperIds}
+            />
+          )}
         </div>
       </main>
 

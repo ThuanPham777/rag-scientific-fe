@@ -278,7 +278,8 @@ npm run lint         # Run ESLint
 ### PDF Viewer with Region Selection
 
 ```tsx
-// Click-drag to select a region, then ask AI about it
+// Click-drag to select a region, then ask AI about it (the AI will respond in same language as your query)
+// "Ask AI" tool in notebook also writes text in the language you type
 <PdfViewer
   fileUrl={paper.fileUrl}
   onRegionSelect={(region, imageB64) => {

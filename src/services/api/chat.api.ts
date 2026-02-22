@@ -11,8 +11,8 @@ interface AskQuestionResponse {
   data: {
     answer: string;
     citations: any[];
-    assistantMessageId: string;
-    userMessageId: string;
+    assistantMessageId?: string;
+    userMessageId?: string;
     conversationId?: string;
     modelName?: string;
     tokenCount?: number;
@@ -23,10 +23,26 @@ interface AskQuestionResponse {
  * Send a question to the chat API
  */
 export async function sendQuery(
-  conversationId: string,
+  conversationId: string | null | undefined,
   question: string,
   activePaperId?: string,
 ): Promise<{ assistantMsg: ChatMessage; raw: any }> {
+  // if conversationId is falsy, use the new freeform generation endpoint
+  if (!conversationId) {
+    const { data } = await api.post<{ success: boolean; message: string; data: { answer: string } }>(
+      '/chat/generate',
+      { prompt: question },
+    );
+    const assistantMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: data.data.answer,
+      citations: [],
+      createdAt: new Date().toISOString(),
+    };
+    return { assistantMsg, raw: data.data };
+  }
+
   const { data } = await api.post<AskQuestionResponse>('/chat/ask', {
     conversationId,
     question,
@@ -38,7 +54,7 @@ export async function sendQuery(
   );
 
   const assistantMsg: ChatMessage = {
-    id: data.data.assistantMessageId,
+    id: data.data.assistantMessageId || crypto.randomUUID(),
     role: 'assistant',
     content: data.data.answer,
     citations,
@@ -143,7 +159,7 @@ export async function explainRegion(
   });
 
   const assistantMsg: ChatMessage = {
-    id: data.data.assistantMessageId,
+    id: data.data.assistantMessageId || crypto.randomUUID(),
     role: 'assistant',
     content: data.data.answer,
     citations: parseCitationsFromResponse(

@@ -3,6 +3,8 @@ import AppChrome from './components/layout/AppChrome';
 import HomeUpload from './pages/HomeUpload';
 import ChatPage from './pages/ChatPage';
 import MyLibraryPage from './pages/MyLibraryPage';
+import NotebookPage from './pages/NotebookPage';
+import NotebookViewerPage from './pages/NotebookViewerPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import GoogleCallbackPage from './pages/GoogleCallbackPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -51,6 +53,27 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        {/* Protected route - Notebooks */}
+        <Route
+          path='/notebooks'
+          element={
+            <ProtectedRoute>
+              <NotebookPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Full-page notebook viewer (opens in new tab) */}
+        <Route
+          path='/notebooks/:id'
+          element={
+            <ProtectedRoute>
+              <NotebookViewerPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Protected route - Folder View (folder-specific library view) */}
         <Route
           path='/library/folder/:folderId'
           element={

@@ -108,16 +108,16 @@ export function useSendMessage() {
       question,
       paperId,
     }: {
-      conversationId: string;
+      conversationId?: string | null;
       question: string;
       paperId?: string;
     }) => {
-      return sendQuery(conversationId, question, paperId);
+      return sendQuery(conversationId ?? null, question, paperId);
     },
     onSuccess: (data, variables) => {
       // Update the message cache
       queryClient.setQueryData<ChatMessage[]>(
-        chatKeys.messageList(variables.conversationId),
+        chatKeys.messageList(variables.conversationId || ''),
         (old) => (old ? [...old, data.assistantMsg] : [data.assistantMsg]),
       );
     },
