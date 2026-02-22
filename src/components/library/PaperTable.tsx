@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Users,
   Clock,
+  FolderInput,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +24,7 @@ interface PaperTableProps {
   totalPapers: number;
   isLoading: boolean;
   onPaperClick: (paper: Paper) => void;
+  onMovePaper: (paper: Paper, e: React.MouseEvent) => void;
   onDeletePaper: (paper: Paper, e: React.MouseEvent) => void;
   onUploadClick: () => void;
   // Multi-selection props
@@ -44,6 +46,7 @@ export function PaperTable({
   totalPapers,
   isLoading,
   onPaperClick,
+  onMovePaper,
   onDeletePaper,
   onUploadClick,
   selectable = false,
@@ -204,6 +207,14 @@ export function PaperTable({
                     align='end'
                     className='w-36'
                   >
+                    {!groupPaperIds?.has(paper.id) && (
+                      <DropdownMenuItem
+                        onClick={(e: React.MouseEvent) => onMovePaper(paper, e)}
+                      >
+                        <FolderInput className='mr-2 h-4 w-4' />
+                        Move
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                       onClick={(e: React.MouseEvent) => onDeletePaper(paper, e)}
                       className='text-red-600'

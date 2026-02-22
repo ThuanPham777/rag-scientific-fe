@@ -384,3 +384,22 @@ export type MessageDeletedEvent = {
   messageId: string;
   userId: string;
 };
+
+// ============================
+// 🔹 Folder Types (My Library)
+// ============================
+export type Folder = {
+  id: string;
+  userId: string;
+  name: string;
+  orderIndex: number;
+  createdAt: string;
+  updatedAt: string;
+  _count?: {
+    papers: number;
+  };
+};
+
+export type FolderWithPapers = Folder & {
+  papers: Paper[];
+};
