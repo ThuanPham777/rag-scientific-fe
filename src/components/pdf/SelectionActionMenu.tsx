@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Highlighter,
@@ -6,6 +6,10 @@ import {
   NotebookPen,
   PanelRightOpen,
   TextQuote,
+  Search,
+  Plus,
+  X,
+  ChevronRight,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -14,6 +18,8 @@ import {
 } from '@/components/UI/tooltip';
 import HighlightEditor from './HighlightEditor';
 import { useAuthStore } from '@/store/useAuthStore';
+import notebookService, { type NotebookItem } from '@/services/notebookService';
+import { useUiStore } from '@/store/useUiStore';
 
 type HighlightRect = {
   top: number;
@@ -73,6 +79,99 @@ export default function SelectionActionMenu({
   );
   const [showMainPopup, setShowMainPopup] = useState(true);
   const [currentComment, setCurrentComment] = useState('');
+
+  // --- Notebook picker state ---
+  const [showNotebookPicker, setShowNotebookPicker] = useState(false);
+  const [notebooks, setNotebooks] = useState<NotebookItem[]>([]);
+  const [nbSearch, setNbSearch] = useState('');
+  const [nbLoading, setNbLoading] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newNbTitle, setNewNbTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+  const nbSearchRef = useRef<HTMLInputElement>(null);
+  const newTitleRef = useRef<HTMLInputElement>(null);
+
+  const filteredNotebooks = useMemo(
+    () =>
+      nbSearch.trim()
+        ? notebooks.filter((nb) =>
+            (nb.title || 'Untitled').toLowerCase().includes(nbSearch.toLowerCase()),
+          )
+        : notebooks,
+    [notebooks, nbSearch],
+  );
+
+  const loadNotebooks = useCallback(async () => {
+    setNbLoading(true);
+    try {
+      const list = await notebookService.list();
+      setNotebooks(list);
+    } catch (err) {
+      console.error('Failed to load notebooks', err);
+    } finally {
+      setNbLoading(false);
+    }
+  }, []);
+
+  // Focus search when picker opens
+  useEffect(() => {
+    if (showNotebookPicker) {
+      setTimeout(() => nbSearchRef.current?.focus(), 100);
+    }
+  }, [showNotebookPicker]);
+
+  // Focus title input when create dialog opens
+  useEffect(() => {
+    if (showCreateDialog) {
+      setTimeout(() => newTitleRef.current?.focus(), 100);
+    }
+  }, [showCreateDialog]);
+
+  const handleSelectNotebook = useCallback(
+    async (nbId: string) => {
+      setSaving(true);
+      try {
+        // Get existing notebook content and append
+        const existing = await notebookService.get(nbId);
+        const appendedContent =
+          (existing.content || '') + `<p>${selection.text}</p>`;
+        await notebookService.update(nbId, { content: appendedContent });
+        // Open sidebar and select the notebook
+        const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
+        setPendingNotebookId(nbId);
+        openNotebooks();
+      } catch (err) {
+        console.error('Failed to save to notebook', err);
+      } finally {
+        setSaving(false);
+        setShowNotebookPicker(false);
+        setShowMainPopup(false);
+      }
+    },
+    [selection.text],
+  );
+
+  const handleCreateNotebook = useCallback(async () => {
+    if (!newNbTitle.trim()) return;
+    setSaving(true);
+    try {
+      const created = await notebookService.create({
+        title: newNbTitle.trim(),
+        content: `<p>${selection.text}</p>`,
+      });
+      const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
+      setPendingNotebookId(created.id);
+      openNotebooks();
+    } catch (err) {
+      console.error('Failed to create notebook', err);
+    } finally {
+      setSaving(false);
+      setShowCreateDialog(false);
+      setShowNotebookPicker(false);
+      setShowMainPopup(false);
+      setNewNbTitle('');
+    }
+  }, [newNbTitle, selection.text]);
   const [fixedPosition, setFixedPosition] = useState<{
     top: number;
     left: number;
@@ -138,7 +237,7 @@ export default function SelectionActionMenu({
     [onSaveComment, selectedColor, onAddHighlight, onFinalizeHighlight],
   );
 
-  if (!showMainPopup && !showColorPopup) {
+  if (!showMainPopup && !showColorPopup && !showNotebookPicker && !showCreateDialog) {
     return null;
   }
 
@@ -224,6 +323,136 @@ export default function SelectionActionMenu({
           >
             <NotebookPen size={16} /> Save to notebook
           </button>
+          <button
+            className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left justify-between'
+            onClick={() => {
+              setShowNotebookPicker(true);
+              setShowMainPopup(false);
+              loadNotebooks();
+            }}
+          >
+            <span className='flex items-center gap-2'>
+              <ListTree size={16} /> Select a notebook
+            </span>
+            <ChevronRight size={14} className='text-gray-400' />
+          </button>
+        </div>
+      )}
+
+      {/* Notebook Picker Dropdown */}
+      {showNotebookPicker && !showCreateDialog && (
+        <div
+          className='rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden'
+          style={{ fontSize: `${fontSize}px`, minWidth: '240px' }}
+        >
+          {/* Search bar */}
+          <div className='flex items-center gap-2 px-3 py-2 border-b border-gray-100'>
+            <Search size={14} className='text-gray-400 flex-shrink-0' />
+            <input
+              ref={nbSearchRef}
+              value={nbSearch}
+              onChange={(e) => setNbSearch(e.target.value)}
+              placeholder='Search'
+              className='flex-1 text-sm outline-none bg-transparent placeholder:text-gray-400'
+            />
+            {nbSearch && (
+              <button onClick={() => setNbSearch('')} className='text-gray-400 hover:text-gray-600'>
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Notebook list */}
+          <div className='max-h-48 overflow-y-auto'>
+            {nbLoading ? (
+              <div className='px-3 py-4 text-center text-sm text-gray-400'>Loading...</div>
+            ) : filteredNotebooks.length === 0 ? (
+              <div className='px-3 py-4 text-center text-sm text-gray-400'>
+                {nbSearch ? 'No notebooks found' : 'No notebooks yet'}
+              </div>
+            ) : (
+              filteredNotebooks.map((nb) => (
+                <button
+                  key={nb.id}
+                  className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-sm disabled:opacity-50'
+                  onClick={() => handleSelectNotebook(nb.id)}
+                  disabled={saving}
+                >
+                  {nb.title || 'Untitled'}
+                </button>
+              ))
+            )}
+          </div>
+
+          {/* Create new notebook */}
+          <div className='border-t border-gray-100'>
+            <button
+              className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-sm font-medium'
+              onClick={() => {
+                setShowCreateDialog(true);
+                setNewNbTitle('');
+              }}
+              disabled={saving}
+            >
+              <Plus size={14} /> Create New Notebook
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Create New Notebook Dialog */}
+      {showCreateDialog && (
+        <div
+          className='rounded-lg border border-gray-200 bg-white shadow-xl overflow-hidden'
+          style={{ minWidth: '280px' }}
+        >
+          <div className='flex items-center justify-between px-4 py-3 border-b border-gray-100'>
+            <span className='font-medium text-sm'>New Notebook</span>
+            <button
+              onClick={() => {
+                setShowCreateDialog(false);
+                setShowNotebookPicker(true);
+              }}
+              className='text-gray-400 hover:text-gray-600'
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className='px-4 py-3'>
+            <label className='block text-sm font-medium text-gray-700 mb-1.5'>Notebook Title</label>
+            <input
+              ref={newTitleRef}
+              value={newNbTitle}
+              onChange={(e) => setNewNbTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newNbTitle.trim()) handleCreateNotebook();
+                if (e.key === 'Escape') {
+                  setShowCreateDialog(false);
+                  setShowNotebookPicker(true);
+                }
+              }}
+              placeholder='Eg. My new Notebook'
+              className='w-full border border-gray-300 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent'
+            />
+          </div>
+          <div className='flex justify-end gap-2 px-4 py-3 border-t border-gray-100'>
+            <button
+              onClick={() => {
+                setShowCreateDialog(false);
+                setShowNotebookPicker(true);
+              }}
+              className='px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-md'
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreateNotebook}
+              disabled={!newNbTitle.trim() || saving}
+              className='px-3 py-1.5 text-sm bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50'
+            >
+              {saving ? 'Creating...' : 'Create'}
+            </button>
+          </div>
         </div>
       )}
       {isAuthenticated && showColorPopup && (

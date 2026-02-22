@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2, ExternalLink, Maximize2, AlertTriangle } from 'lucide-react';
 import notebookService from '@/services/notebookService';
 import NotebookEditor from '@/components/notebook/NotebookEditor';
+import { useUiStore } from '@/store/useUiStore';
 
 export default function NotebookPage() {
   const qc = useQueryClient();
@@ -23,6 +24,25 @@ export default function NotebookPage() {
       createNew();
     }
   }, [notebooks, selectedId]);
+
+  // Watch for pending notebook from PDF "Save to notebook"
+  const pendingNotebookId = useUiStore((s) => s.pendingNotebookId);
+  const setPendingNotebookId = useUiStore((s) => s.setPendingNotebookId);
+  useEffect(() => {
+    if (!pendingNotebookId) return;
+    // Refetch notebooks list, select the pending notebook, and load its detail
+    (async () => {
+      await refetch();
+      setSelectedId(pendingNotebookId);
+      try {
+        const d = await notebookService.get(pendingNotebookId);
+        setDetail(d);
+      } catch (err) {
+        console.error('Failed to load pending notebook', err);
+      }
+      setPendingNotebookId(null);
+    })();
+  }, [pendingNotebookId]);
 
   useEffect(() => {
     const load = async () => {
