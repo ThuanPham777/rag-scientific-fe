@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { usePaperStore } from '../../store/usePaperStore';
 import { useSessionStore } from '../../store/useSessionStore';
-import { useDeletePaper } from '../queries';
+import { useDeletePaper, useMovePaper } from '../queries';
 import type { Paper } from '../../utils/types';
 
 interface UsePaperActionsOptions {
@@ -21,10 +21,16 @@ export function usePaperActions(options: UsePaperActionsOptions = {}) {
 
   // React Query mutations
   const deletePaperMutation = useDeletePaper();
+  const movePaperMutation = useMovePaper();
 
   // Delete paper state
   const [showDeletePaperDialog, setShowDeletePaperDialog] = useState(false);
   const [deletingPaper, setDeletingPaper] = useState<Paper | null>(null);
+
+  // Move paper state
+  const [showMovePaperDialog, setShowMovePaperDialog] = useState(false);
+  const [movingPaper, setMovingPaper] = useState<Paper | null>(null);
+  const [targetFolderId, setTargetFolderId] = useState<string>('');
 
   // Navigation state
   const [isNavigating, setIsNavigating] = useState(false);
@@ -34,6 +40,16 @@ export function usePaperActions(options: UsePaperActionsOptions = {}) {
       e.stopPropagation();
       setDeletingPaper(paper);
       setShowDeletePaperDialog(true);
+    },
+    [],
+  );
+
+  const openMovePaperDialog = useCallback(
+    (paper: Paper, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setMovingPaper(paper);
+      setTargetFolderId('');
+      setShowMovePaperDialog(true);
     },
     [],
   );
@@ -49,6 +65,22 @@ export function usePaperActions(options: UsePaperActionsOptions = {}) {
       // Error handled by mutation
     }
   }, [deletingPaper, deletePaperMutation, onActionComplete]);
+
+  const handleMovePaper = useCallback(async () => {
+    if (!movingPaper || !targetFolderId) return;
+    try {
+      await movePaperMutation.mutateAsync({
+        paperId: movingPaper.id,
+        folderId: targetFolderId === 'none' ? null : targetFolderId,
+      });
+      setShowMovePaperDialog(false);
+      setMovingPaper(null);
+      setTargetFolderId('');
+      onActionComplete?.();
+    } catch {
+      // Error handled by mutation
+    }
+  }, [movingPaper, targetFolderId, movePaperMutation, onActionComplete]);
 
   const handlePaperClick = useCallback(
     async (paper: Paper) => {
@@ -115,12 +147,22 @@ export function usePaperActions(options: UsePaperActionsOptions = {}) {
     deletingPaper,
     isDeletingPaper: deletePaperMutation.isPending,
 
+    // Move paper state
+    showMovePaperDialog,
+    setShowMovePaperDialog,
+    movingPaper,
+    targetFolderId,
+    setTargetFolderId,
+    isMovingPaper: movePaperMutation.isPending,
+
     // Navigation state
     isNavigating,
 
     // Actions
     openDeletePaperDialog,
+    openMovePaperDialog,
     handleDeletePaper,
+    handleMovePaper,
     handlePaperClick,
   };
 }

@@ -51,6 +51,14 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path='/library/folder/:folderId'
+          element={
+            <ProtectedRoute>
+              <MyLibraryPage />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Public route - Chat (allows both guest and authenticated users) */}
         <Route

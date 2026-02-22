@@ -7,6 +7,8 @@ import { usePaperStore } from '../store/usePaperStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useGuestStore, generateGuestSessionId } from '../store/useGuestStore';
 import { paperKeys } from '../hooks/queries';
+import { FolderSelectModal } from '@/components/uploader/FolderSelectModal';
+import { useState } from 'react';
 
 export default function HomeUpload() {
   const nav = useNavigate();
@@ -21,15 +23,29 @@ export default function HomeUpload() {
   const setGuestPaper = useGuestStore((s) => s.setGuestPaper);
   const setGuestSession = useGuestStore((s) => s.setGuestSession);
 
+  // State for folder selection modal (logged-in users)
+  const [showFolderModal, setShowFolderModal] = useState(false);
+  const [pendingFile, setPendingFile] = useState<{
+    file: File;
+    setProgress: (v: number) => void;
+  } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
   /**
    * Process upload for logged-in user
    */
   const processAuthenticatedUpload = async (
     file: File,
     setProgress: (v: number) => void,
+    folderId: string | null = null,
   ) => {
+    setIsUploading(true);
     try {
-      const { paper, localUrl } = await uploadPdf(file, setProgress);
+      const { paper, localUrl } = await uploadPdf(
+        file,
+        setProgress,
+        folderId || undefined,
+      );
       console.log('HomeUpload - uploaded paper:', paper);
 
       // Store paper with local URL for PDF preview
@@ -54,6 +70,8 @@ export default function HomeUpload() {
     } catch (error) {
       console.error('Upload failed:', error);
       throw error;
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -125,9 +143,34 @@ export default function HomeUpload() {
    */
   const onUpload = async (file: File, setProgress: (v: number) => void) => {
     if (isAuthenticated) {
-      await processAuthenticatedUpload(file, setProgress);
+      // Logged-in user: Show folder selection modal
+      setPendingFile({ file, setProgress });
+      setShowFolderModal(true);
     } else {
+      // Guest user: Upload directly without folder
       await processGuestUpload(file, setProgress);
+    }
+  };
+
+  /**
+   * Handle folder selection confirm
+   */
+  const handleFolderConfirm = async (folderId: string | null) => {
+    if (!pendingFile) return;
+    await processAuthenticatedUpload(
+      pendingFile.file,
+      pendingFile.setProgress,
+      folderId,
+    );
+  };
+
+  /**
+   * Handle folder modal close
+   */
+  const handleFolderModalClose = () => {
+    if (!isUploading) {
+      setShowFolderModal(false);
+      setPendingFile(null);
     }
   };
 
@@ -144,6 +187,17 @@ export default function HomeUpload() {
         </p>
         <FileDropzone onUpload={onUpload} />
       </div>
+
+      {/* Folder Selection Modal (for logged-in users only) */}
+      {isAuthenticated && (
+        <FolderSelectModal
+          open={showFolderModal}
+          fileNames={pendingFile ? [pendingFile.file.name] : []}
+          isProcessing={isUploading}
+          onClose={handleFolderModalClose}
+          onConfirm={handleFolderConfirm}
+        />
+      )}
     </div>
   );
 }

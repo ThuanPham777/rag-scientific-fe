@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Upload, Loader2, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuthStore } from '../store/useAuthStore';
 import { useMultiPaperChatStore } from '../store/useMultiPaperChatStore';
 import { Button } from '../components/ui/button';
 import { ConfirmModal } from '../components/common';
@@ -14,18 +13,52 @@ import {
   useClearChatHistory,
   useSessions,
   paperKeys,
+  useFolders,
+  useFolder,
+  useCreateFolder,
+  useUpdateFolder,
+  useDeleteFolder,
 } from '../hooks';
-import {
-  PaperTable,
-  UploadDialog,
-  DeletePaperDialog,
-} from '../components/library';
+import { PaperTable, DeletePaperDialog } from '../components/library';
 import ChatDock from '../components/chat/ChatDock';
+import { FolderSidebar } from '@/components/library/FolderSidebar';
+import { FolderSelectModal } from '@/components/uploader/FolderSelectModal';
+import { useFolderStore } from '@/store/useFolderStore';
+import type { Folder as FolderType } from '../utils/types';
+import {
+  CreateFolderDialog,
+  DeleteFolderDialog,
+  EditFolderDialog,
+} from '@/components/library/FolderDialogs';
+import { MovePaperDialog } from '@/components/library/MovePaperDialog';
 
 export default function MyLibraryPage() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
+
+  const { folderId: urlFolderId } = useParams<{ folderId?: string }>();
+
+  // Determine if we're in folder view mode (via URL)
+  const isInFolderView = !!urlFolderId;
+
+  // =========================================
+  // React Query hooks (server state)
+  // =========================================
+  const { data: folders = [], isLoading: isLoadingFolders } = useFolders();
+
+  // Zustand UI state for selected folder
+  const { selectedFolderId, selectFolder, clearSelectedFolder } =
+    useFolderStore();
+
+  // Fetch folder details when selected
+  const { data: selectedFolder, isLoading: isLoadingFolderPapers } = useFolder(
+    selectedFolderId ?? undefined,
+  );
+
+  // React Query mutations
+  const createFolderMutation = useCreateFolder();
+  const updateFolderMutation = useUpdateFolder();
+  const deleteFolderMutation = useDeleteFolder();
 
   // =========================================
   // React Query hooks (server state)
@@ -78,8 +111,59 @@ export default function MyLibraryPage() {
     }
   }, [clearChatHistoryMutation, clearMultiChat, multiChatConversationId]);
 
-  // Upload hook (simplified, no folder context)
-  const upload = useUpload({});
+  // View state (UI state)
+  // If URL has folderId, use it; otherwise default to 'all'
+  const [selectedView, setSelectedView] = useState<'all' | string>(
+    urlFolderId || 'all',
+  );
+  const [foldersExpanded, setFoldersExpanded] = useState(true);
+
+  // Folder dialog states (UI state)
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [editingFolder, setEditingFolder] = useState<FolderType | null>(null);
+  const [deletingFolder, setDeletingFolder] = useState<FolderType | null>(null);
+  const [folderName, setFolderName] = useState('');
+
+  // Sync selectedView with URL params when navigating via URL
+  useEffect(() => {
+    if (urlFolderId) {
+      setSelectedView(urlFolderId);
+      selectFolder(urlFolderId);
+    } else {
+      setSelectedView('all');
+      clearSelectedFolder();
+    }
+  }, [urlFolderId, selectFolder, clearSelectedFolder]);
+
+  // Sync selectedView with Zustand store (for sidebar navigation)
+  useEffect(() => {
+    if (!urlFolderId) {
+      // Only sync with store if not in URL folder view
+      if (selectedView === 'all') {
+        clearSelectedFolder();
+      } else {
+        selectFolder(selectedView);
+      }
+    }
+  }, [selectedView, selectFolder, clearSelectedFolder, urlFolderId]);
+
+  // Get current folder name for auto-assign mode
+  const currentFolderForUpload = useMemo(() => {
+    if (isInFolderView && urlFolderId) {
+      return folders.find((f) => f.id === urlFolderId);
+    }
+    return undefined;
+  }, [isInFolderView, urlFolderId, folders]);
+
+  // Upload hook with folder context awareness
+  const upload = useUpload({
+    selectedView,
+    // When in folder view (via URL), enable auto-assign mode
+    currentFolderId: isInFolderView ? urlFolderId : undefined,
+    currentFolderName: currentFolderForUpload?.name,
+  });
 
   // Paper actions hook
   const paperActions = usePaperActions({});
@@ -92,12 +176,79 @@ export default function MyLibraryPage() {
       .map((s: any) => s.paperId),
   );
 
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/');
+  // Auth redirect is handled by <ProtectedRoute> wrapper in App.tsx
+
+  // Handle view change with URL navigation
+  const handleViewChange = useCallback(
+    (view: 'all' | string) => {
+      setSelectedView(view);
+      if (view === 'all') {
+        navigate('/library');
+      } else {
+        navigate(`/library/folder/${view}`);
+      }
+    },
+    [navigate],
+  );
+
+  // Folder handlers using React Query mutations
+  const handleCreateFolder = async () => {
+    if (!folderName.trim()) return;
+    try {
+      await createFolderMutation.mutateAsync({ name: folderName.trim() });
+      setShowCreateDialog(false);
+      setFolderName('');
+    } catch {
+      // Error handled by mutation
     }
-  }, [isAuthenticated, navigate]);
+  };
+
+  const handleEditFolder = async () => {
+    if (!editingFolder || !folderName.trim()) return;
+    try {
+      await updateFolderMutation.mutateAsync({
+        id: editingFolder.id,
+        data: { name: folderName.trim() },
+      });
+      setShowEditDialog(false);
+      setEditingFolder(null);
+      setFolderName('');
+    } catch {
+      // Error handled by mutation
+    }
+  };
+
+  const handleDeleteFolder = async () => {
+    if (!deletingFolder) return;
+    try {
+      await deleteFolderMutation.mutateAsync(deletingFolder.id);
+      setShowDeleteDialog(false);
+      setDeletingFolder(null);
+      if (selectedView === deletingFolder.id) {
+        handleViewChange('all');
+      }
+    } catch {
+      // Error handled by mutation
+    }
+  };
+
+  const openEditDialog = (folder: FolderType, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingFolder(folder);
+    setFolderName(folder.name);
+    setShowEditDialog(true);
+  };
+
+  const openDeleteDialog = (folder: FolderType, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeletingFolder(folder);
+    setShowDeleteDialog(true);
+  };
+
+  const openCreateDialog = () => {
+    setFolderName('');
+    setShowCreateDialog(true);
+  };
 
   // Auto-refresh papers when there are processing papers
   useEffect(() => {
@@ -110,11 +261,19 @@ export default function MyLibraryPage() {
     return () => clearInterval(interval);
   }, [hasProcessingPapers, queryClient]);
 
+  // Determine which papers to display based on current view
+  const displayPapers = useMemo(() => {
+    if (isInFolderView && selectedFolder?.papers) {
+      return selectedFolder.papers;
+    }
+    return allPapers;
+  }, [isInFolderView, selectedFolder, allPapers]);
+
   // Multi-select handlers
   const selectedPaperIds = selectedPapers.map((p) => p.id);
 
   const handleSelectAll = () => {
-    allPapers.forEach((paper) => {
+    displayPapers.forEach((paper) => {
       if (!selectedPaperIds.includes(paper.id)) {
         togglePaper(paper);
       }
@@ -133,6 +292,17 @@ export default function MyLibraryPage() {
 
   return (
     <div className='flex h-[calc(100vh-56px)] bg-white'>
+      <FolderSidebar
+        folders={folders}
+        selectedView={selectedView}
+        foldersExpanded={foldersExpanded}
+        isLoadingFolders={isLoadingFolders}
+        onSelectView={handleViewChange}
+        onToggleFolders={() => setFoldersExpanded(!foldersExpanded)}
+        onCreateFolder={openCreateDialog}
+        onEditFolder={openEditDialog}
+        onDeleteFolder={openDeleteDialog}
+      />
       {/* Main Content */}
       <main className='flex-1 flex flex-col overflow-hidden'>
         <header className='flex items-center justify-between px-6 py-4 border-b'>
@@ -163,10 +333,13 @@ export default function MyLibraryPage() {
 
         <div className='flex-1 overflow-auto'>
           <PaperTable
-            papers={allPapers}
-            totalPapers={allPapers.length}
-            isLoading={isLoadingAllPapers}
+            papers={displayPapers}
+            totalPapers={displayPapers.length}
+            isLoading={
+              isInFolderView ? isLoadingFolderPapers : isLoadingAllPapers
+            }
             onPaperClick={paperActions.handlePaperClick}
+            onMovePaper={paperActions.openMovePaperDialog}
             onDeletePaper={paperActions.openDeletePaperDialog}
             onUploadClick={upload.handleUploadClick}
             selectable
@@ -174,9 +347,9 @@ export default function MyLibraryPage() {
             onToggleSelect={togglePaper}
             onSelectAll={handleSelectAll}
             onDeselectAll={handleDeselectAll}
-            onLoadMore={() => fetchNextPage()}
-            hasMore={hasNextPage ?? false}
-            isLoadingMore={isFetchingNextPage}
+            onLoadMore={isInFolderView ? undefined : () => fetchNextPage()}
+            hasMore={isInFolderView ? false : (hasNextPage ?? false)}
+            isLoadingMore={isInFolderView ? false : isFetchingNextPage}
             groupPaperIds={groupPaperIds}
           />
         </div>
@@ -200,15 +373,51 @@ export default function MyLibraryPage() {
         isLoadingMore={isFetchingMoreMultiMessages}
       />
 
-      {/* Upload Dialog */}
-      <UploadDialog
-        open={upload.showUploadDialog}
-        uploadQueue={upload.uploadQueue}
-        isUploading={upload.isUploading}
-        onOpenChange={upload.setShowUploadDialog}
-        onRemoveFromQueue={upload.removeFromQueue}
-        onUpload={upload.processUploadQueue}
-        onClose={upload.closeUploadDialog}
+      {/* Folder Dialogs */}
+      <CreateFolderDialog
+        open={showCreateDialog}
+        folderName={folderName}
+        isCreating={createFolderMutation.isPending}
+        onOpenChange={setShowCreateDialog}
+        onFolderNameChange={setFolderName}
+        onCreate={handleCreateFolder}
+      />
+
+      <EditFolderDialog
+        open={showEditDialog}
+        folderName={folderName}
+        onOpenChange={setShowEditDialog}
+        onFolderNameChange={setFolderName}
+        onSave={handleEditFolder}
+      />
+
+      <DeleteFolderDialog
+        open={showDeleteDialog}
+        folder={deletingFolder}
+        isDeleting={deleteFolderMutation.isPending}
+        onOpenChange={setShowDeleteDialog}
+        onDelete={handleDeleteFolder}
+      />
+
+      {/* Folder Select Modal (for "All files" upload) */}
+      <FolderSelectModal
+        open={upload.showFolderModal}
+        fileNames={upload.pendingFileNames}
+        isProcessing={upload.isUploading}
+        onClose={upload.closeFolderModal}
+        onConfirm={upload.handleFolderConfirmAndUpload}
+        onRemoveFile={upload.removePendingFile}
+      />
+
+      <MovePaperDialog
+        open={paperActions.showMovePaperDialog}
+        paper={paperActions.movingPaper}
+        folders={folders}
+        targetFolderId={paperActions.targetFolderId}
+        isMoving={paperActions.isMovingPaper}
+        onOpenChange={paperActions.setShowMovePaperDialog}
+        onTargetFolderChange={paperActions.setTargetFolderId}
+        onMove={paperActions.handleMovePaper}
       />
 
       {/* Paper Dialogs */}
