@@ -34,10 +34,16 @@ import {
   List,
   ListOrdered,
   CheckSquare,
+  Sparkles,
+  X,
+  Replace,
+  ClipboardCopy,
+  CornerDownLeft,
+  Sigma,
 } from 'lucide-react';
 import notebookService from '@/services/notebookService';
 import { listPapers, searchPapers } from '@/services/api/paper.api';
-import { sendQuery } from '@/services/api/chat.api';
+import { sendQuery, askMultiPaper } from '@/services/api/chat.api';
 import { sanitizeLatex } from '@/utils/latexSanitizer';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -58,6 +64,19 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
   const [selectionPos, setSelectionPos] = useState({ left: 0, top: 0 });
+  // Selection AI
+  const [showSelectionAI, setShowSelectionAI] = useState(false);
+  const [selectionAIQuery, setSelectionAIQuery] = useState('');
+  const [selectionAILoading, setSelectionAILoading] = useState(false);
+  const [selectionAIResult, setSelectionAIResult] = useState('');
+  const [selectedTextForAI, setSelectedTextForAI] = useState('');
+  const [selectionAIPos, setSelectionAIPos] = useState({ left: 0, top: 0 });
+  const selectionAIInputRef = useRef<HTMLInputElement>(null);
+  // LaTeX input dialog
+  const [showLatexDialog, setShowLatexDialog] = useState(false);
+  const [latexInput, setLatexInput] = useState('');
+  const [latexDisplayMode, setLatexDisplayMode] = useState(false);
+  const latexPreviewRef = useRef<HTMLDivElement>(null);
   const [title, setTitle] = useState(notebook?.title || '');
   const [showTableDialog, setShowTableDialog] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
@@ -69,6 +88,14 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
   const [showAskAIDialog, setShowAskAIDialog] = useState(false);
   const [askAIQuery, setAskAIQuery] = useState('');
   const [askAILoading, setAskAILoading] = useState(false);
+  // Context papers for Ask AI
+  const [useContext, setUseContext] = useState(false);
+  const [contextPapers, setContextPapers] = useState<any[]>([]);
+  const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([]);
+  const [contextLoading, setContextLoading] = useState(false);
+  // Selection AI context (separate state)
+  const [useSelectionContext, setUseSelectionContext] = useState(false);
+  const [selectionSelectedPaperIds, setSelectionSelectedPaperIds] = useState<string[]>([]);
   const [showTableMenu, setShowTableMenu] = useState(false);
   const [tableRows, setTableRows] = useState(3);
   const [tableCols, setTableCols] = useState(3);
@@ -172,7 +199,15 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
         underline: false,
       }),
       Heading.configure({ levels: [1, 2, 3, 4] }),
-      LinkExtension,
+      LinkExtension.configure({
+        openOnClick: true,
+        autolink: true,
+        HTMLAttributes: {
+          target: '_blank',
+          rel: 'noopener noreferrer',
+          class: 'notebook-link',
+        },
+      }),
       Underline,
       SpanNode,
       MathInline,
@@ -394,6 +429,47 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
     editor?.chain().focus().setMark('textStyle', { color }).run();
   };
 
+  // Load papers for context
+  const loadContextPapers = async () => {
+    if (contextPapers.length > 0) return;
+    setContextLoading(true);
+    try {
+      const res = await listPapers(undefined, 200);
+      const items = (res.items || []).filter((p) => p.status === 'COMPLETED');
+      setContextPapers(items);
+    } catch (err) {
+      console.error('Failed to load papers for context', err);
+    } finally {
+      setContextLoading(false);
+    }
+  };
+
+  const togglePaperId = (id: string, list: string[], setList: (v: string[]) => void) => {
+    setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+  };
+
+  // Handle selection-based AI request
+  const handleSelectionAI = async () => {
+    if (!selectionAIQuery.trim() || !selectedTextForAI) return;
+    setSelectionAILoading(true);
+    setSelectionAIResult('');
+    try {
+      const prompt = `The user has selected the following text in their notebook:\n\n"${selectedTextForAI}"\n\nUser's request: ${selectionAIQuery}\n\nRespond appropriately. If they ask to rewrite, fix, or modify the text, return only the improved version. If they ask a question, provide a concise answer.`;
+      if (useSelectionContext && selectionSelectedPaperIds.length > 0) {
+        const { assistantMsg } = await askMultiPaper(selectionSelectedPaperIds, prompt);
+        setSelectionAIResult(assistantMsg?.content || '');
+      } else {
+        const { assistantMsg } = await sendQuery(null, prompt);
+        setSelectionAIResult(assistantMsg?.content || '');
+      }
+    } catch (err) {
+      console.error('Selection AI request failed', err);
+      setSelectionAIResult('An error occurred. Please try again.');
+    } finally {
+      setSelectionAILoading(false);
+    }
+  };
+
   // NOTE: do not early-return here — keep hooks order stable across renders
 
   const currentHeading = () => {
@@ -454,8 +530,8 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
     return (
     <div className='flex-1 flex flex-col border-l bg-white'>
       {/* top menu bar like docs */}
-      <div className='px-4 py-2 bg-gray-100 border-b'>
-        <ul className='flex gap-4 text-sm'>
+      <div className='px-4 py-1.5 border-b bg-white'>
+        <ul className='flex gap-1 text-sm font-semibold text-gray-700'>
           <li className='relative'>
             <button
               onClick={() => setShowFileMenu((v) => !v)}
@@ -623,9 +699,9 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
         </ul>
       </div>
 
-      <div className='px-4 py-4 border-b bg-white'>
+      <div className='px-4 py-3 bg-white'>
         {/* Title Row */}
-        <div className='mb-4'>
+        <div>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -633,9 +709,10 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
             className='text-lg font-semibold w-full bg-transparent outline-none'
           />
         </div>
+      </div>
 
-        {/* Toolbar Row */}
-        <div className='flex gap-2 items-center flex-wrap'>
+      {/* Toolbar Row */}
+      <div className='flex gap-1 items-center flex-wrap bg-gray-100 px-4 py-1.5 border-b'>
           <button
             onClick={() => editor?.chain().focus().undo().run()}
             title='Undo'
@@ -674,77 +751,106 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
           <button
             onClick={() => editor?.chain().focus().toggleBold().run()}
             title='Bold'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive('bold') ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <Bold size={16} />
           </button>
           <button
             onClick={() => editor?.chain().focus().toggleItalic().run()}
             title='Italic'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive('italic') ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <Italic size={16} />
           </button>
           <button
             onClick={() => editor?.chain().focus().toggleUnderline().run()}
             title='Underline'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive('underline') ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <UnderlineIcon size={16} />
           </button>
           <button
             onClick={() => editor?.chain().focus().toggleBulletList().run()}
             title='Bullet list'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive('bulletList') ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <List size={16} />
           </button>
           <button
             onClick={() => editor?.chain().focus().toggleOrderedList().run()}
             title='Numbered list'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive('orderedList') ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <ListOrdered size={16} />
           </button>
           <button
             onClick={() => editor?.chain().focus().toggleTaskList().run()}
             title='Checkbox list'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive('taskList') ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <CheckSquare size={16} />
           </button>
           <button
-            onClick={() => editor?.chain().focus().toggleLink().run()}
+            onClick={() => {
+              if (!editor) return;
+              // If already a link, remove it
+              if (editor.isActive('link')) {
+                editor.chain().focus().unsetLink().run();
+                return;
+              }
+              // Get selected text
+              const { from, to } = editor.state.selection;
+              const selectedText = editor.state.doc.textBetween(from, to, '');
+              // Check if selected text looks like a URL
+              const urlPattern = /^(https?:\/\/|www\.)/i;
+              let url = '';
+              if (urlPattern.test(selectedText.trim())) {
+                url = selectedText.trim();
+                if (!url.startsWith('http')) url = 'https://' + url;
+              } else {
+                const input = window.prompt('Enter URL:', 'https://');
+                if (!input) return;
+                url = input;
+              }
+              editor.chain().focus().setLink({ href: url }).run();
+            }}
             title='Link'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive('link') ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <Link size={16} />
           </button>
           <button
             onClick={() => editor?.chain().focus().toggleCode().run()}
             title='Code'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive('code') ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <Code size={16} />
           </button>
           <button
+            onClick={() => { setLatexInput(''); setLatexDisplayMode(false); setShowLatexDialog(true); }}
+            title='Insert LaTeX formula'
+            className='p-2 rounded hover:bg-gray-100'
+          >
+            <Sigma size={16} />
+          </button>
+          <button
             onClick={() => editor?.chain().focus().setTextAlign('left').run()}
             title='Align left'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive({ textAlign: 'left' }) ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <AlignLeft size={16} />
           </button>
           <button
             onClick={() => editor?.chain().focus().setTextAlign('center').run()}
             title='Align center'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive({ textAlign: 'center' }) ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <AlignCenter size={16} />
           </button>
           <button
             onClick={() => editor?.chain().focus().setTextAlign('right').run()}
             title='Align right'
-            className='p-2 rounded hover:bg-gray-100'
+            className={`p-2 rounded hover:bg-gray-100 ${editor?.isActive({ textAlign: 'right' }) ? 'bg-blue-100 text-blue-700' : ''}`}
           >
             <AlignRight size={16} />
           </button>
@@ -859,7 +965,6 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
 
           <input type='color' onChange={(e) => applyColor(e.target.value)} className='w-8 h-8 p-0 border rounded' />
         </div>
-      </div>
 
       <div className='p-4 overflow-auto bg-white'>
         {/* make this container relative so floating toolbar can position inside */}
@@ -897,6 +1002,50 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
           }
           /* KaTeX's own CSS (katex.min.css) handles all positioning
              correctly. The atomic MathInline node preserves KaTeX DOM. */
+          /* Link styles */
+          .tiptap a.notebook-link,
+          .tiptap a {
+            color: #2563eb;
+            text-decoration: underline;
+            text-decoration-color: #93c5fd;
+            text-underline-offset: 2px;
+            cursor: pointer;
+            transition: color 0.15s, text-decoration-color 0.15s;
+          }
+          .tiptap a:hover {
+            color: #1d4ed8;
+            text-decoration-color: #2563eb;
+          }
+          /* List styles — Tailwind resets list-style so we restore them */
+          .tiptap ul {
+            list-style-type: disc;
+            padding-left: 1.5em;
+            margin: 0.5em 0;
+          }
+          .tiptap ol {
+            list-style-type: decimal;
+            padding-left: 1.5em;
+            margin: 0.5em 0;
+          }
+          .tiptap ul li, .tiptap ol li {
+            margin: 0.25em 0;
+          }
+          /* Nested lists */
+          .tiptap ul ul { list-style-type: circle; }
+          .tiptap ul ul ul { list-style-type: square; }
+          /* Task list checkboxes */
+          .tiptap ul[data-type="taskList"] {
+            list-style-type: none;
+            padding-left: 0;
+          }
+          .tiptap ul[data-type="taskList"] li {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5em;
+          }
+          .tiptap ul[data-type="taskList"] li label {
+            margin-top: 0.15em;
+          }
         `}</style>
         <div ref={containerRef} className='prose max-w-none mx-0 relative'>
           <EditorContent editor={editor} />
@@ -910,21 +1059,21 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
               <button
                 title='Bold'
                 onClick={() => editor?.chain().focus().toggleBold().run()}
-                className='p-1 hover:bg-gray-100 rounded'
+                className={`p-1 hover:bg-gray-100 rounded ${editor?.isActive('bold') ? 'bg-blue-100 text-blue-700' : ''}`}
               >
                 <Bold size={14} />
               </button>
               <button
                 title='Italic'
                 onClick={() => editor?.chain().focus().toggleItalic().run()}
-                className='p-1 hover:bg-gray-100 rounded'
+                className={`p-1 hover:bg-gray-100 rounded ${editor?.isActive('italic') ? 'bg-blue-100 text-blue-700' : ''}`}
               >
                 <Italic size={14} />
               </button>
               <button
                 title='Underline'
                 onClick={() => editor?.chain().focus().toggleUnderline().run()}
-                className='p-1 hover:bg-gray-100 rounded'
+                className={`p-1 hover:bg-gray-100 rounded ${editor?.isActive('underline') ? 'bg-blue-100 text-blue-700' : ''}`}
               >
                 <UnderlineIcon size={14} />
               </button>
@@ -932,14 +1081,14 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
               <button
                 title='Bullet list'
                 onClick={() => editor?.chain().focus().toggleBulletList().run()}
-                className='p-1 hover:bg-gray-100 rounded'
+                className={`p-1 hover:bg-gray-100 rounded ${editor?.isActive('bulletList') ? 'bg-blue-100 text-blue-700' : ''}`}
               >
                 <List size={14} />
               </button>
               <button
                 title='Numbered list'
                 onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-                className='p-1 hover:bg-gray-100 rounded'
+                className={`p-1 hover:bg-gray-100 rounded ${editor?.isActive('orderedList') ? 'bg-blue-100 text-blue-700' : ''}`}
               >
                 <ListOrdered size={14} />
               </button>
@@ -947,28 +1096,298 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
               <button
                 title='Align left'
                 onClick={() => editor?.chain().focus().setTextAlign('left').run()}
-                className='p-1 hover:bg-gray-100 rounded'
+                className={`p-1 hover:bg-gray-100 rounded ${editor?.isActive({ textAlign: 'left' }) ? 'bg-blue-100 text-blue-700' : ''}`}
               >
                 <AlignLeft size={14} />
               </button>
               <button
                 title='Align center'
                 onClick={() => editor?.chain().focus().setTextAlign('center').run()}
-                className='p-1 hover:bg-gray-100 rounded'
+                className={`p-1 hover:bg-gray-100 rounded ${editor?.isActive({ textAlign: 'center' }) ? 'bg-blue-100 text-blue-700' : ''}`}
               >
                 <AlignCenter size={14} />
               </button>
               <button
                 title='Align right'
                 onClick={() => editor?.chain().focus().setTextAlign('right').run()}
-                className='p-1 hover:bg-gray-100 rounded'
+                className={`p-1 hover:bg-gray-100 rounded ${editor?.isActive({ textAlign: 'right' }) ? 'bg-blue-100 text-blue-700' : ''}`}
               >
                 <AlignRight size={14} />
               </button>
+              <div className='border-l h-6 mx-1' />
+              <button
+                title='Ask AI'
+                onClick={() => {
+                  // Capture selected text
+                  const { from, to } = editor!.state.selection;
+                  const text = editor!.state.doc.textBetween(from, to, '\n');
+                  setSelectedTextForAI(text);
+                  setSelectionAIQuery('');
+                  setSelectionAIResult('');
+                  // Get viewport position of selection to place popup below it
+                  const sel = window.getSelection();
+                  if (sel && sel.rangeCount > 0) {
+                    const rect = sel.getRangeAt(0).getBoundingClientRect();
+                    const popupW = 440;
+                    const left = Math.max(8, Math.min(rect.left, window.innerWidth - popupW - 16));
+                    const top = Math.min(rect.bottom + 8, window.innerHeight - 300);
+                    setSelectionAIPos({ left, top });
+                  }
+                  setShowSelectionAI(true);
+                  setShowSelectionToolbar(false);
+                  setTimeout(() => selectionAIInputRef.current?.focus(), 50);
+                }}
+                className='p-1 hover:bg-purple-100 rounded text-purple-600'
+              >
+                <Sparkles size={14} />
+              </button>
             </div>
           )}
+
         </div>
       </div>
+
+      {/* Selection AI popup — positioned below selection */}
+      {showSelectionAI && (
+        <div className='fixed inset-0 z-50' onClick={() => { setShowSelectionAI(false); setSelectionAIResult(''); }}>
+          <div
+            className='fixed bg-white border rounded-xl shadow-2xl w-[440px] max-w-[90vw]'
+            style={{ left: selectionAIPos.left, top: selectionAIPos.top }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className='flex items-center gap-2 px-4 py-3 border-b bg-gradient-to-r from-purple-50 to-white rounded-t-xl'>
+              <Sparkles size={16} className='text-purple-500' />
+              <span className='text-sm font-semibold text-purple-700'>Ask AI about selection</span>
+              <button
+                onClick={() => { setShowSelectionAI(false); setSelectionAIResult(''); }}
+                className='ml-auto p-1 hover:bg-gray-200 rounded'
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {selectedTextForAI && (
+              <div className='px-4 py-2.5 bg-gray-50 text-xs text-gray-500 border-b max-h-24 overflow-auto'>
+                <span className='font-semibold text-gray-600'>Selected text: </span>
+                <span className='italic'>{selectedTextForAI.length > 200 ? selectedTextForAI.slice(0, 200) + '…' : selectedTextForAI}</span>
+              </div>
+            )}
+            <div className='px-4 py-3'>
+              <div className='flex items-center gap-2'>
+                <input
+                  ref={selectionAIInputRef}
+                  value={selectionAIQuery}
+                  onChange={(e) => setSelectionAIQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey && selectionAIQuery.trim()) {
+                      e.preventDefault();
+                      handleSelectionAI();
+                    }
+                    if (e.key === 'Escape') {
+                      setShowSelectionAI(false);
+                      setSelectionAIResult('');
+                    }
+                  }}
+                  placeholder='E.g. "Explain this", "Rewrite formally", "Fix grammar"...'
+                  className='flex-1 text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-400'
+                  disabled={selectionAILoading}
+                />
+                <button
+                  onClick={() => handleSelectionAI()}
+                  disabled={selectionAILoading || !selectionAIQuery.trim()}
+                  className='p-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors'
+                  title='Send'
+                >
+                  <CornerDownLeft size={16} />
+                </button>
+              </div>
+            </div>
+            {/* Context checkbox */}
+            <div className='px-4 pb-2'>
+              <label className='flex items-center gap-2 text-xs text-gray-600 cursor-pointer'>
+                <input
+                  type='checkbox'
+                  checked={useSelectionContext}
+                  onChange={(e) => {
+                    setUseSelectionContext(e.target.checked);
+                    if (e.target.checked) loadContextPapers();
+                  }}
+                  className='rounded'
+                />
+                Add context from papers
+              </label>
+              {useSelectionContext && (
+                <div className='mt-2 max-h-32 overflow-auto border rounded-lg p-2 bg-gray-50 space-y-1'>
+                  {contextLoading ? (
+                    <div className='text-xs text-gray-400'>Loading papers...</div>
+                  ) : contextPapers.length === 0 ? (
+                    <div className='text-xs text-gray-400'>No papers found</div>
+                  ) : (
+                    contextPapers.map((p) => (
+                      <label key={p.id} className='flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-100 rounded px-1.5 py-1'>
+                        <input
+                          type='checkbox'
+                          checked={selectionSelectedPaperIds.includes(p.id)}
+                          onChange={() => togglePaperId(p.id, selectionSelectedPaperIds, setSelectionSelectedPaperIds)}
+                          className='rounded'
+                        />
+                        <span className='truncate'>{p.title || p.fileName}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            {selectionAILoading && (
+              <div className='px-4 py-3 text-sm text-gray-500 flex items-center gap-2 border-t'>
+                <div className='w-4 h-4 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin' />
+                Generating...
+              </div>
+            )}
+            {selectionAIResult && !selectionAILoading && (
+              <div className='border-t'>
+                <div className='px-4 py-3 max-h-60 overflow-auto text-sm text-gray-800 whitespace-pre-wrap'>
+                  {selectionAIResult}
+                </div>
+                <div className='flex items-center gap-2 px-4 py-3 border-t bg-gray-50 rounded-b-xl'>
+                  <button
+                    onClick={() => {
+                      const formatted = formatAIGeneration(selectionAIResult);
+                      const { from, to } = editor!.state.selection;
+                      editor?.chain().focus().deleteRange({ from, to }).insertContentAt(from, formatted).run();
+                      setShowSelectionAI(false);
+                      setSelectionAIResult('');
+                    }}
+                    className='flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors'
+                  >
+                    <Replace size={13} /> Replace selection
+                  </button>
+                  <button
+                    onClick={() => {
+                      const formatted = formatAIGeneration(selectionAIResult);
+                      const { to } = editor!.state.selection;
+                      editor?.chain().focus().insertContentAt(to, '<p>' + formatted + '</p>').run();
+                      setShowSelectionAI(false);
+                      setSelectionAIResult('');
+                    }}
+                    className='flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors'
+                  >
+                    <CornerDownLeft size={13} /> Insert below
+                  </button>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectionAIResult);
+                    }}
+                    className='flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors'
+                  >
+                    <ClipboardCopy size={13} /> Copy
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* LaTeX input dialog */}
+      {showLatexDialog && (
+        <div className='fixed inset-0 bg-black/30 flex items-start justify-center z-50 pt-20' onClick={() => setShowLatexDialog(false)}>
+          <div
+            className='bg-white rounded-xl shadow-2xl w-[520px] max-w-[90vw]'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className='flex items-center gap-2 px-4 py-3 border-b bg-gradient-to-r from-blue-50 to-white rounded-t-xl'>
+              <Sigma size={16} className='text-blue-600' />
+              <span className='text-sm font-semibold text-blue-700'>Insert LaTeX Formula</span>
+              <button
+                onClick={() => setShowLatexDialog(false)}
+                className='ml-auto p-1 hover:bg-gray-200 rounded'
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className='px-4 py-3 space-y-3'>
+              <div>
+                <label className='text-xs font-medium text-gray-600 mb-1 block'>LaTeX expression</label>
+                <textarea
+                  value={latexInput}
+                  onChange={(e) => setLatexInput(e.target.value)}
+                  placeholder='E.g.  E = mc^2  or  \int_0^\infty e^{-x} dx = 1'
+                  className='w-full text-sm border rounded-lg px-3 py-2 min-h-[80px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-400'
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && latexInput.trim()) {
+                      e.preventDefault();
+                      editor?.chain().focus().insertContent({
+                        type: 'mathInline',
+                        attrs: { latex: latexInput.trim(), display: latexDisplayMode },
+                      }).run();
+                      setShowLatexDialog(false);
+                      setLatexInput('');
+                    }
+                  }}
+                />
+              </div>
+              <div className='flex items-center gap-3'>
+                <label className='flex items-center gap-2 text-xs text-gray-600 cursor-pointer'>
+                  <input
+                    type='checkbox'
+                    checked={latexDisplayMode}
+                    onChange={(e) => setLatexDisplayMode(e.target.checked)}
+                    className='rounded'
+                  />
+                  Display mode (centered, larger)
+                </label>
+              </div>
+              {latexInput.trim() && (
+                <div className='border rounded-lg p-3 bg-gray-50 min-h-[50px] flex items-center justify-center overflow-auto'>
+                  <div
+                    ref={latexPreviewRef}
+                    dangerouslySetInnerHTML={{
+                      __html: (() => {
+                        try {
+                          return katex.renderToString(latexInput.trim().replace(/[\u200B\u200C\u200D\uFEFF]/g, ''), {
+                            throwOnError: false,
+                            displayMode: latexDisplayMode,
+                            output: 'htmlAndMathml',
+                          });
+                        } catch {
+                          return '<span style="color: red; font-size: 12px;">Invalid LaTeX</span>';
+                        }
+                      })(),
+                    }}
+                  />
+                </div>
+              )}
+              <div className='text-xs text-gray-400'>
+                Examples: <code className='bg-gray-100 px-1 rounded'>E = mc^2</code> · <code className='bg-gray-100 px-1 rounded'>\frac{'{a}'}{'{b}'}</code> · <code className='bg-gray-100 px-1 rounded'>\sum_{'i=1'}^n x_i</code> · <code className='bg-gray-100 px-1 rounded'>\sqrt{'{x}'}</code>
+              </div>
+            </div>
+            <div className='flex items-center justify-end gap-2 px-4 py-3 border-t bg-gray-50 rounded-b-xl'>
+              <button
+                onClick={() => setShowLatexDialog(false)}
+                className='px-3 py-1.5 text-sm rounded-md border hover:bg-gray-100 transition-colors'
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!latexInput.trim()) return;
+                  editor?.chain().focus().insertContent({
+                    type: 'mathInline',
+                    attrs: { latex: latexInput.trim(), display: latexDisplayMode },
+                  }).run();
+                  setShowLatexDialog(false);
+                  setLatexInput('');
+                }}
+                disabled={!latexInput.trim()}
+                className='px-4 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors'
+              >
+                Insert formula
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showTableDialog && (
         <div className='fixed inset-0 bg-black/50 flex items-center justify-center z-50'>
@@ -1135,6 +1554,42 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
               placeholder='Ask AI to write e.g., "Write an introduction summarizing recent work on X"'
               className='w-full border rounded px-3 py-2 min-h-[120px]'
             />
+            {/* Context checkbox */}
+            <div className='mt-3'>
+              <label className='flex items-center gap-2 text-sm text-gray-600 cursor-pointer'>
+                <input
+                  type='checkbox'
+                  checked={useContext}
+                  onChange={(e) => {
+                    setUseContext(e.target.checked);
+                    if (e.target.checked) loadContextPapers();
+                  }}
+                  className='rounded'
+                />
+                Add context from papers
+              </label>
+              {useContext && (
+                <div className='mt-2 max-h-40 overflow-auto border rounded-lg p-2 bg-gray-50 space-y-1'>
+                  {contextLoading ? (
+                    <div className='text-sm text-gray-400'>Loading papers...</div>
+                  ) : contextPapers.length === 0 ? (
+                    <div className='text-sm text-gray-400'>No papers found</div>
+                  ) : (
+                    contextPapers.map((p) => (
+                      <label key={p.id} className='flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-100 rounded px-2 py-1'>
+                        <input
+                          type='checkbox'
+                          checked={selectedPaperIds.includes(p.id)}
+                          onChange={() => togglePaperId(p.id, selectedPaperIds, setSelectedPaperIds)}
+                          className='rounded'
+                        />
+                        <span className='truncate'>{p.title || p.fileName}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             <div className='flex items-center justify-end gap-2 mt-3'>
               <button
                 className='px-4 py-2 rounded border'
@@ -1151,9 +1606,14 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
                   if (!askAIQuery) return;
                   try {
                     setAskAILoading(true);
-                    const { assistantMsg } = await sendQuery(null, askAIQuery);
-                    const raw = assistantMsg?.content || '';
-                    // format the AI response before inserting (KaTeX is already rendered)
+                    let raw = '';
+                    if (useContext && selectedPaperIds.length > 0) {
+                      const { assistantMsg } = await askMultiPaper(selectedPaperIds, askAIQuery);
+                      raw = assistantMsg?.content || '';
+                    } else {
+                      const { assistantMsg } = await sendQuery(null, askAIQuery);
+                      raw = assistantMsg?.content || '';
+                    }
                     const content = formatAIGeneration(raw);
                     editor?.chain().focus().insertContent(content).run();
                     setShowAskAIDialog(false);
