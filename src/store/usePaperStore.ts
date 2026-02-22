@@ -85,7 +85,11 @@ export const usePaperStore = create<PaperUIState>((set) => ({
   setCurrentPaperId: (id) => set({ currentPaperId: id }),
 
   setCurrentPaper: (paper) =>
-    set({ currentPaper: paper, currentPaperId: paper?.id ?? null }),
+    set({
+      currentPaper: paper,
+      currentPaperId: paper?.id ?? null,
+      pendingJump: null,
+    }),
 
   updateCurrentPaper: (partial) =>
     set((s) => ({
@@ -104,6 +108,7 @@ export const usePaperStore = create<PaperUIState>((set) => ({
         title: session.title,
       },
       optimisticMessages: session.messages ?? [],
+      pendingJump: null,
     }),
 
   // Message actions

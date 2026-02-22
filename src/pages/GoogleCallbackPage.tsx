@@ -53,9 +53,15 @@ export default function GoogleCallbackPage() {
     handleCallback(code, state).then((success) => {
       isProcessingCallback = false;
       if (success) {
+        // Check for pending invite redirect (user clicked invite link → Google login)
+        const pendingInvite = sessionStorage.getItem('pendingInvite');
+        const redirectTo = pendingInvite || '/';
+        if (pendingInvite) {
+          sessionStorage.removeItem('pendingInvite');
+        }
         // Wait a moment to show success state, then redirect
         setTimeout(() => {
-          navigate('/');
+          navigate(redirectTo);
         }, 1000);
       } else {
         // Wait to show error, then redirect

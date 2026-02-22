@@ -9,3 +9,6 @@ export * from './multi-chat';
 
 // Auth hooks
 export * from './auth';
+
+// Session socket hook
+export { useSessionSocket } from './useSessionSocket';

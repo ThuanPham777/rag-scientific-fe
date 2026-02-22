@@ -22,23 +22,27 @@ Frontend application cho hệ thống RAG Scientific, cung cấp giao diện ng�
 
 - **Upload & View PDFs**: Drag-drop upload, interactive PDF viewer
 - **AI Chat**: Hỏi đáp về nội dung papers với citations
-- **Library Management**: Tổ chức papers trong folders
+- **Collaborative Sessions**: Real-time multi-user chat với WebSocket
+- **Highlights & Comments**: Annotate PDFs với highlights và comments
 - **Multi-Paper Analysis**: So sánh và phân tích nhiều papers cùng lúc
 
 ## ✨ Features
 
-| Feature                 | Description                                          |
-| ----------------------- | ---------------------------------------------------- |
-| 📄 **PDF Viewer**       | Interactive viewer với zoom, scroll, page navigation |
-| 💬 **AI Chat**          | Real-time Q&A với markdown rendering và citations    |
-| 🎯 **Region Selection** | Click-drag chọn vùng trong PDF để hỏi AI             |
-| 📁 **Library**          | Organize papers trong folders với drag-drop          |
-| 🔍 **Related Papers**   | Tìm papers liên quan từ arXiv                        |
-| 💡 **Suggestions**      | AI-generated câu hỏi gợi ý                           |
-| 🌙 **Dark Mode**        | Support dark/light theme                             |
-| 📱 **Responsive**       | Mobile-friendly design                               |
-| 🔐 **Auth**             | Google OAuth + Email/Password                        |
-| 👤 **Guest Mode**       | Dùng thử không cần đăng ký                           |
+| Feature                       | Description                                          |
+| ----------------------------- | ---------------------------------------------------- |
+| 📄 **PDF Viewer**             | Interactive viewer với zoom, scroll, page navigation |
+| 💬 **AI Chat**                | Real-time Q&A với markdown rendering và citations    |
+| 🤝 **Collaborative Sessions** | Real-time multi-user chat với WebSocket              |
+| 🎯 **Region Selection**       | Click-drag chọn vùng trong PDF để hỏi AI             |
+| 📁 **Library**                | Quản lý papers                                       |
+| 🔍 **Related Papers**         | Tìm papers liên quan từ arXiv                        |
+| 💡 **Suggestions**            | AI-generated câu hỏi gợi ý                           |
+| ✏️ **Highlights**             | Highlight text và comment trên PDF                   |
+| 💬 **Reactions & Replies**    | React với emoji và reply threaded messages           |
+| 🌙 **Dark Mode**              | Support dark/light theme                             |
+| 📱 **Responsive**             | Mobile-friendly design                               |
+| 🔐 **Auth**                   | Google OAuth + Email/Password                        |
+| 👤 **Guest Mode**             | Dùng thử không cần đăng ký                           |
 
 ## 🏗 Architecture
 
@@ -101,13 +105,21 @@ rag-scientific-fe/
 │   │   │   ├── PdfToolbar.tsx     # Zoom, page controls
 │   │   │   ├── SelectionPopup.tsx # Region selection
 │   │   │   ├── SummaryView.tsx    # Paper summary tab
-│   │   │   └── RelatedPapersView.tsx
+│   │   │   ├── RelatedPapersView.tsx
+│   │   │   └── HighlightManager.tsx   # Highlight rendering
 │   │   │
 │   │   ├── library/           # 📁 Library management
-│   │   │   ├── FolderSidebar.tsx
-│   │   │   ├── FolderDialogs.tsx
 │   │   │   ├── PaperTable.tsx
 │   │   │   └── UploadDialog.tsx
+│   │   │
+│   │   ├── session/           # 🤝 Collaborative session components
+│   │   │   ├── SessionBar.tsx         # Session header bar
+│   │   │   ├── MembersList.tsx
+│   │   │   ├── MembersModal.tsx
+│   │   │   ├── InviteModal.tsx
+│   │   │   ├── TypingIndicator.tsx
+│   │   │   ├── StartSessionButton.tsx
+│   │   │   └── ConfirmStartSessionModal.tsx
 │   │   │
 │   │   ├── layout/            # 🎨 Layout components
 │   │   │   ├── AppChrome.tsx
@@ -115,8 +127,7 @@ rag-scientific-fe/
 │   │   │   └── LeftDock.tsx
 │   │   │
 │   │   ├── uploader/          # ⬆️ File upload
-│   │   │   ├── FileDropzone.tsx
-│   │   │   └── FolderSelectModal.tsx
+│   │   │   └── FileDropzone.tsx
 │   │   │
 │   │   └── ui/                # 🧱 UI primitives (Radix)
 │   │       ├── button.tsx
@@ -130,6 +141,9 @@ rag-scientific-fe/
 │   │   ├── MyLibraryPage.tsx      # Paper management
 │   │   ├── LoginPage.tsx
 │   │   ├── SignupPage.tsx
+│   │   ├── ForgotPasswordPage.tsx
+│   │   ├── ResetPasswordPage.tsx
+│   │   ├── JoinSessionPage.tsx    # Join collaborative session
 │   │   └── GoogleCallbackPage.tsx
 │   │
 │   ├── hooks/                 # 🎣 Custom hooks
@@ -147,16 +161,21 @@ rag-scientific-fe/
 │   │   ├── auth.api.ts
 │   │   ├── paper.api.ts
 │   │   ├── chat.api.ts
-│   │   ├── folder.api.ts
 │   │   ├── conversation.api.ts
-│   │   ├── guest.api.ts
-│   │   └── rag.api.ts
+│   │   ├── session.api.ts
+│   │   ├── highlight.api.ts
+│   │   ├── comment.api.ts
+│   │   └── guest.api.ts
+│   │
+│   ├── services/
+│   │   ├── socket.ts              # WebSocket client
+│   │   └── index.ts
 │   │
 │   ├── store/                 # 🗃️ Zustand stores
 │   │   ├── useAuthStore.ts
 │   │   ├── usePaperStore.ts
-│   │   ├── useFolderStore.ts
 │   │   ├── useGuestStore.ts
+│   │   ├── useSessionStore.ts
 │   │   └── useMultiPaperChatStore.ts
 │   │
 │   ├── config/                # ⚙️ Configuration
@@ -165,7 +184,6 @@ rag-scientific-fe/
 │   │
 │   ├── utils/                 # 🔧 Utilities
 │   │   ├── types.ts               # Type definitions
-│   │   ├── citation.ts            # Citation parsing
 │   │   └── file.ts                # File helpers
 │   │
 │   ├── providers/             # 🎁 React providers
@@ -296,6 +314,24 @@ askMultiPaper({
   paperIds: ['paper-1-id', 'paper-2-id'],
   question: 'Compare the methodologies used',
 });
+```
+
+### Collaborative Sessions
+
+```tsx
+// Real-time collaborative chat with WebSocket
+import { joinSessionRoom, leaveSessionRoom } from '@/services/socket';
+
+// Join a session
+await joinSessionRoom(conversationId);
+
+// Listen for new messages from other users
+socket.on('session:new-message', (message) => {
+  addMessageToChat(message);
+});
+
+// Leave session
+leaveSessionRoom(conversationId);
 ```
 
 ## 🔗 Related Services

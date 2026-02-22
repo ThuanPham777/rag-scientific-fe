@@ -5,4 +5,4 @@ export * from './api/paper.api';
 export * from './api/conversation.api';
 export * from './api/chat.api';
 export * from './api/guest.api';
-export * from './api/folder.api';
+export * from './api/session.api';

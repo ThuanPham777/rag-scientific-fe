@@ -1,73 +1,53 @@
-import { useCallback, useEffect, useState, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Upload, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Upload, Loader2, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/useAuthStore';
 import { useMultiPaperChatStore } from '../store/useMultiPaperChatStore';
-import { useFolderStore } from '../store/useFolderStore';
 import { Button } from '../components/ui/button';
-import type { Paper, Folder as FolderType } from '../utils/types';
+import { ConfirmModal } from '../components/common';
 import {
   useUpload,
   usePaperActions,
   useMultiPaperChat,
-  useFolders,
-  useFolder,
-  useCreateFolder,
-  useUpdateFolder,
-  useDeleteFolder,
   usePapers,
   useClearChatHistory,
+  useSessions,
+  paperKeys,
 } from '../hooks';
 import {
-  FolderSidebar,
   PaperTable,
   UploadDialog,
-  CreateFolderDialog,
-  EditFolderDialog,
-  DeleteFolderDialog,
   DeletePaperDialog,
-  MovePaperDialog,
 } from '../components/library';
 import ChatDock from '../components/chat/ChatDock';
 
 export default function MyLibraryPage() {
   const navigate = useNavigate();
-  const { folderId: urlFolderId } = useParams<{ folderId?: string }>();
   const { isAuthenticated } = useAuthStore();
-
-  // Determine if we're in folder view mode (via URL)
-  const isInFolderView = !!urlFolderId;
+  const queryClient = useQueryClient();
 
   // =========================================
   // React Query hooks (server state)
   // =========================================
-  const { data: folders = [], isLoading: isLoadingFolders } = useFolders();
   const {
     data: allPapers = [],
     isLoading: isLoadingAllPapers,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    hasProcessingPapers,
   } = usePapers();
 
-  // Zustand UI state for selected folder
-  const { selectedFolderId, selectFolder, clearSelectedFolder } =
-    useFolderStore();
-
-  // Fetch folder details when selected
-  const { data: selectedFolder, isLoading: isLoadingFolderPapers } = useFolder(
-    selectedFolderId ?? undefined,
-  );
-
   // React Query mutations
-  const createFolderMutation = useCreateFolder();
-  const updateFolderMutation = useUpdateFolder();
-  const deleteFolderMutation = useDeleteFolder();
   const clearChatHistoryMutation = useClearChatHistory();
 
   // Multi-paper chat state (UI state in Zustand)
   const { selectedPapers, togglePaper, deselectPaper, clearSelection } =
     useMultiPaperChatStore();
+
+  // Confirm modal state
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const {
     messages: multiChatMessages,
@@ -81,80 +61,36 @@ export default function MyLibraryPage() {
   } = useMultiPaperChat();
 
   // Handle clear chat history for multi-paper mode
-  const handleClearMultiChatHistory = useCallback(
-    async (conversationId: string) => {
-      if (!conversationId) return;
+  const handleClearMultiChatHistory = useCallback((conversationId: string) => {
+    if (!conversationId) return;
+    setShowClearConfirm(true);
+  }, []);
 
-      if (!window.confirm('Are you sure you want to clear all chat history?')) {
-        return;
-      }
+  const confirmClearMultiChatHistory = useCallback(async () => {
+    setShowClearConfirm(false);
+    if (!multiChatConversationId) return;
 
-      try {
-        await clearChatHistoryMutation.mutateAsync(conversationId);
-        clearMultiChat();
-      } catch (err) {
-        console.error('Failed to clear multi-paper chat history:', err);
-      }
-    },
-    [clearChatHistoryMutation, clearMultiChat],
-  );
-
-  // View state (UI state)
-  // If URL has folderId, use it; otherwise default to 'all'
-  const [selectedView, setSelectedView] = useState<'all' | string>(
-    urlFolderId || 'all',
-  );
-  const [foldersExpanded, setFoldersExpanded] = useState(true);
-
-  // Folder dialog states (UI state)
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [editingFolder, setEditingFolder] = useState<FolderType | null>(null);
-  const [deletingFolder, setDeletingFolder] = useState<FolderType | null>(null);
-  const [folderName, setFolderName] = useState('');
-
-  // Sync selectedView with URL params when navigating via URL
-  useEffect(() => {
-    if (urlFolderId) {
-      setSelectedView(urlFolderId);
-      selectFolder(urlFolderId);
-    } else {
-      setSelectedView('all');
-      clearSelectedFolder();
+    try {
+      await clearChatHistoryMutation.mutateAsync(multiChatConversationId);
+      clearMultiChat();
+    } catch (err) {
+      console.error('Failed to clear multi-paper chat history:', err);
     }
-  }, [urlFolderId, selectFolder, clearSelectedFolder]);
+  }, [clearChatHistoryMutation, clearMultiChat, multiChatConversationId]);
 
-  // Sync selectedView with Zustand store (for sidebar navigation)
-  useEffect(() => {
-    if (!urlFolderId) {
-      // Only sync with store if not in URL folder view
-      if (selectedView === 'all') {
-        clearSelectedFolder();
-      } else {
-        selectFolder(selectedView);
-      }
-    }
-  }, [selectedView, selectFolder, clearSelectedFolder, urlFolderId]);
-
-  // Get current folder name for auto-assign mode
-  const currentFolderForUpload = useMemo(() => {
-    if (isInFolderView && urlFolderId) {
-      return folders.find((f) => f.id === urlFolderId);
-    }
-    return undefined;
-  }, [isInFolderView, urlFolderId, folders]);
-
-  // Upload hook with folder context awareness
-  const upload = useUpload({
-    selectedView,
-    // When in folder view (via URL), enable auto-assign mode
-    currentFolderId: isInFolderView ? urlFolderId : undefined,
-    currentFolderName: currentFolderForUpload?.name,
-  });
+  // Upload hook (simplified, no folder context)
+  const upload = useUpload({});
 
   // Paper actions hook
   const paperActions = usePaperActions({});
+
+  // Fetch active sessions to identify group papers
+  const { data: sessions = [] } = useSessions();
+  const groupPaperIds = new Set(
+    sessions
+      .filter((s: any) => s.isCollaborative && s.paperId)
+      .map((s: any) => s.paperId),
+  );
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -163,90 +99,22 @@ export default function MyLibraryPage() {
     }
   }, [isAuthenticated, navigate]);
 
-  // Handle view change with URL navigation
-  const handleViewChange = useCallback(
-    (view: 'all' | string) => {
-      setSelectedView(view);
-      if (view === 'all') {
-        navigate('/library');
-      } else {
-        navigate(`/library/folder/${view}`);
-      }
-    },
-    [navigate],
-  );
+  // Auto-refresh papers when there are processing papers
+  useEffect(() => {
+    if (!hasProcessingPapers) return;
 
-  // Folder handlers using React Query mutations
-  const handleCreateFolder = async () => {
-    if (!folderName.trim()) return;
-    try {
-      await createFolderMutation.mutateAsync({ name: folderName.trim() });
-      setShowCreateDialog(false);
-      setFolderName('');
-    } catch {
-      // Error handled by mutation
-    }
-  };
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: paperKeys.infinite() });
+    }, 5000); // Refresh every 5 seconds
 
-  const handleEditFolder = async () => {
-    if (!editingFolder || !folderName.trim()) return;
-    try {
-      await updateFolderMutation.mutateAsync({
-        id: editingFolder.id,
-        data: { name: folderName.trim() },
-      });
-      setShowEditDialog(false);
-      setEditingFolder(null);
-      setFolderName('');
-    } catch {
-      // Error handled by mutation
-    }
-  };
-
-  const handleDeleteFolder = async () => {
-    if (!deletingFolder) return;
-    try {
-      await deleteFolderMutation.mutateAsync(deletingFolder.id);
-      setShowDeleteDialog(false);
-      setDeletingFolder(null);
-      if (selectedView === deletingFolder.id) {
-        handleViewChange('all');
-      }
-    } catch {
-      // Error handled by mutation
-    }
-  };
-
-  const openEditDialog = (folder: FolderType, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingFolder(folder);
-    setFolderName(folder.name);
-    setShowEditDialog(true);
-  };
-
-  const openDeleteDialog = (folder: FolderType, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDeletingFolder(folder);
-    setShowDeleteDialog(true);
-  };
-
-  const openCreateDialog = () => {
-    setFolderName('');
-    setShowCreateDialog(true);
-  };
-
-  // Determine what papers to show (from React Query data)
-  const displayPapers: Paper[] =
-    selectedView === 'all' ? allPapers : selectedFolder?.papers || [];
-
-  const currentViewName =
-    selectedView === 'all' ? 'All files' : selectedFolder?.name || 'Loading...';
+    return () => clearInterval(interval);
+  }, [hasProcessingPapers, queryClient]);
 
   // Multi-select handlers
   const selectedPaperIds = selectedPapers.map((p) => p.id);
 
   const handleSelectAll = () => {
-    displayPapers.forEach((paper) => {
+    allPapers.forEach((paper) => {
       if (!selectedPaperIds.includes(paper.id)) {
         togglePaper(paper);
       }
@@ -265,26 +133,11 @@ export default function MyLibraryPage() {
 
   return (
     <div className='flex h-[calc(100vh-56px)] bg-white'>
-      {/* Left Sidebar */}
-      <FolderSidebar
-        folders={folders}
-        selectedView={selectedView}
-        foldersExpanded={foldersExpanded}
-        isLoadingFolders={isLoadingFolders}
-        onSelectView={handleViewChange}
-        onToggleFolders={() => setFoldersExpanded(!foldersExpanded)}
-        onCreateFolder={openCreateDialog}
-        onEditFolder={openEditDialog}
-        onDeleteFolder={openDeleteDialog}
-      />
-
       {/* Main Content */}
       <main className='flex-1 flex flex-col overflow-hidden'>
         <header className='flex items-center justify-between px-6 py-4 border-b'>
           <div className='flex items-center gap-4'>
-            <h2 className='text-xl font-semibold text-gray-900'>
-              My Library - {currentViewName}
-            </h2>
+            <h2 className='text-xl font-semibold text-gray-900'>My Library</h2>
             {selectedPapers.length > 0 && (
               <span className='px-2 py-1 text-sm bg-orange-100 text-orange-700 rounded-full'>
                 {selectedPapers.length} selected
@@ -310,11 +163,10 @@ export default function MyLibraryPage() {
 
         <div className='flex-1 overflow-auto'>
           <PaperTable
-            papers={displayPapers}
+            papers={allPapers}
             totalPapers={allPapers.length}
-            isLoading={isLoadingAllPapers || isLoadingFolderPapers}
+            isLoading={isLoadingAllPapers}
             onPaperClick={paperActions.handlePaperClick}
-            onMovePaper={paperActions.openMovePaperDialog}
             onDeletePaper={paperActions.openDeletePaperDialog}
             onUploadClick={upload.handleUploadClick}
             selectable
@@ -322,11 +174,10 @@ export default function MyLibraryPage() {
             onToggleSelect={togglePaper}
             onSelectAll={handleSelectAll}
             onDeselectAll={handleDeselectAll}
-            onLoadMore={
-              selectedView === 'all' ? () => fetchNextPage() : undefined
-            }
-            hasMore={selectedView === 'all' ? (hasNextPage ?? false) : false}
-            isLoadingMore={selectedView === 'all' ? isFetchingNextPage : false}
+            onLoadMore={() => fetchNextPage()}
+            hasMore={hasNextPage ?? false}
+            isLoadingMore={isFetchingNextPage}
+            groupPaperIds={groupPaperIds}
           />
         </div>
       </main>
@@ -349,50 +200,15 @@ export default function MyLibraryPage() {
         isLoadingMore={isFetchingMoreMultiMessages}
       />
 
-      {/* Folder Dialogs */}
-      <CreateFolderDialog
-        open={showCreateDialog}
-        folderName={folderName}
-        isCreating={createFolderMutation.isPending}
-        onOpenChange={setShowCreateDialog}
-        onFolderNameChange={setFolderName}
-        onCreate={handleCreateFolder}
-      />
-
-      <EditFolderDialog
-        open={showEditDialog}
-        folderName={folderName}
-        onOpenChange={setShowEditDialog}
-        onFolderNameChange={setFolderName}
-        onSave={handleEditFolder}
-      />
-
-      <DeleteFolderDialog
-        open={showDeleteDialog}
-        folder={deletingFolder}
-        isDeleting={deleteFolderMutation.isPending}
-        onOpenChange={setShowDeleteDialog}
-        onDelete={handleDeleteFolder}
-      />
-
       {/* Upload Dialog */}
       <UploadDialog
         open={upload.showUploadDialog}
-        folders={folders}
         uploadQueue={upload.uploadQueue}
-        uploadFolderId={upload.uploadFolderId}
         isUploading={upload.isUploading}
-        isCreating={upload.isCreating}
-        showNewFolderInput={upload.showNewFolderInput}
-        newFolderName={upload.newFolderName}
         onOpenChange={upload.setShowUploadDialog}
-        onFolderSelect={upload.setUploadFolderId}
         onRemoveFromQueue={upload.removeFromQueue}
         onUpload={upload.processUploadQueue}
         onClose={upload.closeUploadDialog}
-        onShowNewFolderInput={upload.setShowNewFolderInput}
-        onNewFolderNameChange={upload.setNewFolderName}
-        onCreateFolder={upload.handleCreateFolderInUpload}
       />
 
       {/* Paper Dialogs */}
@@ -404,17 +220,6 @@ export default function MyLibraryPage() {
         onDelete={paperActions.handleDeletePaper}
       />
 
-      <MovePaperDialog
-        open={paperActions.showMovePaperDialog}
-        paper={paperActions.movingPaper}
-        folders={folders}
-        targetFolderId={paperActions.targetFolderId}
-        isMoving={paperActions.isMovingPaper}
-        onOpenChange={paperActions.setShowMovePaperDialog}
-        onTargetFolderChange={paperActions.setTargetFolderId}
-        onMove={paperActions.handleMovePaper}
-      />
-
       {/* Loading Overlay */}
       {paperActions.isNavigating && (
         <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/50'>
@@ -424,6 +229,19 @@ export default function MyLibraryPage() {
           </div>
         </div>
       )}
+
+      {/* Clear Chat History Confirm Modal */}
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        title='Clear Chat History?'
+        message='This will permanently delete all messages in this multi-paper conversation. This action cannot be undone.'
+        confirmLabel='Clear History'
+        cancelLabel='Cancel'
+        variant='danger'
+        icon={Trash2}
+        onConfirm={confirmClearMultiChatHistory}
+        onCancel={() => setShowClearConfirm(false)}
+      />
     </div>
   );
 }

@@ -14,7 +14,6 @@ export interface CreatePaperParams {
   fileUrl: string;
   fileSize?: number;
   fileHash?: string;
-  folderId?: string;
 }
 
 /**
@@ -70,7 +69,6 @@ export async function deletePaper(id: string): Promise<{ success: boolean }> {
 export async function uploadPdf(
   file: File,
   onProgress?: (pct: number) => void,
-  folderId?: string,
 ): Promise<{ paper: Paper; localUrl: string }> {
   const formData = new FormData();
   formData.append('file', file);
@@ -93,7 +91,6 @@ export async function uploadPdf(
     fileName: file.name,
     fileUrl: url,
     fileSize: file.size,
-    folderId: folderId || undefined,
   });
 
   const paper = createRes.data.data;

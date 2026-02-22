@@ -16,7 +16,6 @@ import {
   deletePaper,
   uploadPdf,
 } from '../../services';
-import { folderKeys } from './useFolderQueries';
 import type { Paper } from '../../utils/types';
 
 // Query keys
@@ -32,25 +31,35 @@ export const paperKeys = {
 
 /**
  * Hook to fetch all papers (cursor-paginated via useInfiniteQuery)
+ * Auto-refreshes when papers are being processed
  */
 export function usePapers() {
+  // First, get initial data to check for processing papers
   const infiniteQuery = useInfiniteQuery({
     queryKey: paperKeys.infinite(),
     queryFn: ({ pageParam }) => listPapers(pageParam, 20),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>
       lastPage.hasNext ? lastPage.nextCursor : undefined,
-    staleTime: 30 * 1000,
+    staleTime: 10 * 1000, // Reduced to 10 seconds for faster updates
+    refetchOnMount: 'always', // Always refetch when component mounts
   });
 
   // Flatten pages into a single array for backwards-compatible usage
   const allPapers: Paper[] =
     infiniteQuery.data?.pages?.flatMap((page) => page.items) ?? [];
 
+  // Check if any papers are being processed
+  const hasProcessingPapers = allPapers.some(
+    (paper) => paper.status === 'PROCESSING' || paper.status === 'PENDING',
+  );
+
   return {
     ...infiniteQuery,
     /** Flat array of all loaded papers (across all fetched pages) */
     data: allPapers,
+    /** Whether any papers are currently being processed */
+    hasProcessingPapers,
   };
 }
 
@@ -79,20 +88,16 @@ export function useUploadPaper() {
   return useMutation({
     mutationFn: async ({
       file,
-      folderId,
       onProgress,
     }: {
       file: File;
-      folderId?: string;
       onProgress?: (pct: number) => void;
     }) => {
-      return uploadPdf(file, onProgress, folderId);
+      return uploadPdf(file, onProgress);
     },
     onSuccess: (data) => {
       // Invalidate and refetch papers (covers both list and infinite queries)
       queryClient.invalidateQueries({ queryKey: paperKeys.all });
-      // Invalidate folder-related queries
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
       // Add the new paper to the cache
       queryClient.setQueryData(paperKeys.detail(data.paper.id), data.paper);
     },
@@ -116,8 +121,6 @@ export function useDeletePaper() {
       queryClient.removeQueries({ queryKey: paperKeys.detail(deletedId) });
       // Refetch papers (covers both list and infinite queries)
       queryClient.invalidateQueries({ queryKey: paperKeys.all });
-      // Invalidate folder-related queries
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
       toast.success('Paper deleted');
     },
     onError: (error: any) => {
@@ -139,7 +142,6 @@ export function useCreatePaper() {
     mutationFn: createPaper,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: paperKeys.all });
-      queryClient.invalidateQueries({ queryKey: folderKeys.all });
       queryClient.setQueryData(paperKeys.detail(data.data.id), data.data);
     },
   });

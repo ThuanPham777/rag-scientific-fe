@@ -33,18 +33,12 @@ export {
   useSendMultiPaperMessage,
   useExplainRegion,
   useClearChatHistory,
+  useToggleReaction,
+  useReplyToMessage,
+  useDeleteMessage,
+  updateMessageReactionsInCache,
+  markMessageDeletedInCache,
 } from './useChatQueries';
-
-// Folder queries and keys
-export {
-  folderKeys,
-  useFolders,
-  useFolder,
-  useCreateFolder,
-  useUpdateFolder,
-  useDeleteFolder,
-  useMovePaper,
-} from './useFolderQueries';
 
 // Highlight queries and keys
 export {
@@ -72,3 +66,20 @@ export {
   useForgotPassword,
   useResetPassword,
 } from './useAuthMutations';
+
+// Session queries and keys
+export {
+  sessionKeys,
+  useSessions,
+  useSessionDetail,
+  useCreateSession,
+  useJoinSession,
+  useLeaveSession,
+  useEndSession,
+  useRemoveMember,
+  useCreateInvite,
+  useRevokeInvite,
+  useActiveInvite,
+  useResetInvite,
+  useDeleteInvite,
+} from './useSessionQueries';

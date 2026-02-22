@@ -1,9 +1,7 @@
 // src/pages/HomeUpload.tsx
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import FileDropzone from '../components/uploader/FileDropzone';
-import { FolderSelectModal } from '../components/uploader/FolderSelectModal';
 import { startSession, uploadPdf, guestUploadPdf } from '../services';
 import { usePaperStore } from '../store/usePaperStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -23,37 +21,23 @@ export default function HomeUpload() {
   const setGuestPaper = useGuestStore((s) => s.setGuestPaper);
   const setGuestSession = useGuestStore((s) => s.setGuestSession);
 
-  // State for folder selection modal (logged-in users)
-  const [showFolderModal, setShowFolderModal] = useState(false);
-  const [pendingFile, setPendingFile] = useState<{
-    file: File;
-    setProgress: (v: number) => void;
-  } | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-
   /**
-   * Process upload for logged-in user (after folder selection)
+   * Process upload for logged-in user
    */
   const processAuthenticatedUpload = async (
     file: File,
     setProgress: (v: number) => void,
-    folderId: string | null,
   ) => {
-    setIsUploading(true);
     try {
-      const { paper, localUrl } = await uploadPdf(
-        file,
-        setProgress,
-        folderId || undefined,
-      );
+      const { paper, localUrl } = await uploadPdf(file, setProgress);
       console.log('HomeUpload - uploaded paper:', paper);
 
       // Store paper with local URL for PDF preview
       const paperWithLocalUrl = { ...paper, localUrl };
       setCurrentPaper(paperWithLocalUrl);
 
-      // Invalidate papers cache to refresh list
-      queryClient.invalidateQueries({ queryKey: paperKeys.lists() });
+      // Invalidate papers cache to refresh list (use paperKeys.all to invalidate all paper queries)
+      queryClient.invalidateQueries({ queryKey: paperKeys.all });
 
       // Create a new conversation/session for this paper
       const { conversationId } = await startSession(paper.id, paper.ragFileId);
@@ -66,14 +50,10 @@ export default function HomeUpload() {
         messages: [],
       });
 
-      setShowFolderModal(false);
-      setPendingFile(null);
       nav(`/chat/${conversationId}`);
     } catch (error) {
       console.error('Upload failed:', error);
       throw error;
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -85,7 +65,6 @@ export default function HomeUpload() {
     file: File,
     setProgress: (v: number) => void,
   ) => {
-    setIsUploading(true);
     try {
       const { guestPaper } = await guestUploadPdf(file, setProgress);
       console.log('HomeUpload - guest upload:', guestPaper);
@@ -138,8 +117,6 @@ export default function HomeUpload() {
     } catch (error) {
       console.error('Guest upload failed:', error);
       throw error;
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -148,34 +125,9 @@ export default function HomeUpload() {
    */
   const onUpload = async (file: File, setProgress: (v: number) => void) => {
     if (isAuthenticated) {
-      // Logged-in user: Show folder selection modal
-      setPendingFile({ file, setProgress });
-      setShowFolderModal(true);
+      await processAuthenticatedUpload(file, setProgress);
     } else {
-      // Guest user: Upload directly without folder
       await processGuestUpload(file, setProgress);
-    }
-  };
-
-  /**
-   * Handle folder selection confirm
-   */
-  const handleFolderConfirm = async (folderId: string | null) => {
-    if (!pendingFile) return;
-    await processAuthenticatedUpload(
-      pendingFile.file,
-      pendingFile.setProgress,
-      folderId,
-    );
-  };
-
-  /**
-   * Handle folder modal close
-   */
-  const handleFolderModalClose = () => {
-    if (!isUploading) {
-      setShowFolderModal(false);
-      setPendingFile(null);
     }
   };
 
@@ -192,17 +144,6 @@ export default function HomeUpload() {
         </p>
         <FileDropzone onUpload={onUpload} />
       </div>
-
-      {/* Folder Selection Modal (for logged-in users only) */}
-      {isAuthenticated && (
-        <FolderSelectModal
-          open={showFolderModal}
-          fileName={pendingFile?.file.name || ''}
-          isUploading={isUploading}
-          onClose={handleFolderModalClose}
-          onConfirm={handleFolderConfirm}
-        />
-      )}
     </div>
   );
 }
