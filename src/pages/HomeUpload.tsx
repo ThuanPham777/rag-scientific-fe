@@ -1,5 +1,4 @@
 // src/pages/HomeUpload.tsx
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import FileDropzone from '../components/uploader/FileDropzone';
@@ -22,8 +21,6 @@ export default function HomeUpload() {
   const setGuestPaper = useGuestStore((s) => s.setGuestPaper);
   const setGuestSession = useGuestStore((s) => s.setGuestSession);
 
-  const [isUploading, setIsUploading] = useState(false);
-
   /**
    * Process upload for logged-in user
    */
@@ -31,7 +28,6 @@ export default function HomeUpload() {
     file: File,
     setProgress: (v: number) => void,
   ) => {
-    setIsUploading(true);
     try {
       const { paper, localUrl } = await uploadPdf(file, setProgress);
       console.log('HomeUpload - uploaded paper:', paper);
@@ -58,8 +54,6 @@ export default function HomeUpload() {
     } catch (error) {
       console.error('Upload failed:', error);
       throw error;
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -71,7 +65,6 @@ export default function HomeUpload() {
     file: File,
     setProgress: (v: number) => void,
   ) => {
-    setIsUploading(true);
     try {
       const { guestPaper } = await guestUploadPdf(file, setProgress);
       console.log('HomeUpload - guest upload:', guestPaper);
@@ -124,8 +117,6 @@ export default function HomeUpload() {
     } catch (error) {
       console.error('Guest upload failed:', error);
       throw error;
-    } finally {
-      setIsUploading(false);
     }
   };
 
