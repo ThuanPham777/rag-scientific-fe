@@ -18,6 +18,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useUiStore } from '../../store/useUiStore';
 import PdfViewer from './PdfViewer';
 import notebookService from '@/services/notebookService';
+import AuthModal from '@/components/auth/AuthModal';
 
 type Props = {
   activePaper?: Paper;
@@ -64,6 +65,7 @@ export default function PdfPanel({
   // Track if fetch has been attempted (to prevent infinite retry on error)
   const [summaryFetched, setSummaryFetched] = useState(false);
   const [relatedFetched, setRelatedFetched] = useState(false);
+  const [showGuestAuthModal, setShowGuestAuthModal] = useState(false);
 
   const currentPaper = usePaperStore((s) => s.currentPaper);
   const currentConversationId = usePaperStore((s) => s.currentConversationId);
@@ -201,11 +203,29 @@ export default function PdfPanel({
           ? 'border-orange-500 text-orange-600'
           : 'border-transparent text-gray-500 hover:text-orange-500 hover:border-orange-200'
       }`}
-      onClick={() => setActiveTab(tabName)}
+      onClick={() => {
+        // Restrict Summary & Related tabs for guest users
+        if (
+          !isAuthenticated &&
+          (tabName === 'summary' || tabName === 'related')
+        ) {
+          setShowGuestAuthModal(true);
+          return;
+        }
+        setActiveTab(tabName);
+      }}
     >
       {label}
     </button>
   );
+
+  // Guest auth modal handler
+  const handleGuestLoginSuccess = () => {
+    const guestSession = useGuestStore.getState().currentSession;
+    if (guestSession) {
+      window.location.href = `/chat/${guestSession.id}`;
+    }
+  };
 
   return (
     <section className='bg-white border border-gray-200 rounded-lg overflow-hidden flex flex-col h-full'>
@@ -248,14 +268,16 @@ export default function PdfPanel({
               // Handle 'save to notebook' early — auto-create a new notebook
               if (action === 'save' && (payload as any).text) {
                 const selectedText = (payload as any).text as string;
-                const paperTitle = activePaper?.title || activePaper?.fileName || 'PDF';
+                const paperTitle =
+                  activePaper?.title || activePaper?.fileName || 'PDF';
                 (async () => {
                   try {
                     const created = await notebookService.create({
                       title: `Note from ${paperTitle}`,
                       content: `<p>${selectedText}</p>`,
                     });
-                    const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
+                    const { openNotebooks, setPendingNotebookId } =
+                      useUiStore.getState();
                     setPendingNotebookId(created.id);
                     openNotebooks();
                   } catch (err) {
@@ -388,6 +410,14 @@ export default function PdfPanel({
           </div>
         )}
       </div>
+
+      {/* Guest Auth Modal */}
+      <AuthModal
+        isOpen={showGuestAuthModal}
+        onClose={() => setShowGuestAuthModal(false)}
+        initialMode='login'
+        onLoginSuccess={handleGuestLoginSuccess}
+      />
     </section>
   );
 }

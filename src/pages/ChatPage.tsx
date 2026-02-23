@@ -24,6 +24,7 @@ import {
   useReplyToMessage,
   useDeleteMessage,
 } from '../hooks';
+import { useGuestMigration } from '../hooks/useGuestMigration';
 import { useSessionSocket } from '../hooks/useSessionSocket';
 import {
   sendQuery,
@@ -36,6 +37,7 @@ import {
 } from '../services';
 import PdfPanel from '../components/pdf/PdfPanel';
 import ChatDock from '../components/chat/ChatDock';
+import AuthModal from '../components/auth/AuthModal';
 import { InviteModal, ConfirmStartSessionModal } from '../components/session';
 import { ConfirmModal } from '../components/common';
 import type { ChatMessage } from '../utils/types';
@@ -93,6 +95,19 @@ export default function ChatPage() {
     ? !isAuthenticated && isGuestSession(urlConversationId)
     : !isAuthenticated;
 
+  // Reactive flag: guest data exists in localStorage (subscribes to store changes)
+  const guestHasData = useGuestStore(
+    (s) => !!(s.currentSession && s.currentPaper),
+  );
+
+  // Track whether guest→auth migration is in progress
+  const [isMigratingGuest, setIsMigratingGuest] = useState(false);
+
+  // True when the user just logged in but still has un-migrated guest data.
+  // While this is true we must suppress the normal conversation query & error redirect.
+  const suppressAuthenticatedLoad =
+    (isAuthenticated && isInitialized && guestHasData) || isMigratingGuest;
+
   // Use guest or authenticated session/paper
   const activeSession = isGuest ? guestSession : session;
   const activePaper = isGuest
@@ -122,8 +137,9 @@ export default function ChatPage() {
   // =============================================
 
   // Fetch conversation detail via React Query (authenticated users only)
+  // Suppress during guest migration to avoid 404 on the guest session ID.
   const { data: conversationData, isError: isConvError } = useConversation(
-    !isGuest && isAuthenticated && isInitialized
+    !isGuest && isAuthenticated && isInitialized && !suppressAuthenticatedLoad
       ? urlConversationId
       : undefined,
   );
@@ -165,6 +181,9 @@ export default function ChatPage() {
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Guest auth modal (triggered when guest clicks a suggestion or brainstorm)
+  const [showGuestAuthModal, setShowGuestAuthModal] = useState(false);
 
   // Stable conversationId for session-related hooks
   const convIdForSession = isGuest
@@ -241,16 +260,32 @@ export default function ChatPage() {
   ]);
 
   // 4. Redirect on conversation load error (not found / access denied)
+  //    Suppress during guest migration to avoid premature redirect.
   useEffect(() => {
-    if (isConvError && !isGuest && isAuthenticated && urlConversationId) {
+    if (
+      isConvError &&
+      !isGuest &&
+      isAuthenticated &&
+      urlConversationId &&
+      !suppressAuthenticatedLoad
+    ) {
       console.error('Failed to load conversation, redirecting...');
       navigate('/', { replace: true });
     }
-  }, [isConvError, isGuest, isAuthenticated, urlConversationId, navigate]);
+  }, [
+    isConvError,
+    isGuest,
+    isAuthenticated,
+    urlConversationId,
+    navigate,
+    suppressAuthenticatedLoad,
+  ]);
 
   // 5. Guest session restoration (sync localStorage → paper store)
   useEffect(() => {
     if (!isInitialized || !urlConversationId) return;
+    // Don't redirect during guest→auth migration
+    if (suppressAuthenticatedLoad) return;
 
     if (isGuest) {
       const guestStore = useGuestStore.getState();
@@ -289,12 +324,16 @@ export default function ChatPage() {
     navigate,
     setCurrentPaper,
     setSession,
+    suppressAuthenticatedLoad,
   ]);
 
   // Derived loading state (replaces imperative initialLoading useState)
   // Stays `true` until ALL of: conversation synced, paper synced, collaborative flag set.
   const initialLoading = useMemo(() => {
     if (!urlConversationId) return false;
+
+    // During guest→auth migration, show loading spinner
+    if (suppressAuthenticatedLoad) return true;
 
     // Guest: check if session exists in localStorage
     if (isGuest) {
@@ -333,6 +372,7 @@ export default function ChatPage() {
     sessionMeta?.ragFileId,
     currentPaper,
     isConvError,
+    suppressAuthenticatedLoad,
   ]);
 
   // WebSocket connection for collaborative sessions
@@ -724,6 +764,89 @@ export default function ChatPage() {
     },
     [followUpMutation],
   );
+
+  // =============================================
+  // Guest → Auth Migration (auto-triggers on login)
+  // =============================================
+  const { migrateGuestData } = useGuestMigration();
+  const setPendingAuthAction = useGuestStore((s) => s.setPendingAuthAction);
+
+  /** Called when a guest clicks a suggestion or brainstorm — opens auth modal */
+  const handleGuestAuthRequired = useCallback(
+    (question?: string) => {
+      if (question) {
+        setPendingAuthAction({ type: 'suggestion', question });
+      } else {
+        setPendingAuthAction({ type: 'brainstorm' });
+      }
+      setShowGuestAuthModal(true);
+    },
+    [setPendingAuthAction],
+  );
+
+  /**
+   * Auto-migration effect.
+   * When `isAuthenticated` becomes true while guest data still exists in
+   * localStorage (regardless of which AuthModal was used – TopNav, ChatPage,
+   * PdfViewer, etc.) this effect migrates the paper + messages to the DB,
+   * then navigates to the new authenticated conversation URL.
+   */
+  useEffect(() => {
+    if (!isAuthenticated || !isInitialized || !guestHasData || isMigratingGuest)
+      return;
+
+    setIsMigratingGuest(true);
+
+    migrateGuestData()
+      .then((result) => {
+        if (!result) return;
+        // If the user clicked a suggestion before logging in, send it now
+        if (result.pendingQuestion) {
+          const questionToSend = result.pendingQuestion;
+          const newConvId = result.conversationId;
+          // Short delay to let React Router & stores settle after navigate
+          setTimeout(async () => {
+            const paper = usePaperStore.getState().currentPaper;
+            try {
+              setChatLoading(true);
+              const { assistantMsg, raw } = await sendQuery(
+                newConvId,
+                questionToSend,
+                paper?.id,
+              );
+              const userMsg: ChatMessage = {
+                id: raw.userMessageId || crypto.randomUUID(),
+                role: 'user',
+                content: questionToSend,
+                createdAt: new Date().toISOString(),
+              };
+              setSentMessages([userMsg, assistantMsg]);
+              queryClient.invalidateQueries({
+                queryKey: chatKeys.infiniteMessages(newConvId),
+              });
+              if (newConvId && assistantMsg.id) {
+                fetchFollowUps(newConvId, assistantMsg.id);
+              }
+            } catch (err) {
+              console.error(
+                'Failed to send pending question after migration:',
+                err,
+              );
+            } finally {
+              setChatLoading(false);
+            }
+          }, 500);
+        }
+      })
+      .catch((err) => {
+        console.error('Auto guest migration failed:', err);
+        navigate('/', { replace: true });
+      })
+      .finally(() => {
+        setIsMigratingGuest(false);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, isInitialized, guestHasData]);
 
   // onSend handler - defined as useCallback to maintain stable reference
   const onSend = useCallback(
@@ -1164,7 +1287,8 @@ export default function ChatPage() {
         conversationId={
           isGuest ? undefined : (currentConversationId ?? urlConversationId)
         }
-        showQuickActions={!isGuest}
+        showQuickActions={true}
+        onGuestAuthRequired={isGuest ? handleGuestAuthRequired : undefined}
         onOpenChange={setIsChatDockOpen}
         isPdfFullscreen={isPdfFullscreen}
         onExplainMath={() => captureToggleRef.current?.()}
@@ -1250,6 +1374,13 @@ export default function ChatPage() {
         icon={Trash2}
         onConfirm={confirmClearChatHistory}
         onCancel={() => setShowClearConfirm(false)}
+      />
+
+      {/* Guest Auth Modal — opens when guest clicks suggestion or brainstorm */}
+      {/* No onLoginSuccess needed: auto-migration effect handles all cases */}
+      <AuthModal
+        isOpen={showGuestAuthModal}
+        onClose={() => setShowGuestAuthModal(false)}
       />
     </div>
   );

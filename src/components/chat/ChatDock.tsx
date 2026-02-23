@@ -107,6 +107,8 @@ type Props = {
   canDeleteMessage?: (msg: ChatMessageType) => boolean;
   /** Ref that parent can call to force scroll to bottom (e.g. after explain region) */
   scrollToBottomRef?: React.MutableRefObject<(() => void) | null>;
+  /** When set, clicking a suggestion or brainstorm in ChatQuickActions triggers auth flow */
+  onGuestAuthRequired?: (question?: string) => void;
 };
 
 const LOADING_STEPS = [
@@ -151,6 +153,7 @@ export default function ChatDock({
   onDeleteMessage,
   canDeleteMessage,
   scrollToBottomRef,
+  onGuestAuthRequired,
 }: Props) {
   // Use messages prop if provided, otherwise fall back to session?.messages
   const messages = messagesProp ?? session?.messages ?? [];
@@ -732,6 +735,7 @@ export default function ChatDock({
                 inputText={inputText}
                 open={isSuggestionsOpen}
                 onOpenChange={setIsSuggestionsOpen}
+                onGuestAuthRequired={onGuestAuthRequired}
               />
             )}
 

@@ -29,12 +29,27 @@ export interface GuestPendingJump {
   rect?: { top: number; left: number; width: number; height: number };
 }
 
+/**
+ * Describes what triggered the auth modal so post-login logic
+ * can decide what to do (e.g. send a specific question).
+ */
+export type GuestPendingAuthAction =
+  | { type: 'suggestion'; question: string }
+  | { type: 'brainstorm' }
+  | { type: 'generic' }; // generic login from UI
+
 interface GuestState {
   // Current active paper and session
   currentPaper: GuestPaper | null;
   currentSession: GuestSession | null;
   isLoading: boolean;
   pendingJump: GuestPendingJump | null;
+
+  // Suggestions generated during guest session (persisted)
+  suggestions: string[];
+
+  // What action triggered the auth modal (not persisted)
+  pendingAuthAction: GuestPendingAuthAction | null;
 
   // Actions
   setGuestPaper: (paper: GuestPaper) => void;
@@ -44,6 +59,9 @@ interface GuestState {
   setGuestMessages: (messages: ChatMessage[]) => void;
   setLoading: (loading: boolean) => void;
   setPendingJump: (jump: GuestPendingJump | null) => void;
+  addSuggestions: (questions: string[]) => void;
+  setSuggestions: (questions: string[]) => void;
+  setPendingAuthAction: (action: GuestPendingAuthAction | null) => void;
   clearGuestData: () => void;
 }
 
@@ -58,6 +76,8 @@ export const useGuestStore = create<GuestState>()(
       currentSession: null,
       isLoading: false,
       pendingJump: null,
+      suggestions: [],
+      pendingAuthAction: null,
 
       setGuestPaper: (paper) => set({ currentPaper: paper }),
 
@@ -93,12 +113,28 @@ export const useGuestStore = create<GuestState>()(
           };
         }),
 
+      addSuggestions: (questions) =>
+        set((state) => {
+          const existing = new Set(state.suggestions);
+          const merged = [
+            ...state.suggestions,
+            ...questions.filter((q) => !existing.has(q)),
+          ];
+          return { suggestions: merged };
+        }),
+
+      setSuggestions: (questions) => set({ suggestions: questions }),
+
+      setPendingAuthAction: (action) => set({ pendingAuthAction: action }),
+
       clearGuestData: () =>
         set({
           currentPaper: null,
           currentSession: null,
           isLoading: false,
           pendingJump: null,
+          suggestions: [],
+          pendingAuthAction: null,
         }),
 
       setLoading: (loading) => set({ isLoading: loading }),
@@ -112,6 +148,8 @@ export const useGuestStore = create<GuestState>()(
       partialize: (state) => ({
         currentPaper: state.currentPaper,
         currentSession: state.currentSession,
+        suggestions: state.suggestions,
+        // pendingAuthAction is NOT persisted (transient)
       }),
     },
   ),
@@ -121,4 +159,12 @@ export const useGuestStore = create<GuestState>()(
 export const isGuestSession = (sessionId: string): boolean => {
   const guestStore = useGuestStore.getState();
   return guestStore.currentSession?.id === sessionId;
+};
+
+/**
+ * Check if there is any guest data to migrate
+ */
+export const hasGuestData = (): boolean => {
+  const { currentPaper, currentSession } = useGuestStore.getState();
+  return !!(currentPaper && currentSession);
 };

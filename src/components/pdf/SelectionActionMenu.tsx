@@ -11,15 +11,13 @@ import {
   X,
   ChevronRight,
 } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/UI/tooltip';
 import HighlightEditor from './HighlightEditor';
 import { useAuthStore } from '@/store/useAuthStore';
 import notebookService, { type NotebookItem } from '@/services/notebookService';
 import { useUiStore } from '@/store/useUiStore';
+import AuthModal from '@/components/auth/AuthModal';
+import { useGuestStore } from '@/store/useGuestStore';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
 type HighlightRect = {
   top: number;
@@ -72,6 +70,7 @@ export default function SelectionActionMenu({
   pageRef,
 }: Props) {
   const { isAuthenticated } = useAuthStore();
+  const [showGuestAuthModal, setShowGuestAuthModal] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
   const [showColorPopup, setShowColorPopup] = useState(false);
   const [selectedColor, setSelectedColor] = useState<string | undefined>(
@@ -95,7 +94,9 @@ export default function SelectionActionMenu({
     () =>
       nbSearch.trim()
         ? notebooks.filter((nb) =>
-            (nb.title || 'Untitled').toLowerCase().includes(nbSearch.toLowerCase()),
+            (nb.title || 'Untitled')
+              .toLowerCase()
+              .includes(nbSearch.toLowerCase()),
           )
         : notebooks,
     [notebooks, nbSearch],
@@ -194,7 +195,17 @@ export default function SelectionActionMenu({
   const wordCount = selection.text.trim().split(/\s+/).filter(Boolean).length;
   const canSummarize = wordCount >= 50;
 
+  // Guest guard: show AuthModal instead of executing restricted actions
+  const guardGuest = (): boolean => {
+    if (!isAuthenticated) {
+      setShowGuestAuthModal(true);
+      return true; // blocked
+    }
+    return false;
+  };
+
   const fire = (type: Parameters<typeof onAction>[0]) => {
+    if (guardGuest()) return;
     onAction(type, {
       text: selection.text,
       pageNumber: selection.pageNumber,
@@ -237,7 +248,28 @@ export default function SelectionActionMenu({
     [onSaveComment, selectedColor, onAddHighlight, onFinalizeHighlight],
   );
 
-  if (!showMainPopup && !showColorPopup && !showNotebookPicker && !showCreateDialog) {
+  if (
+    !showMainPopup &&
+    !showColorPopup &&
+    !showNotebookPicker &&
+    !showCreateDialog
+  ) {
+    // Still render AuthModal even when menu is hidden
+    if (showGuestAuthModal) {
+      return (
+        <AuthModal
+          isOpen={showGuestAuthModal}
+          onClose={() => setShowGuestAuthModal(false)}
+          initialMode='login'
+          onLoginSuccess={() => {
+            const guestSession = useGuestStore.getState().currentSession;
+            if (guestSession) {
+              window.location.href = `/chat/${guestSession.id}`;
+            }
+          }}
+        />
+      );
+    }
     return null;
   }
 
@@ -246,7 +278,8 @@ export default function SelectionActionMenu({
   };
 
   // Use portal for proper layering above PDF viewer
-  const popupContent = (
+  // Hide popup content when guest AuthModal is open
+  const popupContent = showGuestAuthModal ? null : (
     <div
       ref={popupRef}
       className='fixed'
@@ -306,6 +339,7 @@ export default function SelectionActionMenu({
           <button
             className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left relative'
             onClick={() => {
+              if (guardGuest()) return;
               // Immediately create highlight with default color, keep editor open
               const defaultColor = selectedColorDefault || '#ffd700';
               setSelectedColor(defaultColor);
@@ -319,13 +353,17 @@ export default function SelectionActionMenu({
           </button>
           <button
             className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left'
-            onClick={() => fire('save')}
+            onClick={() => {
+              if (guardGuest()) return;
+              fire('save');
+            }}
           >
             <NotebookPen size={16} /> Save to notebook
           </button>
           <button
             className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left justify-between'
             onClick={() => {
+              if (guardGuest()) return;
               setShowNotebookPicker(true);
               setShowMainPopup(false);
               loadNotebooks();
@@ -334,7 +372,10 @@ export default function SelectionActionMenu({
             <span className='flex items-center gap-2'>
               <ListTree size={16} /> Select a notebook
             </span>
-            <ChevronRight size={14} className='text-gray-400' />
+            <ChevronRight
+              size={14}
+              className='text-gray-400'
+            />
           </button>
         </div>
       )}
@@ -347,7 +388,10 @@ export default function SelectionActionMenu({
         >
           {/* Search bar */}
           <div className='flex items-center gap-2 px-3 py-2 border-b border-gray-100'>
-            <Search size={14} className='text-gray-400 flex-shrink-0' />
+            <Search
+              size={14}
+              className='text-gray-400 flex-shrink-0'
+            />
             <input
               ref={nbSearchRef}
               value={nbSearch}
@@ -356,7 +400,10 @@ export default function SelectionActionMenu({
               className='flex-1 text-sm outline-none bg-transparent placeholder:text-gray-400'
             />
             {nbSearch && (
-              <button onClick={() => setNbSearch('')} className='text-gray-400 hover:text-gray-600'>
+              <button
+                onClick={() => setNbSearch('')}
+                className='text-gray-400 hover:text-gray-600'
+              >
                 <X size={12} />
               </button>
             )}
@@ -365,7 +412,9 @@ export default function SelectionActionMenu({
           {/* Notebook list */}
           <div className='max-h-48 overflow-y-auto'>
             {nbLoading ? (
-              <div className='px-3 py-4 text-center text-sm text-gray-400'>Loading...</div>
+              <div className='px-3 py-4 text-center text-sm text-gray-400'>
+                Loading...
+              </div>
             ) : filteredNotebooks.length === 0 ? (
               <div className='px-3 py-4 text-center text-sm text-gray-400'>
                 {nbSearch ? 'No notebooks found' : 'No notebooks yet'}
@@ -419,13 +468,16 @@ export default function SelectionActionMenu({
             </button>
           </div>
           <div className='px-4 py-3'>
-            <label className='block text-sm font-medium text-gray-700 mb-1.5'>Notebook Title</label>
+            <label className='block text-sm font-medium text-gray-700 mb-1.5'>
+              Notebook Title
+            </label>
             <input
               ref={newTitleRef}
               value={newNbTitle}
               onChange={(e) => setNewNbTitle(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && newNbTitle.trim()) handleCreateNotebook();
+                if (e.key === 'Enter' && newNbTitle.trim())
+                  handleCreateNotebook();
                 if (e.key === 'Escape') {
                   setShowCreateDialog(false);
                   setShowNotebookPicker(true);
@@ -469,7 +521,26 @@ export default function SelectionActionMenu({
     </div>
   );
 
-  // Render via portal to escape overflow clipping
-  return createPortal(popupContent, document.body);
-}
+  // Guest auth modal handler
+  const handleGuestLoginSuccess = () => {
+    // After login/signup, if guest had chat data, navigate to it
+    // (auto-migration in ChatPage handles the rest)
+    const guestSession = useGuestStore.getState().currentSession;
+    if (guestSession) {
+      window.location.href = `/chat/${guestSession.id}`;
+    }
+  };
 
+  // Render via portal to escape overflow clipping
+  return (
+    <>
+      {createPortal(popupContent, document.body)}
+      <AuthModal
+        isOpen={showGuestAuthModal}
+        onClose={() => setShowGuestAuthModal(false)}
+        initialMode='login'
+        onLoginSuccess={handleGuestLoginSuccess}
+      />
+    </>
+  );
+}

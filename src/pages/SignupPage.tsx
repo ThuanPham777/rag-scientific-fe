@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { signup as apiSignup } from '../services';
+import { signup as apiSignup, login as apiLogin } from '../services';
+import { useAuthStore } from '../store/useAuthStore';
+import { useGuestStore } from '../store/useGuestStore';
 
 export default function SignupPage() {
   const navigate = useNavigate();
+  const { login } = useAuthStore();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,10 +40,36 @@ export default function SignupPage() {
         displayName || undefined,
       );
       if (response.success) {
-        // Redirect to login after successful signup
-        navigate('/login', {
-          state: { message: 'Account created successfully. Please sign in.' },
-        });
+        // Auto-login after successful signup
+        try {
+          const loginRes = await apiLogin(email, password);
+          if (loginRes.success) {
+            // Check for guest data before setting auth state
+            const guestSession = useGuestStore.getState().currentSession;
+            const guestRoute = guestSession ? `/chat/${guestSession.id}` : null;
+
+            login(loginRes.data, {
+              accessToken: loginRes.accessToken,
+              refreshToken: loginRes.refreshToken,
+            });
+
+            // Navigate to guest chat (migration happens in ChatPage) or home
+            navigate(guestRoute || '/');
+          } else {
+            // Auto-login failed — fallback to login page
+            navigate('/login', {
+              state: {
+                message: 'Account created! Auto-login failed, please sign in.',
+              },
+            });
+          }
+        } catch {
+          navigate('/login', {
+            state: {
+              message: 'Account created! Auto-login failed, please sign in.',
+            },
+          });
+        }
       } else {
         setError(response.message || 'Signup failed');
       }

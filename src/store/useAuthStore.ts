@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, AuthTokens } from '../utils/types';
-import { useGuestStore } from './useGuestStore';
 import { disconnectSocket } from '../services/socket';
 
 // =====================================================
@@ -37,8 +36,10 @@ export const useAuthStore = create<AuthState>()(
       login: (user, tokens) => {
         // Access token stored in memory only (more secure)
         inMemoryAccessToken = tokens.accessToken;
-        // Clear guest data when user logs in
-        useGuestStore.getState().clearGuestData();
+        // NOTE: Do NOT clear guest data here.
+        // Guest data is cleared by useGuestMigration AFTER successful migration.
+        // Clearing it here would destroy paper/messages before they can be persisted to DB.
+
         // Refresh token persisted for session restoration
         set({
           isAuthenticated: true,

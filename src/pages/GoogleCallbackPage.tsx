@@ -53,18 +53,23 @@ export default function GoogleCallbackPage() {
     handleCallback(code, state).then((success) => {
       isProcessingCallback = false;
       if (success) {
-        // Check for pending invite redirect (user clicked invite link → Google login)
+        // Determine where to redirect after login:
+        // 1. Pending invite link (user clicked invite → Google login)
+        // 2. Saved guest route (user was on /chat/{id} before Google redirect)
+        // 3. Default to home
         const pendingInvite = sessionStorage.getItem('pendingInvite');
-        const redirectTo = pendingInvite || '/';
-        if (pendingInvite) {
-          sessionStorage.removeItem('pendingInvite');
-        }
+        const guestReturnTo = sessionStorage.getItem('google_oauth_return_to');
+        const redirectTo = pendingInvite || guestReturnTo || '/';
+        sessionStorage.removeItem('pendingInvite');
+        sessionStorage.removeItem('google_oauth_return_to');
+
         // Wait a moment to show success state, then redirect
         setTimeout(() => {
           navigate(redirectTo);
         }, 1000);
       } else {
         // Wait to show error, then redirect
+        sessionStorage.removeItem('google_oauth_return_to');
         setTimeout(() => {
           navigate('/?auth_error=callback_failed');
         }, 2000);

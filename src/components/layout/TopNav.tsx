@@ -8,6 +8,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useGuestStore } from '../../store/useGuestStore';
 import { logout as apiLogout } from '../../services';
 import AuthModal from '../auth/AuthModal';
 import { UserAvatar } from '../common/UserAvatar';
@@ -27,6 +28,11 @@ export default function TopNav() {
 
   const menuRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown whenever auth state changes (e.g. guest logs in)
+  useEffect(() => {
+    setOpenMenu(false);
+  }, [isAuthenticated]);
 
   /* ---------------- Logout ---------------- */
   const handleLogout = async () => {
@@ -193,6 +199,14 @@ export default function TopNav() {
         isOpen={authModal.open}
         onClose={() => setAuthModal({ ...authModal, open: false })}
         initialMode={authModal.mode}
+        onLoginSuccess={() => {
+          // If guest had an active chat session, navigate there so
+          // ChatPage's auto-migration effect can fire.
+          const guestSession = useGuestStore.getState().currentSession;
+          if (guestSession) {
+            navigate(`/chat/${guestSession.id}`);
+          }
+        }}
       />
     </header>
   );

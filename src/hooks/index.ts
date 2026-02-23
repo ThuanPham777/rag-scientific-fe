@@ -12,3 +12,6 @@ export * from './auth';
 
 // Session socket hook
 export { useSessionSocket } from './useSessionSocket';
+
+// Guest migration hook
+export { useGuestMigration } from './useGuestMigration';

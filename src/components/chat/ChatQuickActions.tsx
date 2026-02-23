@@ -4,6 +4,7 @@ import {
   useSuggestedQuestions,
   useGenerateSuggestedQuestions,
 } from '../../hooks';
+import { useGuestStore } from '../../store/useGuestStore';
 
 type Tab = 'general' | 'my-questions';
 
@@ -18,6 +19,8 @@ type Props = {
   open?: boolean;
   /** Callback when suggestions panel open state changes */
   onOpenChange?: (open: boolean) => void;
+  /** When set, clicking a question or brainstorm triggers auth flow instead of normal action */
+  onGuestAuthRequired?: (question?: string) => void;
 };
 
 const PREDEFINED_QUESTIONS = [
@@ -42,7 +45,11 @@ export default function ChatQuickActions({
   inputText = '',
   open: controlledOpen,
   onOpenChange,
+  onGuestAuthRequired,
 }: Props) {
+  // Guest mode: use suggestions stored in guest store
+  const guestSuggestions = useGuestStore((s) => s.suggestions);
+  const isGuestMode = !!onGuestAuthRequired;
   // Use controlled or uncontrolled state
   const [internalOpen, setInternalOpen] = useState(false);
   const isOpen = controlledOpen ?? internalOpen;
@@ -79,11 +86,15 @@ export default function ChatQuickActions({
     [savedQuestionsResult],
   );
 
-  // All "My Questions" = savedQuestions ∪ latestGenerated (deduplicated)
+  // All "My Questions" = savedQuestions ∪ latestGenerated ∪ guestSuggestions (deduplicated)
   const dynamicQuestions = useMemo(() => {
-    const set = new Set([...savedQuestions, ...latestGenerated]);
+    const set = new Set([
+      ...savedQuestions,
+      ...latestGenerated,
+      ...(isGuestMode ? guestSuggestions : []),
+    ]);
     return Array.from(set);
-  }, [savedQuestions, latestGenerated]);
+  }, [savedQuestions, latestGenerated, isGuestMode, guestSuggestions]);
 
   // ── Derived values ────────────────────────────────────────
   const searchTerm = inputText.trim().toLowerCase();
@@ -150,6 +161,11 @@ export default function ChatQuickActions({
 
   const handleBrainstorm = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    // Guest mode: brainstorm requires login
+    if (isGuestMode) {
+      onGuestAuthRequired?.();
+      return;
+    }
     if (!conversationId || isBrainstorming) return;
 
     try {
@@ -297,8 +313,13 @@ export default function ChatQuickActions({
                       <li key={`${isMergedView ? 'merged' : activeTab}-${idx}`}>
                         <button
                           onClick={() => {
-                            onSelect(q);
-                            closePanel();
+                            if (isGuestMode) {
+                              onGuestAuthRequired?.(q);
+                              closePanel();
+                            } else {
+                              onSelect(q);
+                              closePanel();
+                            }
                           }}
                           disabled={disabled}
                           className='w-full text-left px-3 py-2 rounded-lg text-xs text-gray-700 hover:bg-orange-50 hover:text-orange-700 transition-colors disabled:opacity-50 flex items-start gap-2'
@@ -330,7 +351,9 @@ export default function ChatQuickActions({
               <div className='px-3 py-2 border-gray-100 bg-white shrink-0'>
                 <button
                   onClick={handleBrainstorm}
-                  disabled={isBrainstorming || !conversationId}
+                  disabled={
+                    isBrainstorming || (!conversationId && !isGuestMode)
+                  }
                   className='w-full flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-bold bg-white border-2 border-dashed border-orange-200 text-orange-600 hover:bg-orange-50 hover:border-orange-300 transition-all disabled:opacity-50 justify-center'
                 >
                   {isBrainstorming ? (
@@ -338,7 +361,11 @@ export default function ChatQuickActions({
                   ) : (
                     <Lightbulb size={14} />
                   )}
-                  {isBrainstorming ? 'Generating ideas...' : brainstormLabel}
+                  {isGuestMode
+                    ? 'Login to Brainstorm Questions'
+                    : isBrainstorming
+                      ? 'Generating ideas...'
+                      : brainstormLabel}
                   {isSearchMode && !isBrainstorming && (
                     <span className='text-[10px] text-gray-400 ml-1'>
                       press ctrl + G
