@@ -16,14 +16,13 @@ import {
   ArrowDown,
   ArrowUp,
 } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/UI/tooltip';
-import { Input } from '@/components/UI/input';
-import { Button } from '@/components/UI/button';
-import { Checkbox } from '@/components/UI/checkbox';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useGuestStore } from '@/store/useGuestStore';
+import AuthModal from '@/components/auth/AuthModal';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Checkbox } from '../ui/checkbox';
 
 type Props = {
   showSearch: boolean;
@@ -97,6 +96,8 @@ export default function PdfToolbar({
   const moreOptionsRef = useRef<HTMLDivElement>(null);
   const [showZoomDropdown, setShowZoomDropdown] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
+  const [showGuestAuthModal, setShowGuestAuthModal] = useState(false);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [pageInputValue, setPageInputValue] = useState(String(currentPage));
 
   // Sync page input when currentPage changes
@@ -251,7 +252,13 @@ export default function PdfToolbar({
             className={
               captureMode ? 'bg-orange-500 text-white hover:bg-orange-600' : ''
             }
-            onClick={onToggleCapture}
+            onClick={() => {
+              if (!isAuthenticated) {
+                setShowGuestAuthModal(true);
+                return;
+              }
+              onToggleCapture();
+            }}
           >
             <Sigma
               size={16}
@@ -270,6 +277,17 @@ export default function PdfToolbar({
           </p>
         </TooltipContent>
       </Tooltip>
+      <AuthModal
+        isOpen={showGuestAuthModal}
+        onClose={() => setShowGuestAuthModal(false)}
+        initialMode='login'
+        onLoginSuccess={() => {
+          const guestSession = useGuestStore.getState().currentSession;
+          if (guestSession) {
+            window.location.href = `/chat/${guestSession.id}`;
+          }
+        }}
+      />
 
       <div className='ml-auto flex items-center gap-1 text-sm'>
         <Tooltip>
@@ -495,4 +513,3 @@ export default function PdfToolbar({
     </div>
   );
 }
-

@@ -98,6 +98,13 @@ export function useGoogleAuth(): UseGoogleAuthReturn {
       localStorage.setItem(CODE_VERIFIER_KEY, codeVerifier);
       localStorage.setItem(OAUTH_STATE_KEY, state);
 
+      // Save current route so we can return after Google redirect.
+      // This preserves the guest chat page URL (e.g. /chat/{id}).
+      const currentPath = window.location.pathname;
+      if (currentPath && currentPath !== '/') {
+        sessionStorage.setItem('google_oauth_return_to', currentPath);
+      }
+
       // Build Google OAuth URL
       const params = new URLSearchParams({
         client_id: GOOGLE_CLIENT_ID,

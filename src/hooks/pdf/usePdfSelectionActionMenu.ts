@@ -30,8 +30,12 @@ export function usePdfSelectionActionMenu(options: UseSelectionOptions) {
 
   // Handle text selection
   useEffect(() => {
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
       if (disabled) return;
+
+      // Don't clear selection when interacting with a dialog (e.g. AuthModal)
+      const target = e.target as HTMLElement;
+      if (target.closest('[role="dialog"]')) return;
 
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) {
@@ -105,11 +109,12 @@ export function usePdfSelectionActionMenu(options: UseSelectionOptions) {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
 
-      // Check if click is inside any popup (SelectionPopup, ColorPopup, or HighlightPopup)
+      // Check if click is inside any popup (SelectionPopup, ColorPopup, HighlightPopup, or AuthModal)
       const isInsidePopup =
         target.closest('[data-selection-popup="true"]') ||
         target.closest('[data-color-popup="true"]') ||
         target.closest('[data-highlight-popup="true"]') ||
+        target.closest('[role="dialog"]') ||
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA';
 

@@ -15,12 +15,18 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMode?: AuthMode;
+  /**
+   * Called after successful login/signup.
+   * Used by guest mode to trigger data migration after authentication.
+   */
+  onLoginSuccess?: () => void | Promise<void>;
 }
 
 export default function AuthModal({
   isOpen,
   onClose,
   initialMode = 'login',
+  onLoginSuccess,
 }: AuthModalProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [serverError, setServerError] = useState('');
@@ -95,6 +101,10 @@ export default function AuthModal({
           refreshToken: res.refreshToken,
         });
         onClose();
+        // Trigger guest migration if callback provided
+        if (onLoginSuccess) {
+          await onLoginSuccess();
+        }
       } else {
         setServerError(res.message || 'Login failed');
       }
@@ -117,9 +127,35 @@ export default function AuthModal({
         data.displayName || undefined,
       );
       if (res.success) {
-        setMode('login');
-        loginForm.setValue('email', data.email);
-        alert('Account created successfully! Please sign in.');
+        // Auto-login after successful signup
+        try {
+          const loginRes = await apiLogin(data.email, data.password);
+          if (loginRes.success) {
+            login(loginRes.data, {
+              accessToken: loginRes.accessToken,
+              refreshToken: loginRes.refreshToken,
+            });
+            onClose();
+            // Trigger guest migration if callback provided (same as login flow)
+            if (onLoginSuccess) {
+              await onLoginSuccess();
+            }
+          } else {
+            // Signup succeeded but auto-login failed — fallback to login form
+            setMode('login');
+            loginForm.setValue('email', data.email);
+            setServerError(
+              'Account created! Auto-login failed, please sign in manually.',
+            );
+          }
+        } catch {
+          // Signup succeeded but auto-login failed — fallback to login form
+          setMode('login');
+          loginForm.setValue('email', data.email);
+          setServerError(
+            'Account created! Auto-login failed, please sign in manually.',
+          );
+        }
       } else {
         setServerError(res.message || 'Signup failed');
       }

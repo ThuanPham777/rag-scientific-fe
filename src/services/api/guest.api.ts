@@ -145,3 +145,40 @@ export function buildGuestUserMessage(
     createdAt: new Date().toISOString(),
   };
 }
+
+// ========== Migration ==========
+
+export interface GuestMigratePayload {
+  ragFileId: string;
+  fileName: string;
+  fileUrl: string;
+  folderId?: string;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    imageUrl?: string;
+    modelName?: string;
+    tokenCount?: number;
+    citations?: any;
+    createdAt?: string;
+  }>;
+  suggestions?: string[];
+}
+
+export interface GuestMigrateResult {
+  paperId: string;
+  conversationId: string;
+  messageCount: number;
+  suggestionCount: number;
+}
+
+/**
+ * Migrate guest data to authenticated user's account.
+ * Must be called AFTER login (request includes auth token).
+ */
+export async function guestMigrateData(
+  payload: GuestMigratePayload,
+): Promise<GuestMigrateResult> {
+  const { data } = await api.post('/guest/migrate', payload);
+  return data.data as GuestMigrateResult;
+}

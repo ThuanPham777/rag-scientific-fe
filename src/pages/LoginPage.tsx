@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { login as apiLogin } from '../services';
 import { useAuthStore } from '../store/useAuthStore';
+import { useGuestStore } from '../store/useGuestStore';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -20,11 +21,19 @@ export default function LoginPage() {
     try {
       const response = await apiLogin(email, password);
       if (response.success) {
+        // Check for guest data BEFORE login() — login sets isAuthenticated
+        // which will trigger auto-migration in ChatPage.
+        const guestSession = useGuestStore.getState().currentSession;
+        const guestRoute = guestSession ? `/chat/${guestSession.id}` : null;
+
         login(response.data, {
           accessToken: response.accessToken,
           refreshToken: response.refreshToken,
         });
-        navigate('/');
+
+        // If guest was chatting, go back to chat page (migration happens automatically)
+        // Otherwise go to home
+        navigate(guestRoute || '/');
       } else {
         setError(response.message || 'Login failed');
       }

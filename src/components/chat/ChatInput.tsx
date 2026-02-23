@@ -1,13 +1,12 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/UI/tooltip';
 import { Send, Sigma } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '@radix-ui/react-switch';
 import { UserAvatar, AssistantAvatar } from '../common/UserAvatar';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useGuestStore } from '@/store/useGuestStore';
+import AuthModal from '@/components/auth/AuthModal';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
 export type MentionMember = {
   id: string; // 'assistant' for AI, or userId
@@ -39,6 +38,8 @@ export default function ChatInput({
   const [text, setText] = useState('');
   const [hq, setHq] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [showGuestAuthModal, setShowGuestAuthModal] = useState(false);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   // Mention autocomplete state
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -196,6 +197,17 @@ export default function ChatInput({
 
   return (
     <div className='px-3 pb-3 bg-white relative'>
+      <AuthModal
+        isOpen={showGuestAuthModal}
+        onClose={() => setShowGuestAuthModal(false)}
+        initialMode='login'
+        onLoginSuccess={() => {
+          const guestSession = useGuestStore.getState().currentSession;
+          if (guestSession) {
+            window.location.href = `/chat/${guestSession.id}`;
+          }
+        }}
+      />
       {/* Mention autocomplete dropdown */}
       {mentionOpen && filteredMembers.length > 0 && (
         <div
@@ -284,7 +296,13 @@ export default function ChatInput({
                     <TooltipTrigger asChild>
                       <button
                         type='button'
-                        onClick={onExplainMath}
+                        onClick={() => {
+                          if (!isAuthenticated) {
+                            setShowGuestAuthModal(true);
+                            return;
+                          }
+                          onExplainMath?.();
+                        }}
                         disabled={disabled}
                         className='w-8 h-8 grid place-items-center rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed'
                       >
@@ -310,4 +328,3 @@ export default function ChatInput({
     </div>
   );
 }
-
