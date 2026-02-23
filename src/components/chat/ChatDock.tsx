@@ -16,6 +16,7 @@ import type { MentionMember } from './ChatInput';
 import ChatQuickActions from './ChatQuickActions';
 import { SessionBar, StartSessionButton } from '../session';
 import { TypingIndicator } from '../session';
+import { useSessionStore } from '../../store/useSessionStore';
 import {
   DateSeparator,
   NewMessageButton,
@@ -153,6 +154,9 @@ export default function ChatDock({
 }: Props) {
   // Use messages prop if provided, otherwise fall back to session?.messages
   const messages = messagesProp ?? session?.messages ?? [];
+
+  // Subscribe to assistant thinking state from socket (reactive)
+  const assistantThinking = useSessionStore((s) => s.assistantThinking);
 
   const [open, setOpen] = useState(defaultOpen);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -637,7 +641,14 @@ export default function ChatDock({
                 <div
                   key={m.id}
                   id={`msg-${m.id}`}
-                  className='transition-colors duration-500'
+                  className={`transition-colors duration-500 ${
+                    isCollaborative &&
+                    !isGrouped &&
+                    prev &&
+                    prev.role !== 'system'
+                      ? 'mt-3'
+                      : ''
+                  }`}
                 >
                   {isCollaborative && showDaySeparator && m.createdAt && (
                     <DateSeparator label={formatDaySeparator(m.createdAt)} />
@@ -673,7 +684,18 @@ export default function ChatDock({
                 </div>
               );
             })}
-            {isLoading && <ChatMessageLoading label={currentStepLabel} />}
+            {isLoading && (
+              <ChatMessageLoading
+                label={currentStepLabel}
+                isCollaborative={isCollaborative}
+              />
+            )}
+            {!isLoading && isCollaborative && assistantThinking && (
+              <ChatMessageLoading
+                label='Assistant is thinking...'
+                isCollaborative
+              />
+            )}
             <div ref={bottomRef} />
           </div>
 

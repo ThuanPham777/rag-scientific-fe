@@ -231,6 +231,18 @@ export function useSessionSocket(
     };
 
     // ---------------------------------------------------------------
+    // Event: assistant-thinking  — update Zustand store so all members
+    //        see a thinking indicator while the AI processes a request.
+    // ---------------------------------------------------------------
+    const onAssistantThinking = (data: { isThinking: boolean }) => {
+      console.log(
+        '[useSessionSocket] 📨 session:assistant-thinking',
+        JSON.stringify(data),
+      );
+      useSessionStore.getState().setAssistantThinking(data.isThinking);
+    };
+
+    // ---------------------------------------------------------------
     // Event: new-message  — append directly to the React Query cache.
     // This gives instant UI update instead of relying on refetch.
     // ---------------------------------------------------------------
@@ -271,6 +283,13 @@ export function useSessionSocket(
           displayName: normalised.displayName || '',
           isTyping: false,
         });
+      }
+
+      // If we receive an ASSISTANT message, clear the thinking indicator
+      // as a safety net (the explicit session:assistant-thinking event
+      // should have already cleared it, but this handles edge cases).
+      if (normalised.role === 'assistant') {
+        useSessionStore.getState().setAssistantThinking(false);
       }
 
       // Skip cache insert for the SENDER's own messages.
@@ -539,6 +558,7 @@ export function useSessionSocket(
     socket.on('session:user-joined', onUserJoined);
     socket.on('session:user-left', onUserLeft);
     socket.on('session:typing', onTyping);
+    socket.on('session:assistant-thinking', onAssistantThinking);
     socket.on('session:new-message', onNewMessage);
     socket.on('session:highlight-added', onHighlightAdded);
     socket.on('session:highlight-updated', onHighlightUpdated);
@@ -564,6 +584,7 @@ export function useSessionSocket(
       socket.off('session:user-joined', onUserJoined);
       socket.off('session:user-left', onUserLeft);
       socket.off('session:typing', onTyping);
+      socket.off('session:assistant-thinking', onAssistantThinking);
       socket.off('session:new-message', onNewMessage);
       socket.off('session:highlight-added', onHighlightAdded);
       socket.off('session:highlight-updated', onHighlightUpdated);

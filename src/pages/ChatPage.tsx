@@ -640,12 +640,21 @@ export default function ChatPage() {
     setSentMessages([]);
   }, [currentConversationId]);
 
-  // Combine server + sent messages, deduplicating by ID
+  // Combine server + sent messages, deduplicating by ID.
+  // Sort chronologically so optimistic messages always appear in the
+  // correct position relative to socket-delivered cache entries.
   const messages = useMemo(() => {
     if (isGuest) return guestSession?.messages || [];
     const serverIds = new Set(serverMessages.map((m) => m.id));
     const uniqueSent = sentMessages.filter((m) => !serverIds.has(m.id));
-    return [...serverMessages, ...uniqueSent];
+    if (uniqueSent.length === 0) return serverMessages;
+    const merged = [...serverMessages, ...uniqueSent];
+    merged.sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return ta - tb;
+    });
+    return merged;
   }, [isGuest, guestSession?.messages, serverMessages, sentMessages]);
 
   // Reply handler — no optimistic insert.
@@ -806,8 +815,13 @@ export default function ChatPage() {
               );
             }
 
-            // Add assistant message (already has server ID from response)
-            setSentMessages((prev) => [...prev, assistantMsg]);
+            // In collaborative mode the assistant message is already in the
+            // React Query cache via the socket 'session:new-message' event.
+            // Adding it to sentMessages too causes a brief ordering glitch
+            // (optimistic user msg appears after the cached assistant msg).
+            if (!isCollaborative) {
+              setSentMessages((prev) => [...prev, assistantMsg]);
+            }
 
             if (session.id && assistantMsg.id) {
               fetchFollowUps(session.id, assistantMsg.id);
@@ -926,8 +940,12 @@ export default function ChatPage() {
             );
           }
 
-          // 6. Add assistant message (already has server ID from response)
-          setSentMessages((prev) => [...prev, assistantMsg]);
+          // 6. In collaborative mode the assistant message arrives via
+          //    socket into the React Query cache; skip sentMessages to
+          //    avoid ordering flicker.
+          if (!isCollaborative) {
+            setSentMessages((prev) => [...prev, assistantMsg]);
+          }
 
           if (session.id && assistantMsg.id) {
             fetchFollowUps(session.id, assistantMsg.id);

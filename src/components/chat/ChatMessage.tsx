@@ -3,6 +3,7 @@
 
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { X } from 'lucide-react';
 import { usePaperStore } from '../../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../../store/useGuestStore';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -76,6 +77,9 @@ export default function ChatMessage({
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  // State for image lightbox
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   // Get setPendingJump from appropriate store
   const paperStorePendingJump = usePaperStore((s) => s.setPendingJump);
@@ -271,7 +275,32 @@ export default function ChatMessage({
                 <img
                   src={msg.imageDataUrl || msg.imageUrl}
                   alt='selected region'
-                  className='rounded-lg border border-gray-200/50 shadow-sm max-h-60 object-contain bg-gray-50 mx-auto sm:mx-0'
+                  className='rounded-lg border border-gray-200/50 shadow-sm max-h-60 object-contain bg-gray-50 mx-auto sm:mx-0 cursor-pointer hover:opacity-90 transition-opacity'
+                  onClick={() => setLightboxOpen(true)}
+                />
+              </div>
+            )}
+
+            {/* Image lightbox overlay */}
+            {lightboxOpen && (msg.imageDataUrl || msg.imageUrl) && (
+              <div
+                className='fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm'
+                onClick={() => setLightboxOpen(false)}
+              >
+                <button
+                  className='absolute top-4 right-4 p-2 rounded-full bg-white/20 hover:bg-white/40 transition-colors text-white z-10'
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxOpen(false);
+                  }}
+                >
+                  <X size={24} />
+                </button>
+                <img
+                  src={msg.imageDataUrl || msg.imageUrl}
+                  alt='selected region — full size'
+                  className='max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl'
+                  onClick={(e) => e.stopPropagation()}
                 />
               </div>
             )}
