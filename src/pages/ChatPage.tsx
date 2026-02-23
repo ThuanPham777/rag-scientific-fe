@@ -29,6 +29,7 @@ import {
   sendQuery,
   guestAskQuestion,
   guestCheckIngestStatus,
+  guestExplainRegion,
   buildGuestAssistantMessage,
   explainRegion,
   sendPlainMessage,
@@ -777,10 +778,7 @@ export default function ChatPage() {
             raw.tokenCount,
           );
           addGuestMessage(assistantMsg);
-
-          if (guestSession.id && assistantMsg.id) {
-            fetchFollowUps(guestSession.id, assistantMsg.id);
-          }
+          // Skip follow-up generation for guest (no server-side session)
         } else if (session) {
           if (isCollaborative && !isAssistantQuery) {
             // Collaborative mode WITHOUT @Assistant: just send plain message
@@ -895,7 +893,23 @@ export default function ChatPage() {
       try {
         setLoading(true);
 
-        if (session) {
+        if (isGuest && guestSession) {
+          // Guest: Call guest explain region API
+          const { answer, citations, raw } = await guestExplainRegion(
+            guestSession.ragFileId,
+            imageDataUrl,
+            pageNumber,
+            undefined,
+            guestPaper?.id || '',
+          );
+          const assistantMsg = buildGuestAssistantMessage(
+            answer,
+            citations,
+            raw.modelName,
+            raw.tokenCount,
+          );
+          addGuestMessage(assistantMsg);
+        } else if (session) {
           // 4. Call explainRegion API
           const { assistantMsg, raw } = await explainRegion(imageDataUrl, {
             conversationId: session.id,
@@ -948,6 +962,8 @@ export default function ChatPage() {
       activeSession,
       isCollaborative,
       isGuest,
+      guestSession,
+      guestPaper?.id,
       session,
       currentPaper?.id,
       addGuestMessage,
@@ -1005,10 +1021,7 @@ export default function ChatPage() {
             raw.tokenCount,
           );
           addGuestMessage(assistantMsg);
-
-          if (guestSession.id && assistantMsg.id) {
-            fetchFollowUps(guestSession.id, assistantMsg.id);
-          }
+          // Skip follow-up generation for guest (no server-side session)
         } else if (session) {
           // Authenticated: Call regular API
           const { assistantMsg } = await sendQuery(
@@ -1130,10 +1143,14 @@ export default function ChatPage() {
         isLoading={isGuest ? guestIsLoading : isChatLoading}
         defaultOpen={true}
         activePaperId={activePaper?.id}
+        conversationId={
+          isGuest ? undefined : (currentConversationId ?? urlConversationId)
+        }
+        showQuickActions={!isGuest}
         onOpenChange={setIsChatDockOpen}
         isPdfFullscreen={isPdfFullscreen}
         onExplainMath={() => captureToggleRef.current?.()}
-        followUpMap={followUpMap}
+        followUpMap={isGuest ? {} : followUpMap}
         onLoadMore={!isGuest ? fetchNextPage : undefined}
         hasMore={!isGuest ? (hasNextPage ?? false) : false}
         isLoadingMore={!isGuest ? isFetchingNextPage : false}

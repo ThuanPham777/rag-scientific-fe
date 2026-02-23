@@ -84,7 +84,7 @@ export default function HomeUpload() {
     setProgress: (v: number) => void,
   ) => {
     try {
-      const { guestPaper } = await guestUploadPdf(file, setProgress);
+      const { guestPaper, localUrl } = await guestUploadPdf(file, setProgress);
       console.log('HomeUpload - guest upload:', guestPaper);
 
       // Create guest paper object with status from backend
@@ -116,7 +116,7 @@ export default function HomeUpload() {
         ragFileId: guestPaperObj.ragFileId,
         fileName: guestPaperObj.fileName,
         fileUrl: guestPaperObj.fileUrl,
-        localUrl: guestPaperObj.fileUrl,
+        localUrl: localUrl, // Use blob URL for PDF preview (avoids CORS)
         status: guestPaperObj.status,
         createdAt: guestPaperObj.createdAt,
         updatedAt: guestPaperObj.createdAt,
@@ -178,12 +178,15 @@ export default function HomeUpload() {
     <div className='min-h-screen bg-gray-50 flex items-center justify-center p-6'>
       <div className='max-w-3xl w-full'>
         <h1 className='text-3xl font-semibold text-center mb-6'>
-          Chat with your Papers
+          AskPdf – Your Intelligent Research Companion
         </h1>
         <p className='text-md text-center mb-6'>
-          Upload any PDF to SciSpace Chat PDF, ask a question, and get concise,
-          citation-linked answers, summaries, and follow-ups in seconds—free
-          tier, 256-bit encrypted, no data training, supports 75 + languages.
+          AskPdf enables you to interact with academic papers and documents
+          through natural language. Simply upload a PDF and engage in a smart,
+          context-aware conversation powered by AI. From quick explanations and
+          structured summaries to deep-dive analysis and collaborative
+          discussion, AskPdf turns static documents into dynamic knowledge
+          experiences.
         </p>
         <FileDropzone onUpload={onUpload} />
       </div>

@@ -1,5 +1,5 @@
 import { Link, NavLink } from 'react-router-dom';
-import { Home, Library, FileText, MessageSquare, User, BookOpen } from 'lucide-react';
+import { Home, Library, FileText, User, BookOpen } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useUiStore } from '@/store/useUiStore';
 
@@ -8,7 +8,6 @@ const items = [
   { to: '/library', icon: Library, label: 'My Library', auth: true },
   // notebooks will be handled specially to avoid route change
   { to: '/uploads', icon: FileText, label: 'Uploads' },
-  { to: '/chat', icon: MessageSquare, label: 'Chat' },
 ];
 
 export default function LeftDock() {
