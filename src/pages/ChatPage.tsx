@@ -29,6 +29,7 @@ import {
   sendQuery,
   guestAskQuestion,
   guestCheckIngestStatus,
+  guestExplainRegion,
   buildGuestAssistantMessage,
   explainRegion,
   sendPlainMessage,
@@ -639,12 +640,21 @@ export default function ChatPage() {
     setSentMessages([]);
   }, [currentConversationId]);
 
-  // Combine server + sent messages, deduplicating by ID
+  // Combine server + sent messages, deduplicating by ID.
+  // Sort chronologically so optimistic messages always appear in the
+  // correct position relative to socket-delivered cache entries.
   const messages = useMemo(() => {
     if (isGuest) return guestSession?.messages || [];
     const serverIds = new Set(serverMessages.map((m) => m.id));
     const uniqueSent = sentMessages.filter((m) => !serverIds.has(m.id));
-    return [...serverMessages, ...uniqueSent];
+    if (uniqueSent.length === 0) return serverMessages;
+    const merged = [...serverMessages, ...uniqueSent];
+    merged.sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return ta - tb;
+    });
+    return merged;
   }, [isGuest, guestSession?.messages, serverMessages, sentMessages]);
 
   // Reply handler — no optimistic insert.
@@ -777,10 +787,7 @@ export default function ChatPage() {
             raw.tokenCount,
           );
           addGuestMessage(assistantMsg);
-
-          if (guestSession.id && assistantMsg.id) {
-            fetchFollowUps(guestSession.id, assistantMsg.id);
-          }
+          // Skip follow-up generation for guest (no server-side session)
         } else if (session) {
           if (isCollaborative && !isAssistantQuery) {
             // Collaborative mode WITHOUT @Assistant: just send plain message
@@ -808,8 +815,13 @@ export default function ChatPage() {
               );
             }
 
-            // Add assistant message (already has server ID from response)
-            setSentMessages((prev) => [...prev, assistantMsg]);
+            // In collaborative mode the assistant message is already in the
+            // React Query cache via the socket 'session:new-message' event.
+            // Adding it to sentMessages too causes a brief ordering glitch
+            // (optimistic user msg appears after the cached assistant msg).
+            if (!isCollaborative) {
+              setSentMessages((prev) => [...prev, assistantMsg]);
+            }
 
             if (session.id && assistantMsg.id) {
               fetchFollowUps(session.id, assistantMsg.id);
@@ -895,7 +907,23 @@ export default function ChatPage() {
       try {
         setLoading(true);
 
-        if (session) {
+        if (isGuest && guestSession) {
+          // Guest: Call guest explain region API
+          const { answer, citations, raw } = await guestExplainRegion(
+            guestSession.ragFileId,
+            imageDataUrl,
+            pageNumber,
+            undefined,
+            guestPaper?.id || '',
+          );
+          const assistantMsg = buildGuestAssistantMessage(
+            answer,
+            citations,
+            raw.modelName,
+            raw.tokenCount,
+          );
+          addGuestMessage(assistantMsg);
+        } else if (session) {
           // 4. Call explainRegion API
           const { assistantMsg, raw } = await explainRegion(imageDataUrl, {
             conversationId: session.id,
@@ -912,8 +940,12 @@ export default function ChatPage() {
             );
           }
 
-          // 6. Add assistant message (already has server ID from response)
-          setSentMessages((prev) => [...prev, assistantMsg]);
+          // 6. In collaborative mode the assistant message arrives via
+          //    socket into the React Query cache; skip sentMessages to
+          //    avoid ordering flicker.
+          if (!isCollaborative) {
+            setSentMessages((prev) => [...prev, assistantMsg]);
+          }
 
           if (session.id && assistantMsg.id) {
             fetchFollowUps(session.id, assistantMsg.id);
@@ -948,6 +980,8 @@ export default function ChatPage() {
       activeSession,
       isCollaborative,
       isGuest,
+      guestSession,
+      guestPaper?.id,
       session,
       currentPaper?.id,
       addGuestMessage,
@@ -1005,10 +1039,7 @@ export default function ChatPage() {
             raw.tokenCount,
           );
           addGuestMessage(assistantMsg);
-
-          if (guestSession.id && assistantMsg.id) {
-            fetchFollowUps(guestSession.id, assistantMsg.id);
-          }
+          // Skip follow-up generation for guest (no server-side session)
         } else if (session) {
           // Authenticated: Call regular API
           const { assistantMsg } = await sendQuery(
@@ -1130,10 +1161,14 @@ export default function ChatPage() {
         isLoading={isGuest ? guestIsLoading : isChatLoading}
         defaultOpen={true}
         activePaperId={activePaper?.id}
+        conversationId={
+          isGuest ? undefined : (currentConversationId ?? urlConversationId)
+        }
+        showQuickActions={!isGuest}
         onOpenChange={setIsChatDockOpen}
         isPdfFullscreen={isPdfFullscreen}
         onExplainMath={() => captureToggleRef.current?.()}
-        followUpMap={followUpMap}
+        followUpMap={isGuest ? {} : followUpMap}
         onLoadMore={!isGuest ? fetchNextPage : undefined}
         hasMore={!isGuest ? (hasNextPage ?? false) : false}
         isLoadingMore={!isGuest ? isFetchingNextPage : false}

@@ -128,10 +128,17 @@ api.interceptors.response.use(
       const refreshToken = useAuthStore.getState().getRefreshToken();
 
       if (!refreshToken) {
-        // No refresh token - force logout
+        // No refresh token available
         isRefreshing = false;
         processQueue(new Error('No refresh token'), null);
-        forceLogout();
+
+        // Only force logout if user was previously authenticated.
+        // Guest users have no tokens at all — calling forceLogout would
+        // redirect them away from the chat page unnecessarily.
+        const { isAuthenticated } = useAuthStore.getState();
+        if (isAuthenticated) {
+          forceLogout();
+        }
         return Promise.reject(error);
       }
 

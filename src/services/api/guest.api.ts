@@ -27,7 +27,7 @@ export interface GuestAskResult {
 export async function guestUploadPdf(
   file: File,
   onProgress?: (pct: number) => void,
-): Promise<{ guestPaper: GuestUploadResult }> {
+): Promise<{ guestPaper: GuestUploadResult; localUrl: string }> {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -41,8 +41,12 @@ export async function guestUploadPdf(
     },
   });
 
+  // Create a local blob URL for PDF preview (avoids CORS issues with S3)
+  const localUrl = URL.createObjectURL(file);
+
   return {
     guestPaper: data.data,
+    localUrl,
   };
 }
 

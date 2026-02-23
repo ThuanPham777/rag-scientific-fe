@@ -91,7 +91,7 @@ export default function TopNav() {
           className='flex items-center gap-2 font-semibold'
         >
           <div className='w-5 h-5 rounded-sm bg-brand-600' />
-          <span className='tracking-wide'>CHATPDF</span>
+          <span className='tracking-wide'>AskPDF</span>
         </Link>
 
         {/* Search */}

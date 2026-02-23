@@ -21,6 +21,10 @@ interface SessionState {
   setTyping: (indicator: TypingIndicator) => void;
   clearTyping: (userId: string) => void;
 
+  // Assistant thinking state (broadcast via socket when @Assistant is invoked)
+  assistantThinking: boolean;
+  setAssistantThinking: (value: boolean) => void;
+
   // Invite modal visibility
   isInviteModalOpen: boolean;
   setInviteModalOpen: (open: boolean) => void;
@@ -66,6 +70,9 @@ export const useSessionStore = create<SessionState>((set) => ({
       typingUsers: s.typingUsers.filter((t) => t.userId !== userId),
     })),
 
+  assistantThinking: false,
+  setAssistantThinking: (value) => set({ assistantThinking: value }),
+
   isInviteModalOpen: false,
   setInviteModalOpen: (open) => set({ isInviteModalOpen: open }),
 
@@ -77,6 +84,7 @@ export const useSessionStore = create<SessionState>((set) => ({
       isCollaborative: false,
       onlineMembers: [],
       typingUsers: [],
+      assistantThinking: false,
       isInviteModalOpen: false,
       isMembersPanelOpen: false,
     }),

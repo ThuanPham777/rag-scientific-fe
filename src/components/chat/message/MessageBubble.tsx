@@ -110,7 +110,7 @@ function MessageBubbleBase({
 
   return (
     <div
-      className={`relative flex w-full mb-0.5 ${alignRight ? 'justify-end' : 'justify-start'}`}
+      className={`relative flex w-full ${isGrouped ? 'mb-0.5' : 'mb-1'} ${alignRight ? 'justify-end' : 'justify-start'}`}
     >
       {/* ── Left avatar column ───────────────────────────────── */}
       {!alignRight && (
