@@ -66,6 +66,9 @@ export default function PdfPanel({
   // Track if fetch has been attempted (to prevent infinite retry on error)
   const [summaryFetched, setSummaryFetched] = useState(false);
   const [relatedFetched, setRelatedFetched] = useState(false);
+  // Track errors
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [relatedError, setRelatedError] = useState<string | null>(null);
   const [showGuestAuthModal, setShowGuestAuthModal] = useState(false);
 
   const currentPaper = usePaperStore((s) => s.currentPaper);
@@ -104,12 +107,18 @@ export default function PdfPanel({
   const handleSummary = async () => {
     if (!paper?.id) return;
     setSummaryFetched(true); // Mark as attempted
+    setSummaryError(null); // Clear previous errors
     try {
       setIsLoading(true);
       const res = await getPaperSummary(paper.id);
       setSummaryData(res.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error summarizing paper:', error);
+      const errorMsg =
+        error.response?.data?.message ||
+        error.message ||
+        'Failed to generate summary';
+      setSummaryError(errorMsg);
     } finally {
       setIsLoading(false);
     }
@@ -122,12 +131,18 @@ export default function PdfPanel({
       return;
     }
     setRelatedFetched(true); // Mark as attempted
+    setRelatedError(null); // Clear previous errors
     try {
       setIsLoading(true);
       const data = await getRelatedPapers(paper.id);
       setRelatedData(data.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error fetching related papers:', error);
+      const errorMsg =
+        error.response?.data?.message ||
+        error.message ||
+        'Failed to fetch related papers';
+      setRelatedError(errorMsg);
     } finally {
       setIsLoading(false);
     }
@@ -168,6 +183,8 @@ export default function PdfPanel({
     setRelatedData(null);
     setSummaryFetched(false);
     setRelatedFetched(false);
+    setSummaryError(null);
+    setRelatedError(null);
   }, [paper?.id]);
 
   // --- FIX 1: Tự động chuyển tab PDF khi có lệnh jump từ bên ngoài (Chat) ---
@@ -197,28 +214,55 @@ export default function PdfPanel({
     }
   }, [activePendingJump, activeTab, setPendingJump]);
 
-  const renderTabBtn = (tabName: ActiveTab, label: string) => (
-    <button
-      className={`pb-3 font-medium transition-colors border-b-2 px-1 ${
-        activeTab === tabName
-          ? 'border-orange-500 text-orange-600'
-          : 'border-transparent text-gray-500 hover:text-orange-500 hover:border-orange-200'
-      }`}
-      onClick={() => {
-        // Restrict Summary & Related tabs for guest users
-        if (
-          !isAuthenticated &&
-          (tabName === 'summary' || tabName === 'related')
-        ) {
-          setShowGuestAuthModal(true);
-          return;
+  const renderTabBtn = (tabName: ActiveTab, label: string) => {
+    // Check if paper is ready for Summary and Related Papers features
+    const isFeatureTab = tabName === 'summary' || tabName === 'related';
+    const isPaperReady = paper?.status === 'COMPLETED';
+    const isPaperProcessing = paper?.status === 'PROCESSING';
+    const isDisabled = isFeatureTab && !isPaperReady;
+
+    return (
+      <button
+        className={`pb-3 font-medium transition-colors border-b-2 px-1 ${
+          activeTab === tabName
+            ? 'border-orange-500 text-orange-600'
+            : isDisabled
+              ? 'border-transparent text-gray-300 cursor-not-allowed'
+              : 'border-transparent text-gray-500 hover:text-orange-500 hover:border-orange-200'
+        }`}
+        onClick={() => {
+          // Restrict Summary & Related tabs for guest users
+          if (
+            !isAuthenticated &&
+            (tabName === 'summary' || tabName === 'related')
+          ) {
+            setShowGuestAuthModal(true);
+            return;
+          }
+
+          // Restrict tabs if paper not fully processed
+          if (isDisabled) {
+            return;
+          }
+
+          setActiveTab(tabName);
+        }}
+        disabled={isDisabled}
+        title={
+          isDisabled && isPaperProcessing
+            ? 'Paper is still being processed. Please wait...'
+            : isDisabled
+              ? 'Paper must be fully processed to use this feature'
+              : undefined
         }
-        setActiveTab(tabName);
-      }}
-    >
-      {label}
-    </button>
-  );
+      >
+        {label}
+        {isFeatureTab && isPaperProcessing && (
+          <span className='ml-1 text-xs'>⏳</span>
+        )}
+      </button>
+    );
+  };
 
   // Guest auth modal handler
   const handleGuestLoginSuccess = () => {
@@ -385,6 +429,15 @@ export default function PdfPanel({
           <div className='flex-1 overflow-auto p-0'>
             {isLoading && !summaryData ? (
               <LoadingView message='AI is summarizing the paper...' />
+            ) : summaryError ? (
+              <ErrorView
+                message={summaryError}
+                onRetry={() => {
+                  setSummaryFetched(false);
+                  setSummaryError(null);
+                  handleSummary();
+                }}
+              />
             ) : summaryData ? (
               <SummaryView
                 summaryData={summaryData}
@@ -407,6 +460,15 @@ export default function PdfPanel({
           <div className='flex-1 overflow-auto p-0'>
             {isLoading && !relatedData ? (
               <LoadingView message='Searching for related papers...' />
+            ) : relatedError ? (
+              <ErrorView
+                message={relatedError}
+                onRetry={() => {
+                  setRelatedFetched(false);
+                  setRelatedError(null);
+                  handleRelated();
+                }}
+              />
             ) : relatedData ? (
               <RelatedPapersView data={relatedData} />
             ) : (
@@ -436,6 +498,29 @@ function LoadingView({ message }: { message: string }) {
       <div className='text-center'>
         <div className='text-4xl mb-4 animate-spin'>⏳</div>
         <p className='font-medium'>{message}</p>
+      </div>
+    </div>
+  );
+}
+
+function ErrorView({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className='flex items-center justify-center h-full text-gray-600'>
+      <div className='text-center max-w-md px-6'>
+        <div className='text-4xl mb-4'>⚠️</div>
+        <p className='font-medium mb-4 text-red-600'>{message}</p>
+        <button
+          onClick={onRetry}
+          className='px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors'
+        >
+          Retry
+        </button>
       </div>
     </div>
   );
