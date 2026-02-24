@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { LogOut, X, Trash2 } from 'lucide-react';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
+import { useGuestLimitStore } from '../store/useGuestLimitStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useSessionStore } from '../store/useSessionStore';
 
@@ -94,6 +95,9 @@ export default function ChatPage() {
   const isGuest = urlConversationId
     ? !isAuthenticated && isGuestSession(urlConversationId)
     : !isAuthenticated;
+
+  // Guest usage-limit: true when the 1-request AI cap has been reached
+  const guestAiLimitReached = useGuestLimitStore((s) => s.aiRequestsUsed >= 1);
 
   // Reactive flag: guest data exists in localStorage (subscribes to store changes)
   const guestHasData = useGuestStore(
@@ -855,6 +859,12 @@ export default function ChatPage() {
 
       const trimmedText = text.trim();
 
+      // ── Guest AI limit gate ──
+      if (isGuest && !useGuestLimitStore.getState().tryUseAiRequest()) {
+        setShowGuestAuthModal(true);
+        return;
+      }
+
       // In collaborative mode, check for @Assistant prefix
       const isAssistantQuery = isCollaborative
         ? /^@Assistant\b/i.test(trimmedText)
@@ -1002,6 +1012,13 @@ export default function ChatPage() {
     ) => {
       if (!activeSession) return;
 
+      // ── Guest AI limit gate ──
+      if (isGuest && !useGuestLimitStore.getState().tryUseAiRequest()) {
+        setShowGuestAuthModal(true);
+        completeProcessing?.();
+        return;
+      }
+
       // 1. Create user message with captured image (same as onSend)
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
@@ -1119,6 +1136,12 @@ export default function ChatPage() {
   const handlePdfAction = useCallback(
     async (action: 'explain' | 'summarize', selectedText: string) => {
       if (!activeSession || !selectedText.trim()) return;
+
+      // ── Guest AI limit gate ──
+      if (isGuest && !useGuestLimitStore.getState().tryUseAiRequest()) {
+        setShowGuestAuthModal(true);
+        return;
+      }
 
       const queryText =
         action === 'explain'
@@ -1288,7 +1311,9 @@ export default function ChatPage() {
           isGuest ? undefined : (currentConversationId ?? urlConversationId)
         }
         showQuickActions={true}
-        onGuestAuthRequired={isGuest ? handleGuestAuthRequired : undefined}
+        onGuestAuthRequired={
+          isGuest && guestAiLimitReached ? handleGuestAuthRequired : undefined
+        }
         onOpenChange={setIsChatDockOpen}
         isPdfFullscreen={isPdfFullscreen}
         onExplainMath={() => captureToggleRef.current?.()}

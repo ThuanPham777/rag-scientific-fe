@@ -6,9 +6,14 @@ import { startSession, uploadPdf, guestUploadPdf } from '../services';
 import { usePaperStore } from '../store/usePaperStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useGuestStore, generateGuestSessionId } from '../store/useGuestStore';
+import { useGuestLimitStore } from '../store/useGuestLimitStore';
+import AuthModal from '@/components/auth/AuthModal';
 import { paperKeys } from '../hooks/queries';
 import { FolderSelectModal } from '@/components/uploader/FolderSelectModal';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { Lock } from 'lucide-react';
+
+type AuthMode = 'login' | 'signup';
 
 export default function HomeUpload() {
   const nav = useNavigate();
@@ -22,6 +27,22 @@ export default function HomeUpload() {
   // Guest store
   const setGuestPaper = useGuestStore((s) => s.setGuestPaper);
   const setGuestSession = useGuestStore((s) => s.setGuestSession);
+
+  // Guest upload limit — reactive so UI re-renders when limit is reached
+  const guestUploadLimitReached = useGuestLimitStore(
+    (s) => !isAuthenticated && s.uploadsUsed >= 1,
+  );
+
+  // Auth modal for guest limit exceeded
+  const [showGuestAuthModal, setShowGuestAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
+
+  // Ref tracks whether a guest upload is in progress.
+  // A ref (not state) is used so the value is updated synchronously BEFORE
+  // tryUseUpload() triggers a Zustand re-render, preventing the limit card
+  // from flashing during the upload→navigate flow.
+  const guestUploadingRef = useRef(false);
+  const [, forceRender] = useState(0);
 
   // State for folder selection modal (logged-in users)
   const [showFolderModal, setShowFolderModal] = useState(false);
@@ -147,8 +168,21 @@ export default function HomeUpload() {
       setPendingFile({ file, setProgress });
       setShowFolderModal(true);
     } else {
-      // Guest user: Upload directly without folder
-      await processGuestUpload(file, setProgress);
+      // Check upload limit (1 per session)
+      if (!useGuestLimitStore.getState().canUpload()) {
+        // Limit already reached — force re-render to show card
+        forceRender((n) => n + 1);
+        return;
+      }
+      // Set ref synchronously BEFORE incrementing the counter so the
+      // Zustand-triggered re-render still sees guestUploadingRef.current === true
+      guestUploadingRef.current = true;
+      useGuestLimitStore.getState().tryUseUpload();
+      try {
+        await processGuestUpload(file, setProgress);
+      } finally {
+        guestUploadingRef.current = false;
+      }
     }
   };
 
@@ -188,8 +222,50 @@ export default function HomeUpload() {
           discussion, AskPdf turns static documents into dynamic knowledge
           experiences.
         </p>
-        <FileDropzone onUpload={onUpload} />
+        {/* Show limit-reached card or normal dropzone.
+            Suppress the card while a guest upload is actively in progress
+            to prevent a flash before navigation. */}
+        {guestUploadLimitReached && !guestUploadingRef.current ? (
+          <div className='rounded-xl border border-gray-200 bg-gray-50 p-10 flex flex-col items-center justify-center text-center'>
+            <Lock
+              size={48}
+              className='text-gray-400 mb-4'
+            />
+            <p className='text-gray-600 text-base mb-6'>
+              Upload Limit reached. Signup / Login to get unlimited chats.
+            </p>
+            <div className='flex items-center gap-3'>
+              <button
+                onClick={() => {
+                  setAuthMode('signup');
+                  setShowGuestAuthModal(true);
+                }}
+                className='px-5 py-2 rounded-md bg-orange-500 text-white font-medium hover:bg-orange-600 transition'
+              >
+                Sign up
+              </button>
+              <button
+                onClick={() => {
+                  setAuthMode('login');
+                  setShowGuestAuthModal(true);
+                }}
+                className='px-5 py-2 rounded-md border border-gray-300 bg-white text-gray-700 font-medium hover:bg-gray-50 transition'
+              >
+                Log in
+              </button>
+            </div>
+          </div>
+        ) : (
+          <FileDropzone onUpload={onUpload} />
+        )}
       </div>
+
+      {/* Auth Modal — opened from limit-reached card */}
+      <AuthModal
+        isOpen={showGuestAuthModal}
+        onClose={() => setShowGuestAuthModal(false)}
+        initialMode={authMode}
+      />
 
       {/* Folder Selection Modal (for logged-in users only) */}
       {isAuthenticated && (

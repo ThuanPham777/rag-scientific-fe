@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useGuestStore } from '@/store/useGuestStore';
+import { useGuestLimitStore } from '@/store/useGuestLimitStore';
 import AuthModal from '@/components/auth/AuthModal';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { Button } from '../ui/button';
@@ -254,8 +255,11 @@ export default function PdfToolbar({
             }
             onClick={() => {
               if (!isAuthenticated) {
-                setShowGuestAuthModal(true);
-                return;
+                // Check if guest AI limit is exhausted
+                if (!useGuestLimitStore.getState().canMakeAiRequest()) {
+                  setShowGuestAuthModal(true);
+                  return;
+                }
               }
               onToggleCapture();
             }}

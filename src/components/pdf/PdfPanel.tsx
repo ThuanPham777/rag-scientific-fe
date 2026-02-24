@@ -16,6 +16,7 @@ import { usePaperStore } from '../../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../../store/useGuestStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUiStore } from '../../store/useUiStore';
+import { useGuestLimitStore } from '../../store/useGuestLimitStore';
 import PdfViewer from './PdfViewer';
 import notebookService from '@/services/notebookService';
 import AuthModal from '@/components/auth/AuthModal';
@@ -306,6 +307,13 @@ export default function PdfPanel({
                   .__completeProcessing as (() => void) | undefined;
 
                 if (isGuest && guestPaper?.ragFileId) {
+                  // ── Guest AI limit gate ──
+                  if (!useGuestLimitStore.getState().tryUseAiRequest()) {
+                    setShowGuestAuthModal(true);
+                    completeProcessing?.();
+                    return;
+                  }
+
                   // Guest mode: use guestExplainRegion
                   const guestStore = useGuestStore.getState();
 
