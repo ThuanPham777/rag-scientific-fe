@@ -1143,10 +1143,15 @@ export default function ChatPage() {
         return;
       }
 
-      const queryText =
+      // Build query text with @Assistant prefix for collaborative sessions
+      const baseQueryText =
         action === 'explain'
           ? `Explain the following text: "${selectedText}"`
           : `Summarize the following text: "${selectedText}"`;
+
+      const queryText = isCollaborative
+        ? `@Assistant ${baseQueryText}`
+        : baseQueryText;
 
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
