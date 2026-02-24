@@ -5,6 +5,7 @@ import {
   useGenerateSuggestedQuestions,
 } from '../../hooks';
 import { useGuestStore } from '../../store/useGuestStore';
+import { useGuestLimitStore } from '../../store/useGuestLimitStore';
 
 type Tab = 'general' | 'my-questions';
 
@@ -314,8 +315,19 @@ export default function ChatQuickActions({
                         <button
                           onClick={() => {
                             if (isGuestMode) {
-                              onGuestAuthRequired?.(q);
-                              closePanel();
+                              // Check if guest AI limit is already reached
+                              if (
+                                !useGuestLimitStore
+                                  .getState()
+                                  .canMakeAiRequest()
+                              ) {
+                                onGuestAuthRequired?.(q);
+                                closePanel();
+                              } else {
+                                // Still under limit — let the question go through normally
+                                onSelect(q);
+                                closePanel();
+                              }
                             } else {
                               onSelect(q);
                               closePanel();

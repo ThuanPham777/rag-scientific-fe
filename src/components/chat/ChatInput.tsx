@@ -5,6 +5,7 @@ import { Switch } from '@radix-ui/react-switch';
 import { UserAvatar, AssistantAvatar } from '../common/UserAvatar';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useGuestStore } from '@/store/useGuestStore';
+import { useGuestLimitStore } from '@/store/useGuestLimitStore';
 import AuthModal from '@/components/auth/AuthModal';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
@@ -298,8 +299,13 @@ export default function ChatInput({
                         type='button'
                         onClick={() => {
                           if (!isAuthenticated) {
-                            setShowGuestAuthModal(true);
-                            return;
+                            // Block only if guest AI limit is exhausted
+                            if (
+                              !useGuestLimitStore.getState().canMakeAiRequest()
+                            ) {
+                              setShowGuestAuthModal(true);
+                              return;
+                            }
                           }
                           onExplainMath?.();
                         }}

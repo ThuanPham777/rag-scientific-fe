@@ -17,6 +17,7 @@ import notebookService, { type NotebookItem } from '@/services/notebookService';
 import { useUiStore } from '@/store/useUiStore';
 import AuthModal from '@/components/auth/AuthModal';
 import { useGuestStore } from '@/store/useGuestStore';
+import { useGuestLimitStore } from '@/store/useGuestLimitStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
 type HighlightRect = {
@@ -195,8 +196,8 @@ export default function SelectionActionMenu({
   const wordCount = selection.text.trim().split(/\s+/).filter(Boolean).length;
   const canSummarize = wordCount >= 50;
 
-  // Guest guard: show AuthModal instead of executing restricted actions
-  const guardGuest = (): boolean => {
+  // Guard: always block unauthenticated users (for auth-only features like highlight, notebook)
+  const guardGuestAuth = (): boolean => {
     if (!isAuthenticated) {
       setShowGuestAuthModal(true);
       return true; // blocked
@@ -204,8 +205,26 @@ export default function SelectionActionMenu({
     return false;
   };
 
+  // Guard for AI actions (explain, summarize): allow if guest limit not reached
+  // The actual limit increment happens in ChatPage when the API is called.
+  const guardGuestAiLimit = (): boolean => {
+    if (!isAuthenticated) {
+      if (!useGuestLimitStore.getState().canMakeAiRequest()) {
+        setShowGuestAuthModal(true);
+        return true; // blocked — limit exceeded
+      }
+    }
+    return false; // allowed
+  };
+
   const fire = (type: Parameters<typeof onAction>[0]) => {
-    if (guardGuest()) return;
+    // explain / summarize → use AI-limit guard (guests get 1 free request)
+    if (type === 'explain' || type === 'summarize') {
+      if (guardGuestAiLimit()) return;
+    } else {
+      // related, highlight, notebook, etc. → require full auth
+      if (guardGuestAuth()) return;
+    }
     onAction(type, {
       text: selection.text,
       pageNumber: selection.pageNumber,
@@ -339,7 +358,7 @@ export default function SelectionActionMenu({
           <button
             className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left relative'
             onClick={() => {
-              if (guardGuest()) return;
+              if (guardGuestAuth()) return;
               // Immediately create highlight with default color, keep editor open
               const defaultColor = selectedColorDefault || '#ffd700';
               setSelectedColor(defaultColor);
@@ -354,7 +373,7 @@ export default function SelectionActionMenu({
           <button
             className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left'
             onClick={() => {
-              if (guardGuest()) return;
+              if (guardGuestAuth()) return;
               fire('save');
             }}
           >
@@ -363,7 +382,7 @@ export default function SelectionActionMenu({
           <button
             className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left justify-between'
             onClick={() => {
-              if (guardGuest()) return;
+              if (guardGuestAuth()) return;
               setShowNotebookPicker(true);
               setShowMainPopup(false);
               loadNotebooks();
