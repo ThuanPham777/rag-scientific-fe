@@ -337,11 +337,11 @@ leaveSessionRoom(conversationId);
 
 ## 🔗 Related Services
 
-| Service               | Port | Description              |
-| --------------------- | ---- | ------------------------ |
-| **rag-scientific-fe** | 5173 | This service (React App) |
-| **rag-scientific-be** | 3000 | NestJS Backend API       |
-| **RAG_BE_02**         | 8000 | Python RAG Service       |
+| Service                        | Port | Description              |
+| ------------------------------ | ---- | ------------------------ |
+| **rag-scientific-fe**          | 5173 | This service (React App) |
+| **rag-scientific-be**          | 3000 | NestJS Backend API       |
+| **rag service (Pipeline_RAG)** | 8000 | Python RAG Service       |
 
 ## 📄 License
 
