@@ -15,6 +15,7 @@ import {
   createPaper,
   deletePaper,
   uploadPdf,
+  deleteAllPapers,
 } from '../../services';
 import type { Paper } from '../../utils/types';
 
@@ -135,6 +136,76 @@ export function useDeletePaper() {
     },
     onError: (error: any) => {
       const msg = error.response?.data?.message || 'Failed to delete paper';
+      toast.error(msg);
+    },
+  });
+}
+
+/**
+ * Hook to delete selected papers by IDs.
+ * Calls DELETE /papers/:id for each paper in parallel, then refreshes the list.
+ */
+export function useDeleteSelectedPapers() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(
+        ids.map((id) => deletePaper(id)),
+      );
+      const succeeded = ids.filter((_, i) => results[i].status === 'fulfilled');
+      const failed = ids.filter((_, i) => results[i].status === 'rejected');
+      return { succeeded, failed };
+    },
+    onSuccess: ({ succeeded, failed }) => {
+      // Remove deleted papers from cache
+      for (const id of succeeded) {
+        queryClient.removeQueries({ queryKey: paperKeys.detail(id) });
+      }
+      queryClient.invalidateQueries({ queryKey: paperKeys.all });
+
+      if (failed.length > 0) {
+        toast.success(
+          `Deleted ${succeeded.length} paper(s). ${failed.length} failed.`,
+        );
+      } else {
+        toast.success(`Deleted ${succeeded.length} paper(s) successfully`);
+      }
+    },
+    onError: (error: any) => {
+      const msg =
+        error.response?.data?.message || 'Failed to delete selected papers';
+      toast.error(msg);
+    },
+  });
+}
+
+/**
+ * Hook to delete ALL papers for the current user.
+ * Papers with active collaborative sessions are skipped.
+ */
+export function useDeleteAllPapers() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => deleteAllPapers(),
+    onSuccess: (result) => {
+      // Clear entire paper cache
+      queryClient.removeQueries({ queryKey: paperKeys.details() });
+      queryClient.invalidateQueries({ queryKey: paperKeys.all });
+
+      const { deletedCount, skippedIds } = result.data;
+      if (skippedIds.length > 0) {
+        toast.success(
+          `Deleted ${deletedCount} paper(s). ${skippedIds.length} paper(s) skipped (active collaboration).`,
+        );
+      } else {
+        toast.success(`Deleted ${deletedCount} paper(s) successfully`);
+      }
+    },
+    onError: (error: any) => {
+      const msg =
+        error.response?.data?.message || 'Failed to delete all papers';
       toast.error(msg);
     },
   });
