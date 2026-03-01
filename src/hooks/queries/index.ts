@@ -7,6 +7,8 @@ export {
   usePapers,
   usePaper,
   useDeletePaper,
+  useDeleteSelectedPapers,
+  useDeleteAllPapers,
 } from './usePaperQueries';
 
 // Conversation queries and keys

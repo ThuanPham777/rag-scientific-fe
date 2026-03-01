@@ -18,6 +18,8 @@ import {
   useCreateFolder,
   useUpdateFolder,
   useDeleteFolder,
+  useDeleteAllPapers,
+  useDeleteSelectedPapers,
 } from '../hooks';
 // import {
 //   FolderSidebar,
@@ -85,6 +87,8 @@ export default function MyLibraryPage() {
 
   // React Query mutations
   const clearChatHistoryMutation = useClearChatHistory();
+  const deleteAllPapersMutation = useDeleteAllPapers();
+  const deleteSelectedPapersMutation = useDeleteSelectedPapers();
 
   // Multi-paper chat state (UI state in Zustand)
   const { selectedPapers, togglePaper, deselectPaper, clearSelection } =
@@ -92,6 +96,9 @@ export default function MyLibraryPage() {
 
   // Confirm modal state
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [showDeleteSelectedConfirm, setShowDeleteSelectedConfirm] =
+    useState(false);
 
   const {
     messages: multiChatMessages,
@@ -121,6 +128,27 @@ export default function MyLibraryPage() {
       console.error('Failed to clear multi-paper chat history:', err);
     }
   }, [clearChatHistoryMutation, clearMultiChat, multiChatConversationId]);
+
+  const confirmDeleteAllPapers = useCallback(async () => {
+    setShowDeleteAllConfirm(false);
+    try {
+      await deleteAllPapersMutation.mutateAsync();
+      clearSelection();
+    } catch (err) {
+      console.error('Failed to delete all papers:', err);
+    }
+  }, [deleteAllPapersMutation, clearSelection]);
+
+  const confirmDeleteSelectedPapers = useCallback(async () => {
+    setShowDeleteSelectedConfirm(false);
+    const ids = selectedPapers.map((p) => p.id);
+    try {
+      await deleteSelectedPapersMutation.mutateAsync(ids);
+      clearSelection();
+    } catch (err) {
+      console.error('Failed to delete selected papers:', err);
+    }
+  }, [deleteSelectedPapersMutation, selectedPapers, clearSelection]);
 
   // View state (UI state)
   // If URL has folderId, use it; otherwise default to 'all'
@@ -329,19 +357,48 @@ export default function MyLibraryPage() {
               My Library - {currentViewName}
             </h2>
             {selectedPapers.length > 0 && (
-              <span className='px-2 py-1 text-sm bg-orange-100 text-orange-700 rounded-full'>
-                {selectedPapers.length} selected
-              </span>
+              <>
+                <span className='px-2 py-1 text-sm bg-orange-100 text-orange-700 rounded-full'>
+                  {selectedPapers.length} selected
+                </span>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => setShowDeleteSelectedConfirm(true)}
+                  disabled={deleteSelectedPapersMutation.isPending}
+                  className='gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700'
+                >
+                  <Trash2 className='h-3.5 w-3.5' />
+                  {deleteSelectedPapersMutation.isPending
+                    ? 'Deleting...'
+                    : 'Delete Selected'}
+                </Button>
+              </>
             )}
           </div>
           {selectedView !== 'notebooks' && (
-            <Button
-              onClick={upload.handleUploadClick}
-              className='gap-2'
-            >
-              <Upload className='h-4 w-4' />
-              Upload PDFs
-            </Button>
+            <div className='flex items-center gap-2'>
+              {displayPapers.length > 0 && (
+                <Button
+                  variant='outline'
+                  onClick={() => setShowDeleteAllConfirm(true)}
+                  disabled={deleteAllPapersMutation.isPending}
+                  className='gap-2 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700'
+                >
+                  <Trash2 className='h-4 w-4' />
+                  {deleteAllPapersMutation.isPending
+                    ? 'Deleting...'
+                    : 'Delete All'}
+                </Button>
+              )}
+              <Button
+                onClick={upload.handleUploadClick}
+                className='gap-2'
+              >
+                <Upload className='h-4 w-4' />
+                Upload PDFs
+              </Button>
+            </div>
           )}
           <input
             ref={upload.uploadInputRef}
@@ -476,6 +533,32 @@ export default function MyLibraryPage() {
         icon={Trash2}
         onConfirm={confirmClearMultiChatHistory}
         onCancel={() => setShowClearConfirm(false)}
+      />
+
+      {/* Delete All Papers Confirm Modal */}
+      <ConfirmModal
+        isOpen={showDeleteAllConfirm}
+        title='Delete All Papers?'
+        message={`This will permanently delete all ${displayPapers.length} paper(s) and their associated conversations, messages, highlights, and files. Papers in active collaborative sessions will be skipped. This action cannot be undone.`}
+        confirmLabel='Delete All'
+        cancelLabel='Cancel'
+        variant='danger'
+        icon={Trash2}
+        onConfirm={confirmDeleteAllPapers}
+        onCancel={() => setShowDeleteAllConfirm(false)}
+      />
+
+      {/* Delete Selected Papers Confirm Modal */}
+      <ConfirmModal
+        isOpen={showDeleteSelectedConfirm}
+        title='Delete Selected Papers?'
+        message={`This will permanently delete ${selectedPapers.length} selected paper(s) and their associated conversations, messages, highlights, and files. Papers in active collaborative sessions will be skipped. This action cannot be undone.`}
+        confirmLabel='Delete Selected'
+        cancelLabel='Cancel'
+        variant='danger'
+        icon={Trash2}
+        onConfirm={confirmDeleteSelectedPapers}
+        onCancel={() => setShowDeleteSelectedConfirm(false)}
       />
     </div>
   );

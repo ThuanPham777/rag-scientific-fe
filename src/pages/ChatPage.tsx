@@ -233,12 +233,27 @@ export default function ChatPage() {
   }, [conversationData, setCollaborative]);
 
   // 3. Sync paper → paper store
+  //    Also keep the store's status in sync when React Query refetches (e.g. after ingestion completes).
   useEffect(() => {
-    if (isGuest || currentPaper) return; // Already have paper data
+    if (isGuest) return;
 
     if (paperFromQuery) {
-      setCurrentPaper(paperFromQuery);
-    } else if (isPaperError && conversationData?.papers?.[0]) {
+      if (!currentPaper) {
+        // First load — populate the store
+        setCurrentPaper(paperFromQuery);
+      } else if (
+        currentPaper.id === paperFromQuery.id &&
+        currentPaper.status !== paperFromQuery.status
+      ) {
+        // Status changed (e.g. PROCESSING → COMPLETED) — replace the full paper object
+        // so all metadata populated during ingestion (title, abstract, etc.) is synced.
+        setCurrentPaper({
+          ...currentPaper,
+          ...paperFromQuery,
+          localUrl: currentPaper.localUrl || paperFromQuery.localUrl,
+        });
+      }
+    } else if (!currentPaper && isPaperError && conversationData?.papers?.[0]) {
       // getPaper failed (non-owner) — fallback to paper data from conversation response
       const cp = conversationData.papers[0];
       setCurrentPaper({

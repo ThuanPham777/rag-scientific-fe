@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import SummaryView from './SummaryView';
 import RelatedPapersView from './RelatedPapersView';
 import type {
@@ -148,7 +148,9 @@ export default function PdfPanel({
     }
   };
 
-  // Effect switch tab logic - only fetch if not already attempted
+  // Effect switch tab logic - fetch on tab switch regardless of paper status.
+  // If paper is still processing, the backend returns an error which shows with a Retry button.
+  // When ingest completes the prevStatusRef effect auto-resets flags and triggers a refetch.
   useEffect(() => {
     if (
       activeTab === 'summary' &&
@@ -187,6 +189,22 @@ export default function PdfPanel({
     setRelatedError(null);
   }, [paper?.id]);
 
+  // When paper status transitions to COMPLETED, reset fetch flags so the
+  // auto-fetch effect above can trigger again (enables Summary/Related after ingestion).
+  const prevStatusRef = useRef(paper?.status);
+  useEffect(() => {
+    if (
+      prevStatusRef.current !== 'COMPLETED' &&
+      paper?.status === 'COMPLETED'
+    ) {
+      setSummaryFetched(false);
+      setRelatedFetched(false);
+      setSummaryError(null);
+      setRelatedError(null);
+    }
+    prevStatusRef.current = paper?.status;
+  }, [paper?.status]);
+
   // --- FIX 1: Tự động chuyển tab PDF khi có lệnh jump từ bên ngoài (Chat) ---
   useEffect(() => {
     // Nếu store có pendingJump mà đang KHÔNG ở tab PDF
@@ -217,18 +235,15 @@ export default function PdfPanel({
   const renderTabBtn = (tabName: ActiveTab, label: string) => {
     // Check if paper is ready for Summary and Related Papers features
     const isFeatureTab = tabName === 'summary' || tabName === 'related';
-    const isPaperReady = paper?.status === 'COMPLETED';
-    const isPaperProcessing = paper?.status === 'PROCESSING';
-    const isDisabled = isFeatureTab && !isPaperReady;
+    const isPaperProcessing =
+      paper?.status === 'PROCESSING' || paper?.status === 'PENDING';
 
     return (
       <button
         className={`pb-3 font-medium transition-colors border-b-2 px-1 ${
           activeTab === tabName
             ? 'border-orange-500 text-orange-600'
-            : isDisabled
-              ? 'border-transparent text-gray-300 cursor-not-allowed'
-              : 'border-transparent text-gray-500 hover:text-orange-500 hover:border-orange-200'
+            : 'border-transparent text-gray-500 hover:text-orange-500 hover:border-orange-200'
         }`}
         onClick={() => {
           // Restrict Summary & Related tabs for guest users
@@ -240,20 +255,14 @@ export default function PdfPanel({
             return;
           }
 
-          // Restrict tabs if paper not fully processed
-          if (isDisabled) {
-            return;
-          }
-
+          // Allow switching to the tab even if paper is still processing.
+          // The tab content will show a friendly processing message instead.
           setActiveTab(tabName);
         }}
-        disabled={isDisabled}
         title={
-          isDisabled && isPaperProcessing
+          isFeatureTab && isPaperProcessing
             ? 'Paper is still being processed. Please wait...'
-            : isDisabled
-              ? 'Paper must be fully processed to use this feature'
-              : undefined
+            : undefined
         }
       >
         {label}
@@ -442,7 +451,6 @@ export default function PdfPanel({
               <SummaryView
                 summaryData={summaryData}
                 onJumpToSource={({ pageNumber, rect }) => {
-                  // Set jump data -> Trigger useEffect ở trên -> Chuyển tab
                   setPendingJump({ pageNumber, rect });
                 }}
               />

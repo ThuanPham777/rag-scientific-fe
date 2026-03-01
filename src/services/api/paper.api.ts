@@ -77,6 +77,18 @@ export async function deletePaper(id: string): Promise<{ success: boolean }> {
 }
 
 /**
+ * Delete ALL papers for the current user
+ */
+export async function deleteAllPapers(): Promise<{
+  success: boolean;
+  data: { deletedCount: number; skippedIds: string[] };
+  message: string;
+}> {
+  const { data } = await api.delete('/papers');
+  return data;
+}
+
+/**
  * Upload PDF to S3 and create paper record
  */
 export async function uploadPdf(
