@@ -65,6 +65,8 @@ export function usePapers() {
 
 /**
  * Hook to fetch a single paper
+ * Auto-polls every 3 seconds when the paper is still being ingested (PENDING/PROCESSING).
+ * Once ingestion completes (COMPLETED/FAILED), polling stops and normal staleTime applies.
  */
 export function usePaper(id: string | undefined) {
   return useQuery({
@@ -75,6 +77,14 @@ export function usePaper(id: string | undefined) {
     },
     enabled: !!id,
     staleTime: 5 * 60 * 1000, // 5 minutes - paper details don't change often
+    // Poll every 3s while the paper is still being ingested; stop once done.
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'PENDING' || status === 'PROCESSING') {
+        return 3000;
+      }
+      return false;
+    },
   });
 }
 
