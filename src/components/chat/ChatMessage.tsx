@@ -3,13 +3,16 @@
 
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { X, NotebookPen, ListTree, Search, Plus, ChevronDown } from 'lucide-react';
 import { usePaperStore } from '../../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../../store/useGuestStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useUiStore } from '../../store/useUiStore';
 import { findCitation } from '../../utils/citation';
 import { createConversation, listConversations } from '../../services';
+import notebookService from '@/services/notebookService';
 import type { ChatMessage as Msg, Citation } from '../../utils/types';
+import AuthModal from '@/components/auth/AuthModal';
 import ChatMessageLoading from './ChatMessageLoading';
 import {
   MessageBubble,
@@ -20,6 +23,65 @@ import {
   ReplyPreview,
   MessageHoverActions,
 } from './message';
+
+/** Lightweight markdown → HTML converter for notebook content */
+function mdToHtml(md: string): string {
+  // Step 1: Convert LaTeX expressions to KaTeX-compatible span tags.
+  // The NotebookEditor's MathInline Tiptap node parses <span class="katex" data-latex="...">.
+  // Display math $$...$$ first, then inline $...$
+  let protected_ = md.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
+    const escaped = tex.trim().replace(/"/g, '&quot;');
+    return `<span class="katex" data-latex="${escaped}" data-display="true"></span>`;
+  });
+  protected_ = protected_.replace(/\$([^\n$]+?)\$/g, (_, tex) => {
+    const escaped = tex.trim().replace(/"/g, '&quot;');
+    return `<span class="katex" data-latex="${escaped}"></span>`;
+  });
+
+  // Step 2: Markdown → HTML conversion (on LaTeX-safe text)
+  let html = protected_
+    // Strip citation references like [S1], [S2], [S10] etc.
+    .replace(/\[S\d+\]/g, '')
+    // Code blocks (``` ... ```)
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Headers
+    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // Bold + italic
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    // Bold
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Italic
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Links
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    // Unordered lists
+    .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+    // Ordered lists
+    .replace(/^\d+\.\s(.+)$/gm, '<li>$1</li>');
+
+  // Wrap consecutive <li> in <ul>
+  html = html.replace(/((<li>.*<\/li>\s*)+)/g, '<ul>$1</ul>');
+
+  // Wrap remaining plain lines in <p> (skip already wrapped tags)
+  html = html
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return '';
+      if (/^<(h[1-4]|ul|ol|li|pre|code|div|blockquote)/.test(trimmed)) return trimmed;
+      return `<p>${trimmed}</p>`;
+    })
+    .filter(Boolean)
+    .join('\n');
+
+  return html;
+}
+
 
 interface ChatMessageProps {
   msg: Msg;
@@ -80,6 +142,17 @@ export default function ChatMessage({
 
   // State for image lightbox
   const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // --- Notebook action state ---
+  const [showNbPicker, setShowNbPicker] = useState(false);
+  const [nbList, setNbList] = useState<any[]>([]);
+  const [nbSearch, setNbSearch] = useState('');
+  const [nbLoading, setNbLoading] = useState(false);
+  const [nbSaving, setNbSaving] = useState(false);
+  const [showNbAuthModal, setShowNbAuthModal] = useState(false);
+
+  // Paper title for notebook naming
+  const currentPaper = usePaperStore((s) => s.currentPaper);
 
   // Get setPendingJump from appropriate store
   const paperStorePendingJump = usePaperStore((s) => s.setPendingJump);
@@ -320,11 +393,164 @@ export default function ChatMessage({
                 )}
               </div>
             ) : (
+              <>
               <MarkdownContent
                 content={msg.content}
                 citations={msg.citations}
                 onJumpToCitation={handleJumpToCitation}
               />
+
+              {/* ── Notebook action buttons (assistant only) ── */}
+              <div className='mt-2 flex items-center gap-2 flex-wrap'>
+                {/* Save to notebook — auto find/create */}
+                <button
+                  className='inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors'
+                  onClick={async () => {
+                    if (!isAuthenticated) { setShowNbAuthModal(true); return; }
+                    setNbSaving(true);
+                    try {
+                      const targetTitle = `Note from AI chat with ${currentPaper?.title || currentPaper?.fileName || 'AI'}`;
+                      const allNbs = await notebookService.list();
+                      const existing = allNbs.find((nb: any) => nb.title === targetTitle);
+                      let notebookId: string;
+                      const htmlContent = mdToHtml(msg.content);
+                      if (existing) {
+                        const full = await notebookService.get(existing.id);
+                        const appended = (full.content || '') + htmlContent;
+                        await notebookService.update(existing.id, { content: appended });
+                        notebookId = existing.id;
+                      } else {
+                        const created = await notebookService.create({ title: targetTitle, content: htmlContent });
+                        notebookId = created.id;
+                      }
+                      const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
+                      setPendingNotebookId(notebookId);
+                      openNotebooks();
+                    } catch (err) {
+                      console.error('Failed to save to notebook', err);
+                    } finally {
+                      setNbSaving(false);
+                    }
+                  }}
+                  disabled={nbSaving}
+                >
+                  <NotebookPen size={14} />
+                  {nbSaving ? 'Saving...' : 'Save to notebook'}
+                </button>
+
+                {/* Select a notebook — picker toggle */}
+                <div className='relative'>
+                  <button
+                    className='inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors'
+                    onClick={async () => {
+                      if (!isAuthenticated) { setShowNbAuthModal(true); return; }
+                      if (showNbPicker) { setShowNbPicker(false); return; }
+                      setShowNbPicker(true);
+                      setNbSearch('');
+                      setNbLoading(true);
+                      try {
+                        const list = await notebookService.list();
+                        setNbList(list);
+                      } catch (err) {
+                        console.error('Failed to load notebooks', err);
+                      } finally {
+                        setNbLoading(false);
+                      }
+                    }}
+                  >
+                    <ListTree size={14} />
+                    Select a notebook
+                    <ChevronDown size={12} />
+                  </button>
+
+                  {showNbPicker && (
+                    <div className='absolute left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50'>
+                      {/* Search */}
+                      <div className='flex items-center gap-2 px-3 py-2 border-b border-gray-100'>
+                        <Search size={14} className='text-gray-400 flex-shrink-0' />
+                        <input
+                          autoFocus
+                          value={nbSearch}
+                          onChange={(e) => setNbSearch(e.target.value)}
+                          placeholder='Search'
+                          className='flex-1 text-sm outline-none bg-transparent placeholder:text-gray-400'
+                        />
+                      </div>
+                      {/* List */}
+                      <div className='max-h-48 overflow-y-auto'>
+                        {nbLoading ? (
+                          <div className='px-3 py-4 text-center text-sm text-gray-400'>Loading...</div>
+                        ) : (() => {
+                          const filtered = nbSearch.trim()
+                            ? nbList.filter((nb: any) => (nb.title || 'Untitled').toLowerCase().includes(nbSearch.toLowerCase()))
+                            : nbList;
+                          return filtered.length === 0 ? (
+                            <div className='px-3 py-4 text-center text-sm text-gray-400'>{nbSearch ? 'No notebooks found' : 'No notebooks yet'}</div>
+                          ) : (
+                            filtered.map((nb: any) => (
+                              <button
+                                key={nb.id}
+                                className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-sm disabled:opacity-50'
+                                disabled={nbSaving}
+                                onClick={async () => {
+                                  setNbSaving(true);
+                                  try {
+                                    const full = await notebookService.get(nb.id);
+                                    const appended = (full.content || '') + mdToHtml(msg.content);
+                                    await notebookService.update(nb.id, { content: appended });
+                                    const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
+                                    setPendingNotebookId(nb.id);
+                                    openNotebooks();
+                                  } catch (err) {
+                                    console.error('Failed to save to notebook', err);
+                                  } finally {
+                                    setNbSaving(false);
+                                    setShowNbPicker(false);
+                                  }
+                                }}
+                              >
+                                {nb.title || 'Untitled'}
+                              </button>
+                            ))
+                          );
+                        })()}
+                      </div>
+                      {/* Create new */}
+                      <div className='border-t border-gray-100'>
+                        <button
+                          className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-sm font-medium'
+                          disabled={nbSaving}
+                          onClick={async () => {
+                            setNbSaving(true);
+                            try {
+                              const created = await notebookService.create({ title: 'Untitled', content: mdToHtml(msg.content) });
+                              const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
+                              setPendingNotebookId(created.id);
+                              openNotebooks();
+                            } catch (err) {
+                              console.error('Failed to create notebook', err);
+                            } finally {
+                              setNbSaving(false);
+                              setShowNbPicker(false);
+                            }
+                          }}
+                        >
+                          <Plus size={14} /> Create New Notebook
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Auth modal for notebook actions */}
+              <AuthModal
+                isOpen={showNbAuthModal}
+                onClose={() => setShowNbAuthModal(false)}
+                initialMode='login'
+                onLoginSuccess={() => setShowNbAuthModal(false)}
+              />
+              </>
             )}
 
             {/* Follow-up questions (before sources) */}

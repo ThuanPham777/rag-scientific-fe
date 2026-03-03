@@ -15,6 +15,10 @@ import TableCell from '@tiptap/extension-table-cell';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { FontFamily } from '@tiptap/extension-font-family';
 import { Color } from '@tiptap/extension-color';
+import Collaboration from '@tiptap/extension-collaboration';
+import { CustomCollaborationCursor as CollaborationCursor } from './CustomCollaborationCursor';
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
 import {
   Bold,
   Italic,
@@ -49,19 +53,84 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import renderMathInElement from 'katex/contrib/auto-render';
 import { Node as TiptapNode, mergeAttributes } from '@tiptap/core';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useUiStore } from '@/store/useUiStore';
+
+// Cursor colors for collaborators
+const CURSOR_COLORS = [
+  '#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5',
+  '#2196f3', '#00bcd4', '#009688', '#4caf50', '#ff9800',
+];
 
 type Props = {
-  notebook: { id: string; title: string; content: string } | null;
+  notebook: { id: string; title: string; content: string; isCollaborative?: boolean } | null;
   onUpdated?: (nb: any) => void;
 };
 
-export default function NotebookEditor({ notebook, onUpdated }: Props) {
+// Main Export Wrapper
+export default function NotebookEditor(props: Props) {
+  if (props.notebook?.isCollaborative) {
+    return <CollaborativeLoader {...props} />;
+  }
+  return <NotebookEditorCore {...props} />;
+}
+
+// Loader for collaborative sessions to establish Yjs provider before rendering the editor
+function CollaborativeLoader({ notebook, onUpdated }: Props) {
+  const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
+  const [provider, setProvider] = useState<WebsocketProvider | null>(null);
+
+  useEffect(() => {
+    if (!notebook?.id) return;
+    
+    const doc = new Y.Doc();
+    const wsUrl = import.meta.env.VITE_YJS_WS_URL || 'ws://localhost:1234';
+    const wsProvider = new WebsocketProvider(wsUrl, `notebook-${notebook.id}`, doc);
+    
+    wsProvider.on('status', (event: { status: string }) => {
+      console.log('[Yjs] Connection status:', event.status);
+    });
+
+    setYdoc(doc);
+    setProvider(wsProvider);
+
+    return () => {
+      wsProvider.destroy();
+      doc.destroy();
+      setYdoc(null);
+      setProvider(null);
+    };
+  }, [notebook?.id]);
+
+  if (!ydoc || !provider) {
+    return (
+      <div className='flex items-center justify-center h-full'>
+        <div className='w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin' />
+      </div>
+    );
+  }
+
+  return (
+    <NotebookEditorCore 
+      notebook={notebook} 
+      onUpdated={onUpdated} 
+      ydoc={ydoc} 
+      provider={provider} 
+    />
+  );
+}
+
+// The actual Editor Core
+function NotebookEditorCore({ notebook, onUpdated, ydoc, provider }: Props & { ydoc?: Y.Doc | null; provider?: WebsocketProvider | null }) {
   const [showFileMenu, setShowFileMenu] = useState(false);
   // open dialog state is only written; actual dialog UI handled elsewhere
   const [, setShowOpenDialog] = useState(false);
   const [allNotebooks, setAllNotebooks] = useState<any[]>([]);
   const [showFormatMenu, setShowFormatMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const { user } = useAuthStore();
+  const pendingNbId = useUiStore((s) => s.pendingNotebookId);
+  
   const [showSelectionToolbar, setShowSelectionToolbar] = useState(false);
   const [selectionPos, setSelectionPos] = useState({ left: 0, top: 0 });
   // Selection AI
@@ -101,6 +170,15 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
   const [tableCols, setTableCols] = useState(3);
   const saveTimer = useRef<number | null>(null);
   const editorRef = useRef<any>(null); // must be declared before useEditor to be available in handlePaste
+
+  // Clear pending auto-save when an external save arrives (e.g. PDF "Save to notebook")
+  // to prevent the stale auto-save from overwriting the freshly appended content.
+  useEffect(() => {
+    if (pendingNbId && saveTimer.current) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+  }, [pendingNbId]);
 
   // extension to allow arbitrary <span> markup (e.g. KaTeX output)
   const SpanNode = TiptapNode.create({
@@ -191,13 +269,9 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
     },
   });
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: false,
-        link: false,
-        underline: false,
-      }),
+  // Build extensions list — add Collaboration if collaborative
+  const buildExtensions = (ydoc: Y.Doc | null, provider: WebsocketProvider | null) => {
+    const exts: any[] = [
       Heading.configure({ levels: [1, 2, 3, 4] }),
       LinkExtension.configure({
         openOnClick: true,
@@ -226,8 +300,54 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
       TableHeader,
       TableCell,
       Placeholder.configure({ placeholder: 'Untitled note...' }),
-    ],
-    content: notebook?.content || '',
+    ];
+
+    if (notebook?.isCollaborative && ydoc) {
+      // Collaborative mode: use Yjs-backed history instead of StarterKit's
+      exts.unshift(
+        StarterKit.configure({
+          heading: false,
+          link: false,
+          underline: false,
+          history: false, // Yjs handles undo/redo
+        } as any),
+      );
+      exts.push(
+        Collaboration.configure({
+          document: ydoc,
+        }),
+      );
+      if (provider) {
+        const colorIndex = Math.floor(Math.random() * CURSOR_COLORS.length);
+        exts.push(
+          CollaborationCursor.configure({
+            provider: provider,
+            user: {
+              name: user?.displayName || user?.email || 'Anonymous',
+              color: CURSOR_COLORS[colorIndex],
+            },
+          }),
+        );
+      }
+    } else {
+      // Solo mode: regular StarterKit with history
+      exts.unshift(
+        StarterKit.configure({
+          heading: false,
+          link: false,
+          underline: false,
+        }),
+      );
+    }
+
+    return exts;
+  };
+
+  const editor = useEditor({
+    extensions: buildExtensions(ydoc || null, provider || null),
+    // Only pass initial content if we are NOT in collaborative mode
+    // In collaborative mode, Yjs provides the content
+    content: notebook?.isCollaborative ? undefined : (notebook?.content || ''),
     editorProps: {
       handlePaste(view, event) {
         const clipboard = event.clipboardData;
@@ -261,13 +381,18 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
 
   // When notebook prop changes, update editor content and title
   useEffect(() => {
-    setTitle(notebook?.title || '');
+    if (notebook?.title !== undefined && notebook.title !== title) {
+      setTitle(notebook.title);
+    }
     if (!editor) return;
     const newContent = notebook?.content || '';
-    if (newContent !== editor.getHTML()) {
+    
+    // Prevent replacing content if the user is actively typing inside the editor.
+    // This avoids cursor jumping and text glitching during auto-save cycles.
+    if (!editor.isFocused && newContent !== editor.getHTML()) {
       editor.commands.setContent(newContent);
     }
-  }, [notebook, editor]);
+  }, [notebook?.content, notebook?.title, editor]);
 
   // Debounced search-as-you-type for citation dialog
   useEffect(() => {
@@ -329,7 +454,10 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
           html = sanitizeLatex(html);
         }
         const payload: any = { title, content: html };
-        const updated = await notebookService.update(notebook.id, payload);
+        // Use collaborative endpoint if notebook is shared
+        const updated = notebook.isCollaborative
+          ? await notebookService.updateCollaborative(notebook.id, payload)
+          : await notebookService.update(notebook.id, payload);
         onUpdated?.(updated);
       } catch (err) {
         console.error('Autosave failed', err);
@@ -583,23 +711,360 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
                   <button
                     className='block w-full text-left px-4 py-2 hover:bg-gray-100'
                     onClick={() => {
-                      // export current content as Word-friendly HTML
                       try {
-                        const html = `<html><head><meta charset="utf-8"></head><body>${editor?.getHTML() || notebook?.content || ''}</body></html>`;
-                        const blob = new Blob([html], { type: 'application/msword' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `${notebook?.title || 'note'}.docx`;
-                        a.click();
-                        URL.revokeObjectURL(url);
+                        const blob = new Blob(['\ufeff' + buildWordHtml(editor, notebook)], { type: 'application/msword' });
+                        downloadBlob(blob, `${notebook?.title || 'note'}.doc`);
                       } catch (err) {
-                        console.error('Export failed', err);
+                        console.error('Export .doc failed', err);
+                      }
+                      setShowFileMenu(false);
+                    }}
+                  >
+                    Export as .doc
+                  </button>
+                </li>
+                <li>
+                  <button
+                    className='block w-full text-left px-4 py-2 hover:bg-gray-100'
+                    onClick={async () => {
+                      try {
+                        const { Document, Packer, Paragraph, TextRun, HeadingLevel, Math: DocxMath, MathRun, MathFraction, MathSuperScript, MathSubScript, MathRadical } = await import('docx');
+                        
+                        let html = editor?.getHTML() || notebook?.content || '';
+                        html = html.replace(/oklch\([^)]+\)/gi, '#333333');
+                        
+                        console.log('[DOCX Export] Raw HTML from editor:', html);
+
+                        const container = document.createElement('div');
+                        container.innerHTML = html;
+                        container.style.width = '800px';
+                        container.style.position = 'absolute';
+                        container.style.left = '-9999px';
+                        document.body.appendChild(container);
+
+                        // === STEP 1: REPLACE all [data-latex] elements with clean markers ===
+                        const dataLatexEls = Array.from(container.querySelectorAll('[data-latex]'));
+                        for (const el of dataLatexEls) {
+                            const latex = el.getAttribute('data-latex') || '';
+                            const isDisplay = el.getAttribute('data-display') === 'true';
+                            const marker = document.createElement('span');
+                            marker.setAttribute('data-latex', latex);
+                            marker.setAttribute('data-display', isDisplay ? 'true' : 'false');
+                            marker.setAttribute('data-math-marker', 'true');
+                            el.parentNode?.replaceChild(marker, el);
+                        }
+
+                        // === STEP 2: Remove ANY remaining .katex orphans ===
+                        container.querySelectorAll('.katex, .katex-html, .katex-mathml, .katex-display').forEach(el => {
+                            el.remove();
+                        });
+
+                        console.log('[DOCX Export] After scrub:', container.innerHTML);
+
+                        // === LaTeX → OOXML Math converter (native Word math) ===
+                        const greekMap: Record<string, string> = {
+                          'alpha':'α','beta':'β','gamma':'γ','delta':'δ','epsilon':'ε','zeta':'ζ','eta':'η',
+                          'theta':'θ','iota':'ι','kappa':'κ','lambda':'λ','mu':'μ','nu':'ν','xi':'ξ',
+                          'pi':'π','rho':'ρ','sigma':'σ','tau':'τ','upsilon':'υ','phi':'φ','chi':'χ',
+                          'psi':'ψ','omega':'ω','Gamma':'Γ','Delta':'Δ','Theta':'Θ','Lambda':'Λ',
+                          'Xi':'Ξ','Pi':'Π','Sigma':'Σ','Phi':'Φ','Psi':'Ψ','Omega':'Ω',
+                          'cdot':'·','times':'×','div':'÷','pm':'±','mp':'∓','leq':'≤','geq':'≥',
+                          'neq':'≠','approx':'≈','infty':'∞','partial':'∂','nabla':'∇',
+                          'sum':'∑','prod':'∏','int':'∫','leftarrow':'←','rightarrow':'→',
+                          'Rightarrow':'⇒','Leftarrow':'⇐','forall':'∀','exists':'∃',
+                          'in':'∈','notin':'∉','subset':'⊂','subseteq':'⊆',
+                          'cup':'∪','cap':'∩','emptyset':'∅','angle':'∠',
+                        };
+                        
+                        const latexToDocxMath = (tex: string): any[] => {
+                          const items: any[] = [];
+                          let pos = 0;
+                          let textBuf = '';
+                          
+                          const peek = () => pos < tex.length ? tex[pos] : '';
+                          const advance = () => tex[pos++];
+                          const readBraced = (): string => {
+                            if (peek() !== '{') return advance() || '';
+                            advance(); // {
+                            let depth = 1, result = '';
+                            while (pos < tex.length && depth > 0) {
+                              if (peek() === '{') depth++;
+                              if (peek() === '}') depth--;
+                              if (depth > 0) result += advance();
+                              else advance();
+                            }
+                            return result;
+                          };
+                          const readCmd = (): string => {
+                            let cmd = '';
+                            while (pos < tex.length && /[a-zA-Z]/.test(peek())) cmd += advance();
+                            return cmd;
+                          };
+                          const flushText = () => {
+                            if (textBuf) { items.push(new MathRun(textBuf)); textBuf = ''; }
+                          };
+                          
+                          while (pos < tex.length) {
+                            const ch = peek();
+                            
+                            if (ch === '\\') {
+                              advance();
+                              const cmd = readCmd();
+                              if (cmd === 'frac') {
+                                flushText();
+                                const num = readBraced();
+                                const den = readBraced();
+                                items.push(new MathFraction({
+                                  numerator: latexToDocxMath(num),
+                                  denominator: latexToDocxMath(den),
+                                }));
+                              } else if (cmd === 'sqrt') {
+                                flushText();
+                                const content = readBraced();
+                                items.push(new MathRadical({ children: latexToDocxMath(content) }));
+                              } else if (greekMap[cmd]) {
+                                textBuf += greekMap[cmd];
+                              } else if (cmd === 'left' || cmd === 'right') {
+                                if (pos < tex.length) textBuf += advance(); // ( ) [ ] etc.
+                              } else {
+                                textBuf += cmd; // unknown → output as text
+                              }
+                            } else if (ch === '^') {
+                              flushText();
+                              advance();
+                              const sup = readBraced();
+                              const base = items.length > 0 ? items.pop() : new MathRun('');
+                              items.push(new MathSuperScript({
+                                children: [base],
+                                superScript: latexToDocxMath(sup),
+                              }));
+                            } else if (ch === '_') {
+                              flushText();
+                              advance();
+                              const sub = readBraced();
+                              const base = items.length > 0 ? items.pop() : new MathRun('');
+                              items.push(new MathSubScript({
+                                children: [base],
+                                subScript: latexToDocxMath(sub),
+                              }));
+                            } else if (ch === '{' || ch === '}') {
+                              advance();
+                            } else if (ch === ' ') {
+                              textBuf += ' ';
+                              advance();
+                            } else {
+                              textBuf += ch;
+                              advance();
+                            }
+                          }
+                          flushText();
+                          return items.length > 0 ? items : [new MathRun(tex)];
+                        };
+
+                        const docLines: any[] = [];
+                        
+                        const processNode = async (node: Node, options: any = {}): Promise<any[]> => {
+                          if (node.nodeType === Node.TEXT_NODE) {
+                            const text = node.textContent?.replace(/[\u200B\u200C\u200D\uFEFF]/g, '') || '';
+                            if (text.trim()) return [new TextRun({ text, ...options })];
+                            return [];
+                          }
+                          
+                          const el = node as HTMLElement;
+                          if (!el || !el.tagName) return [];
+                          
+                          // Handle <br> → line break
+                          if (el.nodeName === 'BR') {
+                            return [new TextRun({ break: 1 })];
+                          }
+                          
+                          const runs: any[] = [];
+
+                          // Handle our clean math markers → native OOXML Math
+                          if (el.getAttribute?.('data-math-marker') === 'true') {
+                            const latex = el.getAttribute('data-latex') || '';
+                            const isDisplay = el.getAttribute('data-display') === 'true';
+                            if (!latex) return [];
+
+                            // Display math → will be wrapped as a separate Math paragraph
+                            if (isDisplay) {
+                              return [{ _isDisplayMath: true, latex }];
+                            }
+
+                            // Inline math → native Math run
+                            runs.push(new DocxMath({ children: latexToDocxMath(latex) }));
+                            return runs;
+                          }
+                          
+                          // Skip any stray katex elements that somehow survived
+                          if (el.classList?.contains('katex') || el.classList?.contains('katex-html') || el.classList?.contains('katex-mathml')) {
+                            return [];
+                          }
+                          
+                          // Formatting
+                          const newOptions = { ...options };
+                          const tag = el.nodeName;
+                          if (tag === 'STRONG' || tag === 'B') newOptions.bold = true;
+                          if (tag === 'EM' || tag === 'I') newOptions.italics = true;
+                          if (tag === 'U') newOptions.underline = {};
+
+                          for (const child of Array.from(el.childNodes)) {
+                            const subRuns = await processNode(child, newOptions);
+                            runs.push(...subRuns);
+                          }
+                          return runs;
+                        };
+
+                        for (const node of Array.from(container.childNodes)) {
+                          if (node.nodeType === Node.TEXT_NODE) continue;
+                          const el = node as HTMLElement;
+                          const tagName = el.nodeName;
+                          
+                          const levelMapping: any = { H1: HeadingLevel.HEADING_1, H2: HeadingLevel.HEADING_2, H3: HeadingLevel.HEADING_3 };
+                          
+                          if (levelMapping[tagName]) {
+                            const runs = await processNode(el);
+                            // Filter out display math sentinels for heading paragraphs
+                            const textRuns = runs.filter((r: any) => !r._isDisplayMath);
+                            if (textRuns.length > 0) {
+                              docLines.push(new Paragraph({ children: textRuns, heading: levelMapping[tagName] }));
+                            }
+                          } else if (['P','DIV','LI','UL','OL','BLOCKQUOTE','SPAN'].includes(tagName)) {
+                            const runs = await processNode(el);
+                            
+                            // Split runs: separate display math from text runs
+                            let currentTextRuns: any[] = [];
+                            for (const run of runs) {
+                              if (run._isDisplayMath) {
+                                // Flush any accumulated text runs as a text paragraph
+                                if (currentTextRuns.length > 0) {
+                                  docLines.push(new Paragraph({ children: currentTextRuns, spacing: { after: 200 } }));
+                                  currentTextRuns = [];
+                                }
+                                // Create a native Math paragraph for the display formula
+                                docLines.push(new Paragraph({
+                                  children: [new DocxMath({ children: latexToDocxMath(run.latex) })],
+                                  spacing: { before: 200, after: 200 },
+                                }));
+                              } else {
+                                currentTextRuns.push(run);
+                              }
+                            }
+                            // Flush remaining text runs
+                            if (currentTextRuns.length > 0) {
+                              docLines.push(new Paragraph({ children: currentTextRuns, spacing: { after: 200 } }));
+                            }
+                          }
+                        }
+
+                        const doc = new Document({
+                          sections: [{
+                            properties: {},
+                            children: docLines.length > 0 ? docLines : [new Paragraph({ text: '' })],
+                          }],
+                        });
+
+                        const blob = await Packer.toBlob(doc);
+                        downloadBlob(blob, `${notebook?.title || 'note'}.docx`);
+                        document.body.removeChild(container);
+                      } catch (err) {
+                        console.error('Export .docx failed', err);
+                        alert('Export .docx thất bại: ' + (err instanceof Error ? err.message : String(err)));
                       }
                       setShowFileMenu(false);
                     }}
                   >
                     Export as .docx
+                  </button>
+                </li>
+                <li>
+                  <button
+                    className='block w-full text-left px-4 py-2 hover:bg-gray-100'
+                    onClick={async () => {
+                      try {
+                        // --- IFRAME + PRINT PDF STRATEGY ---
+                        // Completely bypasses html2canvas (no oklch crash, no height=0)
+                        let contentHtml = editor?.getHTML() || notebook?.content || '';
+                        contentHtml = contentHtml.replace(/oklch\([^)]+\)/gi, '#333333');
+
+                        // Pre-render KaTeX in a temp div
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = contentHtml;
+                        tempDiv.querySelectorAll('[data-latex]').forEach((node: any) => {
+                            const latex = node.getAttribute('data-latex') || '';
+                            const isDisplay = node.getAttribute('data-display') === 'true';
+                            if (!latex) return;
+                            try {
+                                const rendered = katex.renderToString(latex, { displayMode: isDisplay, throwOnError: false });
+                                node.innerHTML = rendered;
+                                node.removeAttribute('data-latex');
+                            } catch (e) {
+                                console.warn('KaTeX renderToString failed', e);
+                            }
+                        });
+
+                        const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${notebook?.title || 'note'}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <style>
+    @media print {
+      body { margin: 0; padding: 20mm; }
+    }
+    body {
+      font-family: "Times New Roman", "Calibri", serif;
+      font-size: 12pt;
+      line-height: 1.6;
+      color: black;
+      background: white;
+      padding: 40px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 22pt; margin-bottom: 0.5em; font-weight: bold; }
+    h2 { font-size: 18pt; margin-bottom: 0.4em; font-weight: bold; }
+    h3 { font-size: 14pt; margin-bottom: 0.3em; font-weight: bold; }
+    p { margin-bottom: 0.8em; }
+    .katex-display { margin: 1em 0; text-align: center; }
+    .katex { font-size: 1.1em; }
+  </style>
+</head>
+<body>
+  ${tempDiv.innerHTML}
+</body>
+</html>`;
+
+                        // Create an invisible iframe, write content, then print
+                        const iframe = document.createElement('iframe');
+                        iframe.style.cssText = 'position:fixed;left:-9999px;width:800px;height:600px;border:none;';
+                        document.body.appendChild(iframe);
+
+                        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+                        if (!iframeDoc) throw new Error('Cannot access iframe document');
+                        
+                        iframeDoc.open();
+                        iframeDoc.write(fullHtml);
+                        iframeDoc.close();
+
+                        // Wait for KaTeX CSS to load and content to render
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+
+                        iframe.contentWindow?.print();
+
+                        // Clean up after print dialog closes
+                        setTimeout(() => {
+                          document.body.removeChild(iframe);
+                        }, 2000);
+                      } catch (err) {
+                        console.error('Export .pdf failed', err);
+                        alert('Export PDF thất bại: ' + (err instanceof Error ? err.message : String(err)));
+                      }
+                      setShowFileMenu(false);
+                    }}
+                  >
+                    Export as .pdf
                   </button>
                 </li>
               </ul>
@@ -966,7 +1431,7 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
           <input type='color' onChange={(e) => applyColor(e.target.value)} className='w-8 h-8 p-0 border rounded' />
         </div>
 
-      <div className='p-4 overflow-auto bg-white'>
+      <div className='flex-1 overflow-auto bg-white px-16 py-8'>
         {/* make this container relative so floating toolbar can position inside */}
         <style>{`
           .tiptap table {
@@ -1045,6 +1510,24 @@ export default function NotebookEditor({ notebook, onUpdated }: Props) {
           }
           .tiptap ul[data-type="taskList"] li label {
             margin-top: 0.15em;
+          }
+          /* Remove default ProseMirror outline — makes editor look like Google Docs */
+          .ProseMirror {
+            outline: none !important;
+            border: none !important;
+            box-shadow: none !important;
+            min-height: 80vh;
+            padding: 0;
+          }
+          .ProseMirror:focus {
+            outline: none !important;
+          }
+          .ProseMirror p.is-editor-empty:first-child::before {
+            color: #adb5bd;
+            content: attr(data-placeholder);
+            float: left;
+            height: 0;
+            pointer-events: none;
           }
         `}</style>
         <div ref={containerRef} className='prose max-w-none mx-0 relative'>
@@ -1710,4 +2193,60 @@ function formatAIGeneration(text: string): string {
     .join('');
 
   return formatted;
+}
+
+// Helper: build Word-compatible HTML from editor content
+function buildWordHtml(editor: any, notebook: any): string {
+  let html = editor?.getHTML() || notebook?.content || '';
+  
+  // Sanitize oklch colors (html2canvas and some Word versions hate it)
+  // Simple regex to replace oklch(...) with a safe gray color or strip it
+  html = html.replace(/oklch\([^)]+\)/gi, '#333333');
+
+  // Convert KaTeX spans back to readable LaTeX text for Word
+  html = html.replace(
+    /<span[^>]*class="katex"[^>]*data-latex="([^"]*)"[^>]*>(.*?)<\/span>/g,
+    (_: string, tex: string) => {
+      const decoded = tex.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      return `<i>$ ${decoded} $</i>`;
+    }
+  );
+  html = html.replace(
+    /<span[^>]*class="katex"[^>]*data-latex="([^"]*)"[^>]*\/>/g,
+    (_: string, tex: string) => {
+      const decoded = tex.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      return `<i>$ ${decoded} $</i>`;
+    }
+  );
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+<style>
+body { font-family: 'Calibri', sans-serif; font-size: 11pt; line-height: 1.6; margin: 2cm; }
+h1 { font-size: 20pt; font-weight: bold; margin-bottom: 6pt; }
+h2 { font-size: 16pt; font-weight: bold; margin-bottom: 4pt; }
+h3 { font-size: 14pt; font-weight: bold; margin-bottom: 4pt; }
+table { border-collapse: collapse; width: 100%; }
+td, th { border: 1px solid #999; padding: 6px 8px; }
+th { background-color: #f0f0f0; font-weight: bold; }
+ul { list-style-type: disc; margin-left: 20pt; }
+ol { list-style-type: decimal; margin-left: 20pt; }
+</style>
+</head>
+<body>
+${html}
+</body>
+</html>`;
+}
+
+// Helper: trigger download for a Blob
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }

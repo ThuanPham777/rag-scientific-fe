@@ -10,6 +10,7 @@ import GoogleCallbackPage from './pages/GoogleCallbackPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import JoinSessionPage from './pages/JoinSessionPage';
+import JoinNotebookPage from './pages/JoinNotebookPage';
 
 export default function App() {
   return (
@@ -34,6 +35,12 @@ export default function App() {
       <Route
         path='/session/join/:token'
         element={<JoinSessionPage />}
+      />
+
+      {/* Notebook collaboration join page */}
+      <Route
+        path='/notebook/join/:token'
+        element={<JoinNotebookPage />}
       />
 
       {/* Routes with layout */}

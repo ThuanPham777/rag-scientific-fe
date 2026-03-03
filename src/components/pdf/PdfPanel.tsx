@@ -319,20 +319,42 @@ export default function PdfPanel({
             // Expose capture toggle function to parent
             onCaptureRefChange={onCaptureRefChange}
             onAction={(action, payload) => {
-              // Handle 'save to notebook' early — auto-create a new notebook
+              // Handle 'save to notebook' — find existing "Note from ..." or create one
               if (action === 'save' && (payload as any).text) {
                 const selectedText = (payload as any).text as string;
                 const paperTitle =
                   activePaper?.title || activePaper?.fileName || 'PDF';
+                const targetTitle = `Note from ${paperTitle}`;
                 (async () => {
                   try {
-                    const created = await notebookService.create({
-                      title: `Note from ${paperTitle}`,
-                      content: `<p>${selectedText}</p>`,
-                    });
+                    // Look for an existing notebook with the same title
+                    const allNbs = await notebookService.list();
+                    const existing = allNbs.find(
+                      (nb: any) => nb.title === targetTitle,
+                    );
+
+                    let notebookId: string;
+                    if (existing) {
+                      // Append to existing notebook
+                      const full = await notebookService.get(existing.id);
+                      const appended =
+                        (full.content || '') + `<p>${selectedText}</p>`;
+                      await notebookService.update(existing.id, {
+                        content: appended,
+                      });
+                      notebookId = existing.id;
+                    } else {
+                      // Create new notebook for this PDF
+                      const created = await notebookService.create({
+                        title: targetTitle,
+                        content: `<p>${selectedText}</p>`,
+                      });
+                      notebookId = created.id;
+                    }
+
                     const { openNotebooks, setPendingNotebookId } =
                       useUiStore.getState();
-                    setPendingNotebookId(created.id);
+                    setPendingNotebookId(notebookId);
                     openNotebooks();
                   } catch (err) {
                     console.error('Failed to save to notebook', err);
