@@ -110,9 +110,15 @@ api.interceptors.response.use(
     // Handle 401 - Token expired
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Check if auth is initialized - if not, let AuthInitializer handle it
-      const { isInitialized } = useAuthStore.getState();
+      const { isInitialized, isAuthenticated } = useAuthStore.getState();
       if (!isInitialized) {
         // Auth not initialized yet, don't try to refresh here
+        return Promise.reject(error);
+      }
+
+      // Don't attempt refresh if user isn't authenticated
+      // (no refresh token cookie would exist — avoid spurious forceLogout)
+      if (!isAuthenticated) {
         return Promise.reject(error);
       }
 
@@ -146,10 +152,15 @@ api.interceptors.response.use(
 
         const response = await refreshPromise;
 
-        const { accessToken } = response.data;
+        const { accessToken, data: user } = response.data;
 
         // Update access token in memory
         useAuthStore.getState().setAccessToken(accessToken);
+
+        // Also update user data if returned (keeps profile in sync)
+        if (user) {
+          useAuthStore.getState().setUser(user);
+        }
 
         // Process queued requests with new token
         processQueue(null, accessToken);
@@ -158,9 +169,11 @@ api.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh failed - force logout
+        // Refresh failed - force logout only if still authenticated
         processQueue(refreshError, null);
-        forceLogout();
+        if (useAuthStore.getState().isAuthenticated) {
+          forceLogout();
+        }
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
