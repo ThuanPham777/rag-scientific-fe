@@ -1,0 +1,415 @@
+import { useState } from 'react';
+import {
+  FileText,
+  MoreHorizontal,
+  Trash2,
+  Upload,
+  Loader2,
+  ChevronDown,
+  ChevronRight,
+  Users,
+  Clock,
+  FolderInput,
+  Share2,
+  UserCheck,
+} from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import type { Paper } from '../../utils/types';
+import { Button } from '../ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+
+interface PaperSectionListProps {
+  myPapers: Paper[];
+  sharedByMe: Paper[];
+  sharedWithMe: Paper[];
+  totalPapers: number;
+  isLoading: boolean;
+  onPaperClick: (paper: Paper) => void;
+  onMovePaper: (paper: Paper, e: React.MouseEvent) => void;
+  onDeletePaper: (paper: Paper, e: React.MouseEvent) => void;
+  onUploadClick: () => void;
+  // Multi-selection props
+  selectable?: boolean;
+  selectedPaperIds?: string[];
+  onToggleSelect?: (paper: Paper) => void;
+  onSelectAll?: () => void;
+  onDeselectAll?: () => void;
+  // Load-more pagination
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  // Group papers indicator
+  groupPaperIds?: Set<string>;
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Individual paper row (extracted for reuse across sections)   */
+/* ────────────────────────────────────────────────────────────── */
+function PaperRow({
+  paper,
+  selectable,
+  isSelected,
+  onToggleSelect,
+  onPaperClick,
+  onMovePaper,
+  onDeletePaper,
+  groupPaperIds,
+}: {
+  paper: Paper;
+  selectable: boolean;
+  isSelected: boolean;
+  onToggleSelect?: (paper: Paper) => void;
+  onPaperClick: (paper: Paper) => void;
+  onMovePaper: (paper: Paper, e: React.MouseEvent) => void;
+  onDeletePaper: (paper: Paper, e: React.MouseEvent) => void;
+  groupPaperIds?: Set<string>;
+}) {
+  return (
+    <div
+      className={`grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors ${
+        isSelected ? 'bg-orange-50/50' : ''
+      }`}
+      onClick={() => onPaperClick(paper)}
+    >
+      {selectable && (
+        <div className='col-span-1 flex items-center'>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelect?.(paper)}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Select ${paper.fileName}`}
+            className='data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500'
+          />
+        </div>
+      )}
+      <div
+        className={`${selectable ? 'col-span-5' : 'col-span-6'} flex items-start gap-3 min-w-0`}
+      >
+        <div className='shrink-0 w-10 h-12 bg-red-100 rounded flex items-center justify-center'>
+          <FileText className='h-5 w-5 text-red-600' />
+        </div>
+        <div className='min-w-0 flex-1'>
+          <div className='flex items-center gap-2'>
+            <p className='text-sm font-medium text-gray-900 truncate'>
+              {paper.fileName}
+            </p>
+            {groupPaperIds?.has(paper.id) && (
+              <span className='inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-semibold whitespace-nowrap'>
+                <Users size={10} />
+                Group
+              </span>
+            )}
+          </div>
+          <p className='text-xs text-gray-500 mt-1'>
+            {new Date(paper.createdAt).toLocaleDateString('en-US', {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            })}
+          </p>
+        </div>
+      </div>
+      <div className='col-span-4 flex items-center gap-2 min-w-0'>
+        {paper.status === 'PROCESSING' || paper.status === 'PENDING' ? (
+          <div className='flex items-center gap-2'>
+            <Clock className='h-3.5 w-3.5 text-orange-500 animate-pulse shrink-0' />
+            <span className='text-sm text-orange-600 truncate'>
+              Processing...
+            </span>
+          </div>
+        ) : (
+          <p className='text-sm text-gray-600 truncate'>
+            {paper.title || paper.fileName.replace(/\.pdf$/i, '') || 'Untitled'}
+          </p>
+        )}
+      </div>
+      <div className='col-span-2 flex items-center justify-end'>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant='ghost'
+              size='sm'
+              className='h-8 w-8 p-0'
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className='h-4 w-4' />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align='end'
+            className='w-36'
+          >
+            {!groupPaperIds?.has(paper.id) && (
+              <DropdownMenuItem
+                onClick={(e: React.MouseEvent) => onMovePaper(paper, e)}
+              >
+                <FolderInput className='mr-2 h-4 w-4' />
+                Move
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              onClick={(e: React.MouseEvent) => onDeletePaper(paper, e)}
+              className='text-red-600'
+            >
+              <Trash2 className='mr-2 h-4 w-4' />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Collapsible section                                          */
+/* ────────────────────────────────────────────────────────────── */
+function Section({
+  title,
+  icon: Icon,
+  iconColor,
+  badgeColor,
+  papers,
+  defaultOpen = true,
+  selectable,
+  selectedPaperIds,
+  onToggleSelect,
+  onPaperClick,
+  onMovePaper,
+  onDeletePaper,
+  groupPaperIds,
+}: {
+  title: string;
+  icon: React.ComponentType<{ className?: string; size?: number }>;
+  iconColor: string;
+  badgeColor: string;
+  papers: Paper[];
+  defaultOpen?: boolean;
+  selectable: boolean;
+  selectedPaperIds: string[];
+  onToggleSelect?: (paper: Paper) => void;
+  onPaperClick: (paper: Paper) => void;
+  onMovePaper: (paper: Paper, e: React.MouseEvent) => void;
+  onDeletePaper: (paper: Paper, e: React.MouseEvent) => void;
+  groupPaperIds?: Set<string>;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  if (papers.length === 0) return null;
+
+  return (
+    <div className='mb-2'>
+      {/* Section header */}
+      <button
+        onClick={() => setOpen(!open)}
+        className='w-full flex items-center gap-2 px-6 py-3 bg-gray-50 hover:bg-gray-100 transition-colors border-b text-left'
+      >
+        {open ? (
+          <ChevronDown className='h-4 w-4 text-gray-500 shrink-0' />
+        ) : (
+          <ChevronRight className='h-4 w-4 text-gray-500 shrink-0' />
+        )}
+        <Icon className={`h-4 w-4 ${iconColor} shrink-0`} />
+        <span className='text-sm font-semibold text-gray-700'>{title}</span>
+        <span
+          className={`ml-1.5 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[11px] font-medium ${badgeColor}`}
+        >
+          {papers.length}
+        </span>
+      </button>
+
+      {/* Section body */}
+      {open && (
+        <div className='divide-y'>
+          {papers.map((paper) => (
+            <PaperRow
+              key={paper.id}
+              paper={paper}
+              selectable={selectable}
+              isSelected={selectedPaperIds.includes(paper.id)}
+              onToggleSelect={onToggleSelect}
+              onPaperClick={onPaperClick}
+              onMovePaper={onMovePaper}
+              onDeletePaper={onDeletePaper}
+              groupPaperIds={groupPaperIds}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Main component                                               */
+/* ────────────────────────────────────────────────────────────── */
+export function PaperSectionList({
+  myPapers,
+  sharedByMe,
+  sharedWithMe,
+  totalPapers,
+  isLoading,
+  onPaperClick,
+  onMovePaper,
+  onDeletePaper,
+  onUploadClick,
+  selectable = false,
+  selectedPaperIds = [],
+  onToggleSelect,
+  onSelectAll,
+  onDeselectAll,
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
+  groupPaperIds,
+}: PaperSectionListProps) {
+  const allPapers = [...myPapers, ...sharedByMe, ...sharedWithMe];
+  const allSelected =
+    allPapers.length > 0 &&
+    allPapers.every((p) => selectedPaperIds.includes(p.id));
+  const someSelected = allPapers.some((p) => selectedPaperIds.includes(p.id));
+
+  const handleSelectAllToggle = () => {
+    if (allSelected) {
+      onDeselectAll?.();
+    } else {
+      onSelectAll?.();
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className='flex items-center justify-center py-12'>
+        <Loader2 className='h-6 w-6 animate-spin text-gray-400' />
+      </div>
+    );
+  }
+
+  if (totalPapers === 0) {
+    return (
+      <div className='flex flex-col items-center justify-center py-16 text-center'>
+        <FileText className='h-12 w-12 text-gray-300 mb-4' />
+        <h3 className='text-lg font-medium text-gray-600'>No papers yet</h3>
+        <p className='text-sm text-gray-500 mt-1'>
+          Upload papers to get started
+        </p>
+        <Button
+          onClick={onUploadClick}
+          variant='outline'
+          className='mt-4 gap-2'
+        >
+          <Upload className='h-4 w-4' />
+          Upload Paper
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Table header */}
+      <div className='sticky top-0 bg-gray-50 border-b px-6 py-3 z-10'>
+        <div className='grid grid-cols-12 gap-4 text-sm font-medium text-gray-500'>
+          {selectable && (
+            <div className='col-span-1 flex items-center'>
+              <Checkbox
+                checked={allSelected}
+                onCheckedChange={handleSelectAllToggle}
+                aria-label='Select all papers'
+                className={
+                  someSelected && !allSelected
+                    ? 'data-[state=checked]:bg-orange-500'
+                    : ''
+                }
+              />
+            </div>
+          )}
+          <div className={selectable ? 'col-span-5' : 'col-span-6'}>
+            Files ({totalPapers})
+          </div>
+          <div className='col-span-4'>Title</div>
+          <div className='col-span-2 text-right'>Actions</div>
+        </div>
+      </div>
+
+      {/* Sections */}
+      <Section
+        title='My Papers'
+        icon={FileText}
+        iconColor='text-blue-600'
+        badgeColor='bg-blue-100 text-blue-700'
+        papers={myPapers}
+        defaultOpen={true}
+        selectable={selectable}
+        selectedPaperIds={selectedPaperIds}
+        onToggleSelect={onToggleSelect}
+        onPaperClick={onPaperClick}
+        onMovePaper={onMovePaper}
+        onDeletePaper={onDeletePaper}
+        groupPaperIds={groupPaperIds}
+      />
+
+      <Section
+        title='Shared by Me'
+        icon={Share2}
+        iconColor='text-emerald-600'
+        badgeColor='bg-emerald-100 text-emerald-700'
+        papers={sharedByMe}
+        defaultOpen={true}
+        selectable={selectable}
+        selectedPaperIds={selectedPaperIds}
+        onToggleSelect={onToggleSelect}
+        onPaperClick={onPaperClick}
+        onMovePaper={onMovePaper}
+        onDeletePaper={onDeletePaper}
+        groupPaperIds={groupPaperIds}
+      />
+
+      <Section
+        title='Shared with Me'
+        icon={UserCheck}
+        iconColor='text-purple-600'
+        badgeColor='bg-purple-100 text-purple-700'
+        papers={sharedWithMe}
+        defaultOpen={true}
+        selectable={selectable}
+        selectedPaperIds={selectedPaperIds}
+        onToggleSelect={onToggleSelect}
+        onPaperClick={onPaperClick}
+        onMovePaper={onMovePaper}
+        onDeletePaper={onDeletePaper}
+        groupPaperIds={groupPaperIds}
+      />
+
+      {/* Load More Files button */}
+      {hasMore && (
+        <div className='flex justify-center py-4 border-t'>
+          <Button
+            variant='outline'
+            size='sm'
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className='gap-2'
+          >
+            {isLoadingMore ? (
+              <>
+                <Loader2 className='h-4 w-4 animate-spin' />
+                Loading…
+              </>
+            ) : (
+              <>
+                <ChevronDown className='h-4 w-4' />
+                Load More Files
+              </>
+            )}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
