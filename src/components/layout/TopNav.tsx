@@ -15,7 +15,7 @@ import { UserAvatar } from '../common/UserAvatar';
 
 export default function TopNav() {
   const navigate = useNavigate();
-  const { isAuthenticated, user, logout, getRefreshToken } = useAuthStore();
+  const { isAuthenticated, user, logout } = useAuthStore();
 
   const [openMenu, setOpenMenu] = useState(false);
   const [authModal, setAuthModal] = useState<{
@@ -38,10 +38,8 @@ export default function TopNav() {
   const handleLogout = async () => {
     console.log('Logging out...');
     try {
-      const refreshToken = getRefreshToken();
-      if (refreshToken) {
-        await apiLogout(refreshToken);
-      }
+      // Refresh token cookie is sent automatically, no need to pass it
+      await apiLogout();
     } catch (err) {
       console.error('Logout API error:', err);
     } finally {

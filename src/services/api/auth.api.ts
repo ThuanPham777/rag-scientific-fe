@@ -62,20 +62,18 @@ export async function googleCodeAuth(
 }
 
 /**
- * Refresh access token using refresh token
+ * Refresh access token using refresh token (sent as HTTP-only cookie automatically)
  */
-export async function refreshTokens(
-  refreshToken: string,
-): Promise<LoginResponse> {
-  const { data } = await api.post('/auth/refresh', { refreshToken });
+export async function refreshTokens(): Promise<LoginResponse> {
+  const { data } = await api.post('/auth/refresh');
   return data;
 }
 
 /**
- * Logout - revoke refresh token
+ * Logout - revoke refresh token (sent as HTTP-only cookie automatically)
  */
-export async function logout(refreshToken: string): Promise<void> {
-  await api.post('/auth/logout', { refreshToken });
+export async function logout(): Promise<void> {
+  await api.post('/auth/logout');
 }
 
 /**

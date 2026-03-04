@@ -11,17 +11,12 @@ export type User = {
   provider: AuthProvider;
 };
 
-export type AuthTokens = {
-  accessToken: string;
-  refreshToken: string;
-};
-
 export type LoginResponse = {
   success: boolean;
   message: string;
   data: User;
   accessToken: string;
-  refreshToken: string;
+  // refreshToken is no longer in the JSON response — it's set as HTTP-only cookie
 };
 
 export type SignupResponse = {

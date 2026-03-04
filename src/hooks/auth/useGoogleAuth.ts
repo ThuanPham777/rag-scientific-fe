@@ -169,11 +169,9 @@ export function useGoogleAuth(): UseGoogleAuthReturn {
         );
 
         if (response.success) {
-          // Login successful - store user and tokens
-          login(response.data, {
-            accessToken: response.accessToken,
-            refreshToken: response.refreshToken,
-          });
+          // Login successful - store user and access token
+          // Refresh token is set as HTTP-only cookie by the backend
+          login(response.data, response.accessToken);
           setStatus('success');
           return true;
         } else {
