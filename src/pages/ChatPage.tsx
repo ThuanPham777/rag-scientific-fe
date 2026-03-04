@@ -1208,22 +1208,25 @@ export default function ChatPage() {
           // Skip follow-up generation for guest (no server-side session)
         } else if (session) {
           // Authenticated: Call regular API
-          const { assistantMsg } = await sendQuery(
+          const { assistantMsg, raw } = await sendQuery(
             session.id,
             queryText,
             currentPaper?.id,
           );
-          setSentMessages((prev) => [...prev, assistantMsg]);
 
-          if (isCollaborative) {
-            // Schedule cleanup to prevent duplicates after WS-triggered refetch
-            const uidRm = userMsg.id;
-            const aidRm = assistantMsg.id;
-            setTimeout(() => {
-              setSentMessages((prev) =>
-                prev.filter((m) => m.id !== uidRm && m.id !== aidRm),
-              );
-            }, 3000);
+          // Replace optimistic user message ID with server ID for proper dedup
+          if (raw.userMessageId) {
+            setSentMessages((prev) =>
+              prev.map((m) =>
+                m.id === userMsg.id ? { ...m, id: raw.userMessageId } : m,
+              ),
+            );
+          }
+
+          // In collaborative mode the assistant message arrives via socket
+          // into the React Query cache; skip sentMessages to avoid duplication.
+          if (!isCollaborative) {
+            setSentMessages((prev) => [...prev, assistantMsg]);
           }
 
           if (session.id && assistantMsg.id) {
