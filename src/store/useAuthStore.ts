@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { User, AuthTokens } from '../utils/types';
+import type { User } from '../utils/types';
 import { disconnectSocket } from '../services/socket';
 
 // =====================================================
@@ -13,39 +13,34 @@ type AuthState = {
   isAuthenticated: boolean;
   isInitialized: boolean; // Has auth been checked on app load?
   user?: User;
-  // Only refresh token is persisted (for session restoration)
-  refreshToken?: string;
-  login: (user: User, tokens: AuthTokens) => void;
+  // refreshToken is stored server-side as HTTP-only cookie — NOT in client state
+  login: (user: User, accessToken: string) => void;
   logout: () => void;
-  setTokens: (tokens: AuthTokens) => void;
-  getAccessToken: () => string | null;
-  getRefreshToken: () => string | null;
   setAccessToken: (token: string) => void;
+  getAccessToken: () => string | null;
   clearTokens: () => void;
   setInitialized: (initialized: boolean) => void;
+  setUser: (user: User) => void;
 };
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set, _get) => ({
       isAuthenticated: false,
       isInitialized: false,
       user: undefined,
-      refreshToken: undefined,
 
-      login: (user, tokens) => {
-        // Access token stored in memory only (more secure)
-        inMemoryAccessToken = tokens.accessToken;
+      login: (user, accessToken) => {
+        // Access token stored in memory only (never persisted)
+        inMemoryAccessToken = accessToken;
         // NOTE: Do NOT clear guest data here.
         // Guest data is cleared by useGuestMigration AFTER successful migration.
         // Clearing it here would destroy paper/messages before they can be persisted to DB.
 
-        // Refresh token persisted for session restoration
         set({
           isAuthenticated: true,
           isInitialized: true,
           user,
-          refreshToken: tokens.refreshToken,
         });
       },
 
@@ -59,15 +54,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           isInitialized: true, // Keep initialized as true
           user: undefined,
-          refreshToken: undefined,
         });
-      },
-
-      setTokens: (tokens) => {
-        // Update access token in memory
-        inMemoryAccessToken = tokens.accessToken;
-        // Update refresh token in persisted state
-        set({ refreshToken: tokens.refreshToken, isInitialized: true });
       },
 
       setAccessToken: (token) => {
@@ -78,27 +65,26 @@ export const useAuthStore = create<AuthState>()(
         return inMemoryAccessToken;
       },
 
-      getRefreshToken: () => {
-        return get().refreshToken ?? null;
-      },
-
       clearTokens: () => {
         inMemoryAccessToken = null;
-        set({ refreshToken: undefined });
       },
 
       setInitialized: (initialized) => {
         set({ isInitialized: initialized });
       },
+
+      setUser: (user) => {
+        set({ user });
+      },
     }),
     {
       name: 'auth-storage',
       partialize: (state) => ({
+        // Only persist non-sensitive state for UI restoration
         isAuthenticated: state.isAuthenticated,
         user: state.user,
-        // Only persist refresh token, NOT access token
-        refreshToken: state.refreshToken,
-        // Don't persist isInitialized - should always start as false
+        // NO tokens persisted — access token is memory-only,
+        // refresh token is HTTP-only cookie (server-managed)
       }),
     },
   ),

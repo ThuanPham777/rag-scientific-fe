@@ -96,10 +96,7 @@ export default function AuthModal({
     try {
       const res = await apiLogin(data.email, data.password);
       if (res.success) {
-        login(res.data, {
-          accessToken: res.accessToken,
-          refreshToken: res.refreshToken,
-        });
+        login(res.data, res.accessToken);
         onClose();
         // Trigger guest migration if callback provided
         if (onLoginSuccess) {
@@ -131,10 +128,7 @@ export default function AuthModal({
         try {
           const loginRes = await apiLogin(data.email, data.password);
           if (loginRes.success) {
-            login(loginRes.data, {
-              accessToken: loginRes.accessToken,
-              refreshToken: loginRes.refreshToken,
-            });
+            login(loginRes.data, loginRes.accessToken);
             onClose();
             // Trigger guest migration if callback provided (same as login flow)
             if (onLoginSuccess) {

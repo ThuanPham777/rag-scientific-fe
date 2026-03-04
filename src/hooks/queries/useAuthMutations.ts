@@ -29,10 +29,8 @@ export function useLogin() {
       apiLogin(email, password),
     onSuccess: (data) => {
       if (data.success) {
-        authLogin(data.data, {
-          accessToken: data.accessToken,
-          refreshToken: data.refreshToken,
-        });
+        // Refresh token is set as HTTP-only cookie by the backend
+        authLogin(data.data, data.accessToken);
       }
     },
   });
@@ -56,10 +54,7 @@ export function useSignup() {
     }) => apiSignup(email, password, displayName),
     onSuccess: (data) => {
       if (data.success && 'accessToken' in data) {
-        authLogin(data.data, {
-          accessToken: (data as any).accessToken,
-          refreshToken: (data as any).refreshToken,
-        });
+        authLogin(data.data, (data as any).accessToken);
       }
     },
   });
@@ -76,10 +71,7 @@ export function useGoogleIdTokenAuth() {
     mutationFn: (idToken: string) => googleAuth(idToken),
     onSuccess: (data) => {
       if (data.success) {
-        authLogin(data.data, {
-          accessToken: data.accessToken,
-          refreshToken: data.refreshToken,
-        });
+        authLogin(data.data, data.accessToken);
       }
     },
   });
@@ -90,14 +82,11 @@ export function useGoogleIdTokenAuth() {
  */
 export function useLogout() {
   const authLogout = useAuthStore((s) => s.logout);
-  const getRefreshToken = useAuthStore((s) => s.getRefreshToken);
 
   return useMutation({
     mutationFn: async () => {
-      const refreshToken = getRefreshToken();
-      if (refreshToken) {
-        await logout(refreshToken);
-      }
+      // Refresh token cookie is sent automatically — no need to pass it
+      await logout();
     },
     onSettled: () => {
       // Always logout locally, even if API fails
@@ -124,21 +113,16 @@ export function useLogoutAll() {
  * Hook for refreshing tokens
  */
 export function useRefreshTokens() {
-  const setTokens = useAuthStore((s) => s.setTokens);
-  const getRefreshToken = useAuthStore((s) => s.getRefreshToken);
+  const setAccessToken = useAuthStore((s) => s.setAccessToken);
 
   return useMutation({
     mutationFn: async () => {
-      const refreshToken = getRefreshToken();
-      if (!refreshToken) throw new Error('No refresh token');
-      return refreshTokens(refreshToken);
+      // Refresh token cookie is sent automatically
+      return refreshTokens();
     },
     onSuccess: (data) => {
       if (data.success) {
-        setTokens({
-          accessToken: data.accessToken,
-          refreshToken: data.refreshToken,
-        });
+        setAccessToken(data.accessToken);
       }
     },
   });

@@ -14,11 +14,11 @@ interface AuthInitializerProps {
  *
  * This component handles the initialization of auth state on app load.
  * When the page is reloaded, the access token (stored in memory) is lost,
- * but the refresh token (stored in localStorage) persists.
+ * but the refresh token persists in the HTTP-only cookie (managed by the browser).
  *
  * This component:
- * 1. Checks if user was previously authenticated (has refresh token)
- * 2. Attempts to refresh the access token using the stored refresh token
+ * 1. Checks if user was previously authenticated (persisted flag in localStorage)
+ * 2. Attempts to refresh the access token using the HTTP-only cookie
  * 3. Shows loading state while initializing
  * 4. Only renders children after auth is initialized
  */
@@ -29,11 +29,11 @@ export const AuthInitializer: React.FC<AuthInitializerProps> = ({
   const hasInitialized = useRef(false);
 
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const refreshToken = useAuthStore((state) => state.refreshToken);
-  const setTokens = useAuthStore((state) => state.setTokens);
+  const setAccessToken = useAuthStore((state) => state.setAccessToken);
   const setInitialized = useAuthStore((state) => state.setInitialized);
   const logout = useAuthStore((state) => state.logout);
   const getAccessToken = useAuthStore((state) => state.getAccessToken);
+  const setUser = useAuthStore((state) => state.setUser);
 
   useEffect(() => {
     // Prevent double initialization in StrictMode
@@ -42,8 +42,8 @@ export const AuthInitializer: React.FC<AuthInitializerProps> = ({
 
     const initializeAuth = async () => {
       // If user is authenticated but no access token (page reload scenario)
-      // Try to refresh the access token
-      if (isAuthenticated && refreshToken && !getAccessToken()) {
+      // Try to refresh the access token using the HTTP-only cookie
+      if (isAuthenticated && !getAccessToken()) {
         const { isRefreshing, refreshPromise } = getRefreshState();
 
         // Check if already refreshing (shared with axios interceptor)
@@ -61,21 +61,25 @@ export const AuthInitializer: React.FC<AuthInitializerProps> = ({
             );
 
             // Set shared refresh state
-            const promise = axios.post(`${API_BASE_URL}/auth/refresh`, {
-              refreshToken: refreshToken,
-            });
+            // Cookie is sent automatically with withCredentials: true
+            const promise = axios.post(
+              `${API_BASE_URL}/auth/refresh`,
+              {},
+              { withCredentials: true },
+            );
             setRefreshState(true, promise);
 
             const response = await promise;
 
-            const { accessToken, refreshToken: newRefreshToken } =
-              response.data;
+            const { accessToken, data: user } = response.data;
 
-            // Update tokens in store
-            setTokens({
-              accessToken,
-              refreshToken: newRefreshToken || refreshToken,
-            });
+            // Update access token in memory
+            setAccessToken(accessToken);
+
+            // Update user data if returned (keeps profile in sync)
+            if (user) {
+              setUser(user);
+            }
 
             console.log(
               '[AuthInitializer] Access token refreshed successfully',

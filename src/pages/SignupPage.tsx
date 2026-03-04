@@ -48,10 +48,7 @@ export default function SignupPage() {
             const guestSession = useGuestStore.getState().currentSession;
             const guestRoute = guestSession ? `/chat/${guestSession.id}` : null;
 
-            login(loginRes.data, {
-              accessToken: loginRes.accessToken,
-              refreshToken: loginRes.refreshToken,
-            });
+            login(loginRes.data, loginRes.accessToken);
 
             // Navigate to guest chat (migration happens in ChatPage) or home
             navigate(guestRoute || '/');

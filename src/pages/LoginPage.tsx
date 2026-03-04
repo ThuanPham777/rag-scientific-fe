@@ -26,10 +26,7 @@ export default function LoginPage() {
         const guestSession = useGuestStore.getState().currentSession;
         const guestRoute = guestSession ? `/chat/${guestSession.id}` : null;
 
-        login(response.data, {
-          accessToken: response.accessToken,
-          refreshToken: response.refreshToken,
-        });
+        login(response.data, response.accessToken);
 
         // If guest was chatting, go back to chat page (migration happens automatically)
         // Otherwise go to home

@@ -8,6 +8,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Send HTTP-only cookies (refresh token) with every request
 });
 
 // =====================================================
@@ -43,9 +44,17 @@ const processQueue = (error: any, token: string | null = null) => {
 };
 
 /**
- * Force logout - clear all tokens and redirect to login
+ * Force logout - clear all tokens and redirect to login.
+ * Also calls the logout endpoint to clear the refresh token cookie.
  */
 const forceLogout = () => {
+  // Clear the HTTP-only refresh token cookie by calling logout endpoint
+  axios
+    .post(`${API_BASE_URL}/auth/logout`, {}, { withCredentials: true })
+    .catch(() => {
+      /* ignore errors during force logout */
+    });
+
   const { logout } = useAuthStore.getState();
   logout();
   // Only redirect if not already on login page
@@ -101,9 +110,15 @@ api.interceptors.response.use(
     // Handle 401 - Token expired
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Check if auth is initialized - if not, let AuthInitializer handle it
-      const { isInitialized } = useAuthStore.getState();
+      const { isInitialized, isAuthenticated } = useAuthStore.getState();
       if (!isInitialized) {
         // Auth not initialized yet, don't try to refresh here
+        return Promise.reject(error);
+      }
+
+      // Don't attempt refresh if user isn't authenticated
+      // (no refresh token cookie would exist — avoid spurious forceLogout)
+      if (!isAuthenticated) {
         return Promise.reject(error);
       }
 
@@ -124,39 +139,28 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      // Get refresh token from store
-      const refreshToken = useAuthStore.getState().getRefreshToken();
-
-      if (!refreshToken) {
-        // No refresh token available
-        isRefreshing = false;
-        processQueue(new Error('No refresh token'), null);
-
-        // Only force logout if user was previously authenticated.
-        // Guest users have no tokens at all — calling forceLogout would
-        // redirect them away from the chat page unnecessarily.
-        const { isAuthenticated } = useAuthStore.getState();
-        if (isAuthenticated) {
-          forceLogout();
-        }
-        return Promise.reject(error);
-      }
+      // No need to check for refresh token — it's in the HTTP-only cookie
+      // and sent automatically with the request via withCredentials: true
 
       try {
-        // Call refresh endpoint
-        refreshPromise = axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refreshToken,
-        });
+        // Call refresh endpoint — refresh token is sent as HTTP-only cookie automatically
+        refreshPromise = axios.post(
+          `${API_BASE_URL}/auth/refresh`,
+          {},
+          { withCredentials: true },
+        );
 
         const response = await refreshPromise;
 
-        const { accessToken, refreshToken: newRefreshToken } = response.data;
+        const { accessToken, data: user } = response.data;
 
-        // Update tokens in store (access token in memory, refresh in persisted store)
-        useAuthStore.getState().setTokens({
-          accessToken,
-          refreshToken: newRefreshToken,
-        });
+        // Update access token in memory
+        useAuthStore.getState().setAccessToken(accessToken);
+
+        // Also update user data if returned (keeps profile in sync)
+        if (user) {
+          useAuthStore.getState().setUser(user);
+        }
 
         // Process queued requests with new token
         processQueue(null, accessToken);
@@ -165,9 +169,11 @@ api.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh failed - force logout
+        // Refresh failed - force logout only if still authenticated
         processQueue(refreshError, null);
-        forceLogout();
+        if (useAuthStore.getState().isAuthenticated) {
+          forceLogout();
+        }
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
