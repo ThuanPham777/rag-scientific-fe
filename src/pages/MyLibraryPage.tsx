@@ -13,6 +13,7 @@ import {
   useClearChatHistory,
   useSessions,
   paperKeys,
+  folderKeys,
   useFolders,
   useFolder,
   useCreateFolder,
@@ -292,15 +293,36 @@ export default function MyLibraryPage() {
     setShowCreateDialog(true);
   };
 
+  // Check if folder papers have processing items too
+  const hasFolderProcessingPapers = useMemo(() => {
+    if (!isInFolderView || !selectedFolder?.papers) return false;
+    return selectedFolder.papers.some(
+      (p: any) => p.status === 'PROCESSING' || p.status === 'PENDING',
+    );
+  }, [isInFolderView, selectedFolder?.papers]);
+
   // Auto-refresh papers when there are processing papers
   useEffect(() => {
-    if (!hasProcessingPapers) return;
+    const needsPolling = hasProcessingPapers || hasFolderProcessingPapers;
+    if (!needsPolling) return;
     const interval = setInterval(() => {
       queryClient.invalidateQueries({ queryKey: paperKeys.infinite() });
+      // Also refresh folder detail so folder-view papers update
+      if (isInFolderView && selectedFolderId) {
+        queryClient.invalidateQueries({
+          queryKey: folderKeys.detail(selectedFolderId),
+        });
+      }
     }, 5000); // Refresh every 5 seconds
 
     return () => clearInterval(interval);
-  }, [hasProcessingPapers, queryClient]);
+  }, [
+    hasProcessingPapers,
+    hasFolderProcessingPapers,
+    isInFolderView,
+    selectedFolderId,
+    queryClient,
+  ]);
 
   // Determine which papers to display based on current view
   const displayPapers = useMemo(() => {
