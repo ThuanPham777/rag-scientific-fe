@@ -45,6 +45,7 @@ export type PaperStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
 export type Paper = {
   id: string;
+  userId?: string;
   ragFileId: string;
   fileName: string;
   fileUrl: string;

@@ -36,8 +36,10 @@ import ChatDock from '../components/chat/ChatDock';
 import { FolderSelectModal } from '@/components/uploader/FolderSelectModal';
 import { useFolderStore } from '@/store/useFolderStore';
 import type { Folder as FolderType } from '../utils/types';
+import { useAuthStore } from '../store/useAuthStore';
 import { FolderSidebar } from '@/components/library/FolderSidebar';
 import { DeletePaperDialog, PaperTable } from '@/components/library';
+import { PaperSectionList } from '@/components/library/PaperSectionList';
 import {
   CreateFolderDialog,
   DeleteFolderDialog,
@@ -48,6 +50,7 @@ import { MovePaperDialog } from '@/components/library/MovePaperDialog';
 export default function MyLibraryPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((s) => s.user);
 
   const { folderId: urlFolderId } = useParams<{ folderId?: string }>();
 
@@ -307,6 +310,37 @@ export default function MyLibraryPage() {
     return allPapers;
   }, [isInFolderView, selectedFolder, allPapers]);
 
+  // Classify papers into 3 sections for the "All files" view
+  const { myPapers, sharedByMe, sharedWithMe } = useMemo(() => {
+    if (!currentUser?.id) {
+      return {
+        myPapers: allPapers,
+        sharedByMe: [] as typeof allPapers,
+        sharedWithMe: [] as typeof allPapers,
+      };
+    }
+    const my: typeof allPapers = [];
+    const byMe: typeof allPapers = [];
+    const withMe: typeof allPapers = [];
+
+    for (const paper of allPapers) {
+      const isOwner = paper.userId === currentUser.id;
+      const hasGroupSession = groupPaperIds.has(paper.id);
+
+      if (!isOwner) {
+        // Paper owned by someone else — user is a collaborator
+        withMe.push(paper);
+      } else if (hasGroupSession) {
+        // User owns it AND has an active collaborative session
+        byMe.push(paper);
+      } else {
+        // User owns it, no collaborative session
+        my.push(paper);
+      }
+    }
+    return { myPapers: my, sharedByMe: byMe, sharedWithMe: withMe };
+  }, [allPapers, currentUser?.id, groupPaperIds]);
+
   // Determine current view name for header
   const currentViewName =
     selectedView === 'all'
@@ -413,6 +447,27 @@ export default function MyLibraryPage() {
         <div className='flex-1 overflow-auto'>
           {selectedView === 'notebooks' ? (
             <NotebookListTable />
+          ) : selectedView === 'all' && !isInFolderView ? (
+            <PaperSectionList
+              myPapers={myPapers}
+              sharedByMe={sharedByMe}
+              sharedWithMe={sharedWithMe}
+              totalPapers={displayPapers.length}
+              isLoading={isLoadingAllPapers}
+              onPaperClick={paperActions.handlePaperClick}
+              onMovePaper={paperActions.openMovePaperDialog}
+              onDeletePaper={paperActions.openDeletePaperDialog}
+              onUploadClick={upload.handleUploadClick}
+              selectable
+              selectedPaperIds={selectedPaperIds}
+              onToggleSelect={togglePaper}
+              onSelectAll={handleSelectAll}
+              onDeselectAll={handleDeselectAll}
+              onLoadMore={() => fetchNextPage()}
+              hasMore={hasNextPage ?? false}
+              isLoadingMore={isFetchingNextPage}
+              groupPaperIds={groupPaperIds}
+            />
           ) : (
             <PaperTable
               papers={displayPapers}
