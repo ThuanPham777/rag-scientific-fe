@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import {
-  ChevronDown,
-  LogOut,
-  Search as SearchIcon,
-  BookOpen,
-} from 'lucide-react';
+import { LogOut, BookOpen } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useGuestStore } from '../../store/useGuestStore';
 import { logout as apiLogout } from '../../services';
@@ -97,24 +92,6 @@ export default function TopNav() {
           <div className='w-5 h-5 rounded-sm bg-brand-600' />
           <span className='tracking-wide'>AskPDF</span>
         </Link>
-
-        {/* Search */}
-        <div className='hidden md:flex items-stretch flex-1 max-w-3xl'>
-          <button className='shrink-0 inline-flex items-center gap-1 px-3 text-sm border border-r-0 rounded-l-md bg-white hover:bg-gray-50'>
-            Papers <ChevronDown size={16} />
-          </button>
-
-          <div className='relative flex-1'>
-            <input
-              className='w-full h-10 border rounded-r-md pl-3 pr-9 focus:outline-none focus:ring-2 focus:ring-brand-400'
-              placeholder='Get insights from top papers directly'
-            />
-            <SearchIcon
-              size={18}
-              className='absolute right-3 top-1/2 -translate-y-1/2 text-gray-400'
-            />
-          </div>
-        </div>
 
         {/* Right */}
         <nav className='ml-auto flex items-center gap-4'>
