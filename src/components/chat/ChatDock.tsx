@@ -7,6 +7,8 @@ import {
   FileText,
   Trash2,
   Loader2,
+  ScanSearch,
+  AlertTriangle,
 } from 'lucide-react';
 import ChatSuggestions from './ChatSuggestions';
 import ChatMessage from './ChatMessage';
@@ -37,6 +39,7 @@ import type {
 } from '../../utils/types';
 
 export type ChatMode = 'single' | 'multi';
+export type PaperProcessingStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
 interface SelectedPaperInfo {
   id: string;
@@ -109,6 +112,8 @@ type Props = {
   scrollToBottomRef?: React.MutableRefObject<(() => void) | null>;
   /** When set, clicking a suggestion or brainstorm in ChatQuickActions triggers auth flow */
   onGuestAuthRequired?: (question?: string) => void;
+  /** Paper processing status — blocks chat when not COMPLETED */
+  paperStatus?: PaperProcessingStatus;
 };
 
 const LOADING_STEPS = [
@@ -117,6 +122,18 @@ const LOADING_STEPS = [
   'Reading selected sections',
   'Composing answer with citations',
 ];
+
+const PROCESSING_STEPS = [
+  { key: 'upload', label: 'Tải lên hoàn tất' },
+  { key: 'analyze', label: 'Phân tích cấu trúc PDF' },
+  { key: 'index', label: 'Indexing & vectorization' },
+];
+
+function getProcessingStepIndex(status: PaperProcessingStatus): number {
+  if (status === 'PENDING') return 0;
+  if (status === 'PROCESSING') return 1;
+  return 2;
+}
 
 export default function ChatDock({
   session,
@@ -154,6 +171,7 @@ export default function ChatDock({
   canDeleteMessage,
   scrollToBottomRef,
   onGuestAuthRequired,
+  paperStatus = 'COMPLETED',
 }: Props) {
   // Use messages prop if provided, otherwise fall back to session?.messages
   const messages = messagesProp ?? session?.messages ?? [];
@@ -457,11 +475,10 @@ export default function ChatDock({
     <>
       {open && (
         <div
-          className={`${
-            position === 'fixed'
-              ? positionClasses
-              : `relative ${WIDTH} ${HEIGHT}`
-          } bg-white border border-gray-200 ${isPdfFullscreen ? 'rounded-none border-l' : 'rounded-lg'} flex flex-col pointer-events-auto shadow-2xl`}
+          className={`${position === 'fixed'
+            ? positionClasses
+            : `relative ${WIDTH} ${HEIGHT}`
+            } bg-white border border-gray-200 ${isPdfFullscreen ? 'rounded-none border-l' : 'rounded-lg'} flex flex-col pointer-events-auto shadow-2xl`}
         >
           {/* Header */}
           <div
@@ -515,9 +532,9 @@ export default function ChatDock({
           {isCollaborative && sessionDetail && (
             <SessionBar
               sessionDetail={sessionDetail}
-              onInvite={onInvite || (() => {})}
-              onLeave={onLeaveSession || (() => {})}
-              onEnd={onEndSession || (() => {})}
+              onInvite={onInvite || (() => { })}
+              onLeave={onLeaveSession || (() => { })}
+              onEnd={onEndSession || (() => { })}
             />
           )}
 
@@ -563,6 +580,63 @@ export default function ChatDock({
             onScroll={handleScroll}
             className='flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 min-h-0 bg-white relative'
           >
+            {/* Paper Processing Overlay */}
+            {paperStatus !== 'COMPLETED' && (
+              <div className='absolute inset-0 z-20 bg-white/95 flex items-center justify-center'>
+                {paperStatus === 'FAILED' ? (
+                  <div className='text-center px-8'>
+                    <div className='w-16 h-16 mx-auto mb-4 rounded-full bg-red-50 flex items-center justify-center'>
+                      <AlertTriangle size={28} className='text-red-500' />
+                    </div>
+                    <h3 className='text-lg font-semibold text-gray-900 mb-1'>Phân tích thất bại</h3>
+                    <p className='text-sm text-gray-500'>Không thể xử lý paper này. Vui lòng thử upload lại.</p>
+                  </div>
+                ) : (
+                  <div className='text-center px-8 max-w-xs'>
+                    {/* Animated scanner icon */}
+                    <div className='relative w-20 h-20 mx-auto mb-6'>
+                      <div className='absolute inset-0 rounded-2xl bg-gradient-to-br from-orange-100 to-amber-50 animate-pulse' />
+                      <div className='absolute inset-0 flex items-center justify-center'>
+                        <ScanSearch size={32} className='text-orange-500 animate-[bounce_2s_ease-in-out_infinite]' />
+                      </div>
+                    </div>
+
+                    <h3 className='text-lg font-semibold text-gray-900 mb-1'>Đang phân tích paper...</h3>
+                    <p className='text-sm text-gray-500 mb-6'>Hệ thống đang xử lý và lập chỉ mục tài liệu. Chat sẽ sẵn sàng sau khi hoàn tất.</p>
+
+                    {/* Step indicators */}
+                    <div className='space-y-3 text-left'>
+                      {PROCESSING_STEPS.map((step, idx) => {
+                        const currentStep = getProcessingStepIndex(paperStatus);
+                        const isDone = idx < currentStep;
+                        const isActive = idx === currentStep;
+                        return (
+                          <div key={step.key} className='flex items-center gap-3'>
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${isDone ? 'bg-green-100 text-green-600' :
+                              isActive ? 'bg-orange-100 text-orange-600' :
+                                'bg-gray-100 text-gray-400'
+                              }`}>
+                              {isDone ? (
+                                <svg width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M2 6l3 3 5-5' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round' /></svg>
+                              ) : isActive ? (
+                                <Loader2 size={12} className='animate-spin' />
+                              ) : (
+                                <span className='text-xs font-medium'>{idx + 1}</span>
+                              )}
+                            </div>
+                            <span className={`text-sm ${isDone ? 'text-green-700 font-medium' :
+                              isActive ? 'text-orange-700 font-medium' :
+                                'text-gray-400'
+                              }`}>{step.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Loading older messages indicator */}
             {isLoadingMore && (
               <div className='flex items-center justify-center py-2'>
@@ -572,7 +646,7 @@ export default function ChatDock({
                 </span>
               </div>
             )}
-            {messages.length === 0 && showSuggestions && (
+            {messages.length === 0 && showSuggestions && paperStatus === 'COMPLETED' && (
               <div className='mb-6'>
                 {mode === 'multi' && selectedPapers.length === 0 ? (
                   <div className='text-center py-8 text-gray-500'>
@@ -625,18 +699,18 @@ export default function ChatDock({
               const isLastInGroup = isCollaborative
                 ? next
                   ? (() => {
-                      const nextIsDiffDay = isDifferentDay(
-                        m.createdAt,
-                        next.createdAt,
-                      );
-                      const nextHasTimeSep =
-                        !nextIsDiffDay &&
-                        m.createdAt &&
-                        next.createdAt &&
-                        shouldShowTimeSeparator(m.createdAt, next.createdAt);
-                      if (nextIsDiffDay || nextHasTimeSep) return true;
-                      return !shouldGroupMessages(m, next);
-                    })()
+                    const nextIsDiffDay = isDifferentDay(
+                      m.createdAt,
+                      next.createdAt,
+                    );
+                    const nextHasTimeSep =
+                      !nextIsDiffDay &&
+                      m.createdAt &&
+                      next.createdAt &&
+                      shouldShowTimeSeparator(m.createdAt, next.createdAt);
+                    if (nextIsDiffDay || nextHasTimeSep) return true;
+                    return !shouldGroupMessages(m, next);
+                  })()
                   : true
                 : true;
 
@@ -644,14 +718,13 @@ export default function ChatDock({
                 <div
                   key={m.id}
                   id={`msg-${m.id}`}
-                  className={`transition-colors duration-500 ${
-                    isCollaborative &&
+                  className={`transition-colors duration-500 ${isCollaborative &&
                     !isGrouped &&
                     prev &&
                     prev.role !== 'system'
-                      ? 'mt-3'
-                      : ''
-                  }`}
+                    ? 'mt-3'
+                    : ''
+                    }`}
                 >
                   {isCollaborative && showDaySeparator && m.createdAt && (
                     <DateSeparator label={formatDaySeparator(m.createdAt)} />
@@ -667,9 +740,7 @@ export default function ChatDock({
                   ) : (
                     <ChatMessage
                       msg={m}
-                      activePaperId={
-                        mode === 'single' ? activePaperId : undefined
-                      }
+                      activePaperId={activePaperId}
                       conversationId={conversationId || session?.id}
                       onFollowUpSelect={sendAsAssistant}
                       followUps={followUpMap[m.id] || []}
@@ -775,14 +846,16 @@ export default function ChatDock({
               }}
               onExplainMath={onExplainMath}
               disabled={
-                isLoading || (mode === 'multi' && selectedPapers.length === 0)
+                isLoading || paperStatus !== 'COMPLETED' || (mode === 'multi' && selectedPapers.length === 0)
               }
               placeholder={
-                mode === 'multi' && selectedPapers.length === 0
-                  ? 'Select papers to start chatting...'
-                  : isCollaborative
-                    ? 'Type a message... (use @Assistant to ask AI)'
-                    : undefined
+                paperStatus !== 'COMPLETED'
+                  ? 'Đang xử lý paper, vui lòng chờ...'
+                  : mode === 'multi' && selectedPapers.length === 0
+                    ? 'Select papers to start chatting...'
+                    : isCollaborative
+                      ? 'Type a message... (use @Assistant to ask AI)'
+                      : undefined
               }
               showSigmaButton={mode === 'single'}
               mentionMembers={mentionMembers}

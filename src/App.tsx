@@ -20,6 +20,12 @@ import AdminRoute from './components/auth/AdminRoute';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminUserDetailPage from './pages/admin/AdminUserDetailPage';
+import SystemConfigPage from './pages/admin/SystemConfigPage';
+import KBManagementPage from './pages/admin/KBManagementPage';
+import KBExplorerPage from './pages/admin/KBExplorerPage';
+import KBIngestWizard from './pages/admin/KBIngestWizard';
+import KBBatchIngestPage from './pages/admin/KBBatchIngestPage';
+import AdminDocumentsPage from './pages/admin/AdminDocumentsPage';
 
 export default function App() {
   return (
@@ -142,6 +148,12 @@ export default function App() {
           <Route path='dashboard' element={<AdminDashboardPage />} />
           <Route path='users' element={<AdminUsersPage />} />
           <Route path='users/:id' element={<AdminUserDetailPage />} />
+          <Route path='config' element={<SystemConfigPage />} />
+          <Route path='kb' element={<KBManagementPage />} />
+          <Route path='kb/ingest' element={<KBIngestWizard />} />
+          <Route path='kb/batch-ingest' element={<KBBatchIngestPage />} />
+          <Route path='kb/explorer' element={<KBExplorerPage />} />
+          <Route path='documents' element={<AdminDocumentsPage />} />
         </Route>
       </Route>
 

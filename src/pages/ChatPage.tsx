@@ -38,6 +38,7 @@ import {
   sendPlainMessage,
   uploadPdf,
 } from '../services';
+import { askMultiPaper } from '../services/api/chat.api';
 import PdfPanel from '../components/pdf/PdfPanel';
 import ChatDock from '../components/chat/ChatDock';
 import AuthModal from '../components/auth/AuthModal';
@@ -151,8 +152,9 @@ export default function ChatPage() {
       : undefined,
   );
 
-  // Derive paperId from React Query data or existing store
-  const resolvedPaperId = sessionMeta?.paperId || conversationData?.paperId;
+  // Derive paperId — prefer the currently-selected paper (tab) so that
+  // usePaper polls the active tab's status, not always the first paper.
+  const resolvedPaperId = currentPaper?.id || sessionMeta?.paperId || conversationData?.paperId;
 
   // Fetch paper detail via React Query (may 403 for non-owners — handled below)
   const { data: paperFromQuery, isError: isPaperError } = usePaper(
@@ -1038,31 +1040,59 @@ export default function ChatPage() {
             );
           } else {
             // Authenticated: Call RAG API (either non-collaborative or @Assistant)
-            const { assistantMsg, raw } = await sendQuery(
-              session.id,
-              actualText,
-              currentPaper?.id,
-            );
+            const isMultiPaper = (sessionMeta?.papers?.length || 0) > 1;
 
-            // Replace optimistic user message ID with server ID for proper dedup
-            if (raw.userMessageId) {
-              setSentMessages((prev) =>
-                prev.map((m) =>
-                  m.id === userMsg.id ? { ...m, id: raw.userMessageId } : m,
-                ),
+            if (isMultiPaper) {
+              // Multi-paper: use askMultiPaper endpoint
+              const paperIds = sessionMeta!.papers!.map((p: any) => p.id);
+              const { assistantMsg, raw } = await askMultiPaper(
+                paperIds,
+                actualText,
+                session.id,
               );
-            }
 
-            // In collaborative mode the assistant message is already in the
-            // React Query cache via the socket 'session:new-message' event.
-            // Adding it to sentMessages too causes a brief ordering glitch
-            // (optimistic user msg appears after the cached assistant msg).
-            if (!isCollaborative) {
-              setSentMessages((prev) => [...prev, assistantMsg]);
-            }
+              // Replace optimistic user message ID with server ID
+              if (raw.userMessageId) {
+                setSentMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === userMsg.id ? { ...m, id: raw.userMessageId } : m,
+                  ),
+                );
+              }
 
-            if (session.id && assistantMsg.id) {
-              fetchFollowUps(session.id, assistantMsg.id);
+              if (!isCollaborative) {
+                setSentMessages((prev) => [...prev, assistantMsg]);
+              }
+
+              if (session.id && assistantMsg.id) {
+                fetchFollowUps(session.id, assistantMsg.id);
+              }
+            } else {
+              // Single paper: existing flow
+              const { assistantMsg, raw } = await sendQuery(
+                session.id,
+                actualText,
+                currentPaper?.id,
+              );
+
+              // Replace optimistic user message ID with server ID for proper dedup
+              if (raw.userMessageId) {
+                setSentMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === userMsg.id ? { ...m, id: raw.userMessageId } : m,
+                  ),
+                );
+              }
+
+              // In collaborative mode the assistant message is already in the
+              // React Query cache via the socket 'session:new-message' event.
+              if (!isCollaborative) {
+                setSentMessages((prev) => [...prev, assistantMsg]);
+              }
+
+              if (session.id && assistantMsg.id) {
+                fetchFollowUps(session.id, assistantMsg.id);
+              }
             }
           }
         }
@@ -1099,6 +1129,7 @@ export default function ChatPage() {
       guestSession,
       guestPaper?.id,
       session,
+      sessionMeta,
       currentPaper?.id,
       addGuestMessage,
       setGuestLoading,
@@ -1412,7 +1443,7 @@ export default function ChatPage() {
                         ragFileId: p.ragFileId,
                         fileName: p.fileName,
                         fileUrl: p.fileUrl || '',
-                        status: 'COMPLETED',
+                        status: (p as any).status || 'COMPLETED',
                         createdAt: new Date().toISOString(),
                       })
                     }
@@ -1520,6 +1551,7 @@ export default function ChatPage() {
         onDeleteMessage={handleDeleteMessage}
         canDeleteMessage={canDeleteMessage}
         scrollToBottomRef={chatScrollRef}
+        paperStatus={(activePaper as any)?.status || 'COMPLETED'}
       />
 
       {/* Confirm Start Session Modal */}

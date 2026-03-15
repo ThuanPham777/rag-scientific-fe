@@ -6,6 +6,10 @@ import {
   BookOpen,
   LayoutDashboard,
   Users,
+  Settings,
+  Database,
+  FolderTree,
+  FileText,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useUiStore } from '@/store/useUiStore';
@@ -117,6 +121,54 @@ export default function LeftDock() {
             >
               <Users size={20} />
               {tooltip('Manage Users')}
+            </NavLink>
+            <NavLink
+              to='/admin/config'
+              className={({ isActive }) =>
+                cn(
+                  'group relative p-3 rounded-xl text-orange-600 hover:bg-orange-50 transition-colors',
+                  isActive && 'bg-orange-100 font-semibold',
+                )
+              }
+            >
+              <Settings size={20} />
+              {tooltip('System Config')}
+            </NavLink>
+            <NavLink
+              to='/admin/kb'
+              className={({ isActive }) =>
+                cn(
+                  'group relative p-3 rounded-xl text-orange-600 hover:bg-orange-50 transition-colors',
+                  isActive && 'bg-orange-100 font-semibold',
+                )
+              }
+            >
+              <FolderTree size={20} />
+              {tooltip('Knowledge Base')}
+            </NavLink>
+            <NavLink
+              to='/admin/kb/explorer'
+              className={({ isActive }) =>
+                cn(
+                  'group relative p-3 rounded-xl text-orange-600 hover:bg-orange-50 transition-colors',
+                  isActive && 'bg-orange-100 font-semibold',
+                )
+              }
+            >
+              <Database size={20} />
+              {tooltip('KB Explorer')}
+            </NavLink>
+            <NavLink
+              to='/admin/documents'
+              className={({ isActive }) =>
+                cn(
+                  'group relative p-3 rounded-xl text-orange-600 hover:bg-orange-50 transition-colors',
+                  isActive && 'bg-orange-100 font-semibold',
+                )
+              }
+            >
+              <FileText size={20} />
+              {tooltip('Documents')}
             </NavLink>
           </>
         )}
