@@ -6,3 +6,5 @@ export * from './api/conversation.api';
 export * from './api/chat.api';
 export * from './api/guest.api';
 export * from './api/session.api';
+export * from './api/user.api';
+

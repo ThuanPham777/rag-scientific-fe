@@ -11,11 +11,17 @@ import {
   deleteConversation,
   startSession,
   listMultiPaperConversations,
+  addPaperToConversation,
+  removePaperFromConversation,
   getSuggestedQuestions,
   generateSuggestedQuestions,
   generateFollowUpQuestions,
+  getConversationHistory,
+  updateConversation,
+  closeConversation,
 } from '../../services';
 import { chatKeys } from './useChatQueries';
+import type { ConversationHistoryItem } from '../../utils/types';
 
 // Query keys
 export const conversationKeys = {
@@ -24,9 +30,60 @@ export const conversationKeys = {
   list: (paperId?: string) =>
     [...conversationKeys.lists(), { paperId }] as const,
   multiPaper: () => [...conversationKeys.all, 'multi-paper'] as const,
+  history: () => [...conversationKeys.all, 'history'] as const,
   details: () => [...conversationKeys.all, 'detail'] as const,
   detail: (id: string) => [...conversationKeys.details(), id] as const,
 };
+
+/**
+ * Hook to fetch conversation history with full stats
+ */
+export function useConversationHistory() {
+  return useQuery<ConversationHistoryItem[]>({
+    queryKey: conversationKeys.history(),
+    queryFn: async () => {
+      const response = await getConversationHistory();
+      return response.data;
+    },
+    staleTime: 30 * 1000,
+  });
+}
+
+/**
+ * Hook to rename a conversation
+ */
+export function useUpdateConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) =>
+      updateConversation(id, { title }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: conversationKeys.history() });
+      queryClient.invalidateQueries({ queryKey: conversationKeys.lists() });
+      toast.success('Conversation renamed');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to rename conversation');
+    },
+  });
+}
+
+/**
+ * Hook to close a conversation
+ */
+export function useCloseConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => closeConversation(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: conversationKeys.history() });
+      toast.success('Conversation closed');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to close conversation');
+    },
+  });
+}
 
 /**
  * Hook to fetch conversations, optionally filtered by paper
@@ -219,6 +276,48 @@ export function useGenerateFollowUpQuestions() {
     }) => generateFollowUpQuestions(conversationId, messageId),
     onError: (error: any) => {
       console.error('Follow-up questions failed:', error);
+    },
+  });
+}
+
+// ============================================================
+// Multi-Paper Session Management
+// ============================================================
+
+export function useAddPaperToConversation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ conversationId, paperId }: { conversationId: string; paperId: string }) =>
+      addPaperToConversation(conversationId, paperId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: conversationKeys.detail(variables.conversationId),
+      });
+      toast.success('Paper added to session');
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to add paper';
+      toast.error(msg);
+    },
+  });
+}
+
+export function useRemovePaperFromConversation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ conversationId, paperId }: { conversationId: string; paperId: string }) =>
+      removePaperFromConversation(conversationId, paperId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: conversationKeys.detail(variables.conversationId),
+      });
+      toast.success('Paper removed from session');
+    },
+    onError: (error: any) => {
+      const msg = error.response?.data?.message || 'Failed to remove paper';
+      toast.error(msg);
     },
   });
 }

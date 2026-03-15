@@ -9,7 +9,7 @@ import {
   Clock,
   FolderInput,
 } from 'lucide-react';
-import { Checkbox } from '@/components/UI/checkbox';
+import { Checkbox } from '@/components/ui/checkbox';
 import type { Paper } from '../../utils/types';
 import { Button } from '../ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
@@ -112,10 +112,11 @@ export function PaperTable({
               />
             </div>
           )}
-          <div className={selectable ? 'col-span-5' : 'col-span-6'}>
+          <div className={selectable ? 'col-span-4' : 'col-span-4'}>
             Files ({papers.length}/{totalPapers})
           </div>
-          <div className='col-span-4'>Title</div>
+          <div className='col-span-2'>Title</div>
+          <div className='col-span-4'>Summary</div>
           <div className='col-span-2 text-right'>Actions</div>
         </div>
       </div>
@@ -144,7 +145,7 @@ export function PaperTable({
                 </div>
               )}
               <div
-                className={`${selectable ? 'col-span-5' : 'col-span-6'} flex items-start gap-3 min-w-0`}
+                className={`${selectable ? 'col-span-4' : 'col-span-4'} flex items-start gap-3 min-w-0`}
               >
                 <div className='shrink-0 w-10 h-12 bg-red-100 rounded flex items-center justify-center'>
                   <FileText className='h-5 w-5 text-red-600' />
@@ -170,7 +171,8 @@ export function PaperTable({
                   </p>
                 </div>
               </div>
-              <div className='col-span-4 flex items-center gap-2 min-w-0'>
+              {/* Title / Status */}
+              <div className='col-span-2 flex items-center gap-2 min-w-0'>
                 {paper.status === 'PROCESSING' || paper.status === 'PENDING' ? (
                   <div className='flex items-center gap-2'>
                     <Clock className='h-3.5 w-3.5 text-orange-500 animate-pulse shrink-0' />
@@ -184,6 +186,16 @@ export function PaperTable({
                       paper.fileName.replace(/\.pdf$/i, '') ||
                       'Untitled'}
                   </p>
+                )}
+              </div>
+              {/* Summary */}
+              <div className='col-span-4 flex items-center min-w-0'>
+                {paper.summary ? (
+                  <p className='text-xs text-gray-500 line-clamp-2 leading-relaxed'>
+                    {paper.summary.substring(0, 160)}
+                  </p>
+                ) : (
+                  <span className='text-xs text-gray-300'>—</span>
                 )}
               </div>
               <div className='col-span-2 flex items-center justify-end'>

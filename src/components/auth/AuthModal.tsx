@@ -102,6 +102,11 @@ export default function AuthModal({
         if (onLoginSuccess) {
           await onLoginSuccess();
         }
+
+        // Redirect superadmin to admin dashboard
+        if (res.data?.role === 'SUPERADMIN') {
+          navigate('/admin/dashboard');
+        }
       } else {
         setServerError(res.message || 'Login failed');
       }
@@ -133,6 +138,11 @@ export default function AuthModal({
             // Trigger guest migration if callback provided (same as login flow)
             if (onLoginSuccess) {
               await onLoginSuccess();
+            }
+
+            // Redirect superadmin to admin dashboard
+            if (loginRes.data?.role === 'SUPERADMIN') {
+              navigate('/admin/dashboard');
             }
           } else {
             // Signup succeeded but auto-login failed — fallback to login form

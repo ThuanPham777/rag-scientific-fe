@@ -2,6 +2,7 @@
 // 🔹 Auth Types
 // ============================
 export type AuthProvider = 'LOCAL' | 'GOOGLE';
+export type UserRole = 'USER' | 'SUPERADMIN';
 
 export type User = {
   id: string;
@@ -9,6 +10,8 @@ export type User = {
   displayName?: string;
   avatarUrl?: string;
   provider: AuthProvider;
+  role?: UserRole;
+  isActive?: boolean;
 };
 
 export type LoginResponse = {
@@ -52,6 +55,7 @@ export type Paper = {
   fileSize?: number;
   title?: string;
   abstract?: string;
+  summary?: string;
   status: PaperStatus;
   nodeCount?: number;
   tableCount?: number;
@@ -74,8 +78,38 @@ export type Conversation = {
   paperTitle?: string;
   type?: 'SINGLE_PAPER' | 'MULTI_PAPER' | 'GROUP';
   isCollaborative?: boolean;
+  isClosed?: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+// ============================
+// 🔹 Chat History Types
+// ============================
+export type ConversationHistoryPaper = {
+  id: string;
+  fileName: string;
+  title?: string;
+};
+
+export type ConversationHistoryMember = {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  role: string;
+};
+
+export type ConversationHistoryItem = {
+  id: string;
+  title?: string;
+  type: 'SINGLE_PAPER' | 'MULTI_PAPER' | 'GROUP';
+  isCollaborative: boolean;
+  isClosed: boolean;
+  startedAt: string;
+  lastInteractionAt: string;
+  messageCount: number;
+  papers: ConversationHistoryPaper[];
+  members?: ConversationHistoryMember[];
 };
 
 // ============================
@@ -149,9 +183,18 @@ export type Message = {
 
 export type ChatSession = {
   id: string; // conversationId
-  paperId: string;
+  paperId?: string;
   ragFileId?: string;
   title?: string;
+  papers?: Array<{
+    id: string;
+    ragFileId: string;
+    title?: string;
+    fileName: string;
+    fileUrl: string;
+    orderIndex: number;
+    tabOrder?: number;
+  }>;
   messages: ChatMessage[];
 };
 
@@ -399,3 +442,33 @@ export type Folder = {
 export type FolderWithPapers = Folder & {
   papers: Paper[];
 };
+
+// ============================
+// 🔹 Global Search Types
+// ============================
+export interface SearchPaper {
+  id: string;
+  fileName: string;
+  title?: string;
+}
+
+export interface SearchSession {
+  id: string;
+  title?: string;
+  type: 'SINGLE_PAPER' | 'MULTI_PAPER' | 'GROUP';
+  isCollaborative: boolean;
+  updatedAt: string;
+  papers: SearchPaper[];
+}
+
+export interface SearchNotebook {
+  id: string;
+  title: string;
+  updatedAt: string;
+  contentPreview?: string;
+}
+
+export interface SearchResult {
+  sessions: SearchSession[];
+  notebooks: SearchNotebook[];
+}

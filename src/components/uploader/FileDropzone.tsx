@@ -5,28 +5,43 @@ import { validateFile } from '../../utils/file';
 import Loading from '../ui/loading/loading';
 
 interface Props {
-  onUpload: (file: File, setProgress: (v: number) => void) => Promise<void>;
+  onUpload: (files: File[], setProgress: (v: number) => void) => Promise<void>;
+  multiple?: boolean;
 }
 
-export default function FileDropzone({ onUpload }: Props) {
+export default function FileDropzone({ onUpload, multiple = true }: Props) {
   const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = async (file?: File) => {
-    if (!file) return;
-    const { valid, errors } = validateFile(file);
-    setErrors(errors);
-    if (!valid) return;
+  const handleFiles = async (fileList?: FileList | File[]) => {
+    if (!fileList || fileList.length === 0) return;
+    const filesArray = Array.from(fileList);
+    const filesToProcess = multiple ? filesArray : [filesArray[0]];
+
+    const validFiles: File[] = [];
+    const newErrors: string[] = [];
+
+    filesToProcess.forEach(file => {
+      const { valid, errors: fileErrors } = validateFile(file);
+      if (valid) {
+        validFiles.push(file);
+      } else {
+        newErrors.push(`${file.name}: ${fileErrors.join(', ')}`);
+      }
+    });
+
+    setErrors(newErrors);
+    if (validFiles.length === 0) return;
 
     try {
       setIsLoading(true);
-      await onUpload(file, setProgress);
+      await onUpload(validFiles, setProgress);
     } catch (err) {
       console.error("❌ Upload error:", err);
-      setErrors(["Failed to upload file. Please try again."]);
+      setErrors(["Failed to upload files. Please try again."]);
     } finally {
       setIsLoading(false);
       setProgress(0);
@@ -51,7 +66,9 @@ export default function FileDropzone({ onUpload }: Props) {
         onDrop={(e) => {
           e.preventDefault();
           setDragOver(false);
-          handleFile(e.dataTransfer.files[0]);
+          if (e.dataTransfer.files) {
+            handleFiles(e.dataTransfer.files);
+          }
         }}
       >
         {/* PDF badge */}
@@ -77,7 +94,7 @@ export default function FileDropzone({ onUpload }: Props) {
           disabled={isLoading}
         >
           <Upload size={16} />
-          Upload PDFs
+          Upload PDF{multiple ? 's' : ''}
         </button>
 
         {/* Hidden input */}
@@ -86,7 +103,10 @@ export default function FileDropzone({ onUpload }: Props) {
           className="hidden"
           type="file"
           accept="application/pdf"
-          onChange={(e) => handleFile(e.target.files?.[0])}
+          multiple={multiple}
+          onChange={(e) => {
+            if (e.target.files) handleFiles(e.target.files);
+          }}
         />
 
         {/* Progress */}

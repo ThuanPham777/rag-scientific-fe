@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { LogOut, X, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { usePaperStore } from '../store/usePaperStore';
 import { useGuestStore, isGuestSession } from '../store/useGuestStore';
 import { useGuestLimitStore } from '../store/useGuestLimitStore';
@@ -35,13 +36,15 @@ import {
   buildGuestAssistantMessage,
   explainRegion,
   sendPlainMessage,
+  uploadPdf,
 } from '../services';
 import PdfPanel from '../components/pdf/PdfPanel';
 import ChatDock from '../components/chat/ChatDock';
 import AuthModal from '../components/auth/AuthModal';
-import { InviteModal, ConfirmStartSessionModal } from '../components/session';
+import { InviteModal, ConfirmStartSessionModal, SelectPaperModal } from '../components/session';
 import { ConfirmModal } from '../components/common';
 import type { ChatMessage } from '../utils/types';
+import { useAddPaperToConversation, useRemovePaperFromConversation } from '../hooks/queries/useConversationQueries';
 
 export default function ChatPage() {
   const queryClient = useQueryClient();
@@ -66,12 +69,12 @@ export default function ChatPage() {
   // Build session object from store state
   const session = currentConversationId
     ? {
-        id: currentConversationId,
-        paperId: sessionMeta?.paperId,
-        ragFileId: sessionMeta?.ragFileId,
-        title: sessionMeta?.title,
-        messages: [] as ChatMessage[],
-      }
+      id: currentConversationId,
+      paperId: sessionMeta?.paperId,
+      ragFileId: sessionMeta?.ragFileId,
+      title: sessionMeta?.title,
+      messages: [] as ChatMessage[],
+    }
     : null;
 
   // Guest store
@@ -117,19 +120,19 @@ export default function ChatPage() {
   const activePaper = isGuest
     ? guestPaper
       ? {
-          id: guestPaper.id,
-          ragFileId: guestPaper.ragFileId,
-          fileName: guestPaper.fileName,
-          fileUrl: guestPaper.fileUrl,
-          localUrl: guestPaper.fileUrl,
-          status: (guestPaper.status || 'COMPLETED') as
-            | 'PROCESSING'
-            | 'COMPLETED'
-            | 'FAILED',
-          createdAt: guestPaper.createdAt,
-          updatedAt: guestPaper.createdAt,
-          userId: '',
-        }
+        id: guestPaper.id,
+        ragFileId: guestPaper.ragFileId,
+        fileName: guestPaper.fileName,
+        fileUrl: guestPaper.fileUrl,
+        localUrl: guestPaper.fileUrl,
+        status: (guestPaper.status || 'COMPLETED') as
+          | 'PROCESSING'
+          | 'COMPLETED'
+          | 'FAILED',
+        createdAt: guestPaper.createdAt,
+        updatedAt: guestPaper.createdAt,
+        userId: '',
+      }
       : undefined
     : (currentPaper ?? undefined);
 
@@ -189,6 +192,12 @@ export default function ChatPage() {
   // Guest auth modal (triggered when guest clicks a suggestion or brainstorm)
   const [showGuestAuthModal, setShowGuestAuthModal] = useState(false);
 
+  // Paper selection modal for multi-paper tabs
+  const [showSelectPaper, setShowSelectPaper] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const addPaperMutation = useAddPaperToConversation();
+  const removePaperMutation = useRemovePaperFromConversation();
+
   // Stable conversationId for session-related hooks
   const convIdForSession = isGuest
     ? undefined
@@ -205,23 +214,104 @@ export default function ChatPage() {
   // 1. Sync conversation → session store
   useEffect(() => {
     if (!conversationData) return;
-    // Skip if store already has this conversation fully loaded
-    if (currentConversationId === conversationData.id && sessionMeta?.ragFileId)
+
+    const isSameConversation = currentConversationId === conversationData.id;
+    const hasSameRagFile = !!sessionMeta?.ragFileId;
+    const storePapersCount = sessionMeta?.papers?.length || 0;
+    const queryPapersCount = conversationData.papers?.length || 0;
+    const hasUploadingTab = sessionMeta?.papers?.some(p => p.id.startsWith('uploading-'));
+
+    // Skip if store already has this conversation fully loaded AND the number of papers hasn't changed.
+    // Also skip if we currently have an optimistic uploading tab, so we don't overwrite it before it finishes.
+    if (isSameConversation && hasSameRagFile && storePapersCount === queryPapersCount && !hasUploadingTab) {
       return;
+    }
 
     setSession({
       id: conversationData.id,
       paperId: conversationData.paperId,
       ragFileId: conversationData.ragFileId,
       title: conversationData.title,
+      papers: conversationData.papers?.map(p => ({
+        ...p,
+        fileUrl: p.fileUrl || '',
+      })),
       messages: [],
     });
   }, [
     conversationData,
     currentConversationId,
     sessionMeta?.ragFileId,
+    sessionMeta?.papers?.length,
     setSession,
   ]);
+
+  // Handle optimistic file upload from SelectPaperModal
+  const handleOptimisticUpload = useCallback(async (file: File) => {
+    if (!currentConversationId || !sessionMeta) return;
+
+    const tempId = `uploading-${Date.now()}`;
+    const localUrl = URL.createObjectURL(file);
+
+    // 1. Optimistically append faux-paper to session store
+    const fakePaper = {
+      id: tempId,
+      ragFileId: tempId,
+      fileName: file.name,
+      fileUrl: localUrl,
+      orderIndex: sessionMeta.papers?.length || 0,
+      tabOrder: sessionMeta.papers?.length || 0,
+      isUploading: true,
+    };
+
+    setSession({
+      ...sessionMeta,
+      id: currentConversationId,
+      papers: [...(sessionMeta.papers || []), fakePaper] as any,
+    });
+    setUploadProgress(prev => ({ ...prev, [tempId]: 0 }));
+
+    // Auto-switch view to the newly uploading tab
+    setCurrentPaper(fakePaper as any);
+
+    try {
+      // 2. Upload file to S3 and create Paper record in background
+      const { paper } = await uploadPdf(file, (pct) => {
+        setUploadProgress(prev => ({ ...prev, [tempId]: pct }));
+      });
+
+      // 3. Attach paper to the current conversation
+      await addPaperMutation.mutateAsync({
+        conversationId: currentConversationId,
+        paperId: paper.id,
+      });
+
+      // 4. Set the active tab explicitly to the real ID 
+      // (the useEffect will sync the rest of the array automatically from conversationData)
+      setCurrentPaper({ ...paper, fileUrl: localUrl } as any);
+
+    } catch (err: any) {
+      console.error('Optimistic upload failed', err);
+      toast.error('Failed to upload ' + file.name);
+
+      // Rollback
+      const filteredPapers = sessionMeta.papers?.filter(p => p.id !== tempId) || [];
+      setSession({
+        ...sessionMeta,
+        id: currentConversationId,
+        papers: filteredPapers as any,
+      });
+      if (currentPaper?.id === tempId) {
+        setCurrentPaper((filteredPapers[0] as any) || null);
+      }
+    } finally {
+      setUploadProgress(prev => {
+        const next = { ...prev };
+        delete next[tempId];
+        return next;
+      });
+    }
+  }, [currentConversationId, sessionMeta, currentPaper?.id, setSession, setCurrentPaper, addPaperMutation]);
 
   // 2. Derive collaborative state from conversation type (authoritative source)
   //    conversation.type === 'GROUP' is the single source of truth.
@@ -1305,17 +1395,84 @@ export default function ChatPage() {
   return (
     <div className='pt-8 pl-4 pb-8 pr-4 max-w-screen-2xl mx-auto flex flex-col gap-2'>
       <div className='h-[calc(100vh-4.5rem)] grid grid-cols-1 lg:grid-cols-[1fr_550px] gap-2'>
-        <PdfPanel
-          activePaper={activePaper}
-          onPdfAction={handlePdfAction}
-          isChatDockOpen={isChatDockOpen}
-          chatDockWidth={CHAT_DOCK_WIDTH}
-          onFullscreenChange={setIsPdfFullscreen}
-          onCaptureRefChange={(toggleCapture) => {
-            captureToggleRef.current = toggleCapture;
-          }}
-          onExplainRegionCapture={handleExplainRegionCapture}
-        />
+        <div className='flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative min-w-0'>
+          {/* Tab Bar Container */}
+          {sessionMeta?.papers && sessionMeta.papers.length > 0 && (
+            <div className='flex items-center bg-gray-50 border-b border-gray-200 overflow-x-auto min-h-[44px] shrink-0 custom-scrollbar'>
+              {sessionMeta.papers.map((p) => {
+                const isUploading = p.id.startsWith('uploading-');
+                const progress = uploadProgress[p.id] || 0;
+
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() =>
+                      setCurrentPaper({
+                        id: p.id,
+                        ragFileId: p.ragFileId,
+                        fileName: p.fileName,
+                        fileUrl: p.fileUrl || '',
+                        status: 'COMPLETED',
+                        createdAt: new Date().toISOString(),
+                      })
+                    }
+                    className={`flex items-center gap-2 max-w-[200px] h-[44px] px-4 text-sm whitespace-nowrap overflow-hidden transition-colors border-r border-gray-200 group relative ${activePaper?.id === p.id
+                      ? 'bg-white text-indigo-600 border-t-2 border-t-indigo-500 font-medium'
+                      : 'text-gray-600 hover:bg-gray-100 border-t-2 border-t-transparent'
+                      }`}
+                    title={p.fileName}
+                  >
+                    {isUploading && (
+                      <div
+                        className="absolute bottom-0 left-0 h-[2px] bg-orange-500 transition-all duration-200 ease-out"
+                        style={{ width: `${progress}%` }}
+                      />
+                    )}
+                    <span className="truncate flex-1 text-left">{p.fileName}</span>
+                    {!isUploading && sessionMeta.papers!.length > 1 && (
+                      <div
+                        className="ml-1 opacity-0 group-hover:opacity-100 hover:bg-gray-200 hover:text-red-500 rounded p-0.5 transition-all outline-none"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (currentConversationId) {
+                            removePaperMutation.mutate({
+                              conversationId: currentConversationId,
+                              paperId: p.id,
+                            });
+                          }
+                        }}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+              <div className="flex-1 bg-gray-50 h-full border-b-transparent self-stretch"></div>
+              <button
+                onClick={() => setShowSelectPaper(true)}
+                className='flex items-center justify-center min-w-[44px] px-3 h-[44px] text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors border-l border-gray-200 bg-gray-50 shrink-0 self-stretch'
+                title="Add paper to session"
+              >
+                +
+              </button>
+            </div>
+          )}
+
+          <div className='flex-1 relative min-h-0'>
+            <PdfPanel
+              activePaper={activePaper}
+              onPdfAction={handlePdfAction}
+              isChatDockOpen={isChatDockOpen}
+              chatDockWidth={CHAT_DOCK_WIDTH}
+              onFullscreenChange={setIsPdfFullscreen}
+              onCaptureRefChange={(toggleCapture) => {
+                captureToggleRef.current = toggleCapture;
+              }}
+              onExplainRegionCapture={handleExplainRegionCapture}
+            />
+          </div>
+        </div>
         <div
           className='hidden lg:block'
           aria-hidden
@@ -1325,6 +1482,8 @@ export default function ChatPage() {
       <ChatDock
         session={activeSession as any}
         messages={messages}
+        mode={conversationData?.type === 'MULTI_PAPER' ? 'multi' : 'single'}
+        selectedPapers={sessionMeta?.papers || []}
         onSend={onSend}
         onClearChatHistory={handleClearChatHistory}
         isLoading={isGuest ? guestIsLoading : isChatLoading}
@@ -1423,6 +1582,22 @@ export default function ChatPage() {
         onConfirm={confirmClearChatHistory}
         onCancel={() => setShowClearConfirm(false)}
       />
+
+      {/* Select Paper Modal for Tabs */}
+      {currentConversationId && showSelectPaper && (
+        <SelectPaperModal
+          isOpen={showSelectPaper}
+          onClose={() => setShowSelectPaper(false)}
+          onSelect={(paperId) => {
+            addPaperMutation.mutate({
+              conversationId: currentConversationId,
+              paperId,
+            });
+          }}
+          onUploadFile={handleOptimisticUpload}
+          excludePaperIds={sessionMeta?.papers?.map(p => p.id) || []}
+        />
+      )}
 
       {/* Guest Auth Modal — opens when guest clicks suggestion or brainstorm */}
       {/* No onLoginSuccess needed: auto-migration effect handles all cases */}

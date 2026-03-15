@@ -12,6 +12,7 @@ import { paperKeys } from '../hooks/queries';
 import { FolderSelectModal } from '@/components/uploader/FolderSelectModal';
 import { useState, useRef } from 'react';
 import { Lock } from 'lucide-react';
+import { addPaperToConversation } from '../services/api/conversation.api';
 
 type AuthMode = 'login' | 'signup';
 
@@ -46,8 +47,8 @@ export default function HomeUpload() {
 
   // State for folder selection modal (logged-in users)
   const [showFolderModal, setShowFolderModal] = useState(false);
-  const [pendingFile, setPendingFile] = useState<{
-    file: File;
+  const [pendingFiles, setPendingFiles] = useState<{
+    files: File[];
     setProgress: (v: number) => void;
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -56,38 +57,77 @@ export default function HomeUpload() {
    * Process upload for logged-in user
    */
   const processAuthenticatedUpload = async (
-    file: File,
+    files: File[],
     setProgress: (v: number) => void,
     folderId: string | null = null,
   ) => {
     setIsUploading(true);
     try {
-      const { paper, localUrl } = await uploadPdf(
-        file,
-        setProgress,
-        folderId || undefined,
-      );
-      console.log('HomeUpload - uploaded paper:', paper);
+      const progressMap = new Map<string, number>();
 
-      // Store paper with local URL for PDF preview
-      const paperWithLocalUrl = { ...paper, localUrl };
-      setCurrentPaper(paperWithLocalUrl);
-
-      // Invalidate papers cache to refresh list (use paperKeys.all to invalidate all paper queries)
-      queryClient.invalidateQueries({ queryKey: paperKeys.all });
-
-      // Create a new conversation/session for this paper
-      const { conversationId } = await startSession(paper.id, paper.ragFileId);
-      console.log('HomeUpload - created session:', conversationId);
-
-      setSession({
-        id: conversationId,
-        paperId: paper.id,
-        ragFileId: paper.ragFileId,
-        messages: [],
+      const uploadPromises = files.map((file) => {
+        return uploadPdf(file, (v) => {
+          progressMap.set(file.name, v);
+          const totalProgress = Array.from(progressMap.values()).reduce((a, b) => a + b, 0);
+          setProgress(Math.round(totalProgress / files.length));
+        }, folderId || undefined);
       });
 
-      nav(`/chat/${conversationId}`);
+      const results = await Promise.all(uploadPromises);
+      console.log('HomeUpload - uploaded papers:', results);
+
+      const papers = results.map(r => ({ ...r.paper, localUrl: r.localUrl }));
+      queryClient.invalidateQueries({ queryKey: paperKeys.all });
+
+      if (papers.length === 1) {
+        const paper = papers[0];
+        setCurrentPaper(paper);
+
+        const { conversationId } = await startSession(paper.id, paper.ragFileId);
+        console.log('HomeUpload - created session:', conversationId);
+
+        setSession({
+          id: conversationId,
+          paperId: paper.id,
+          ragFileId: paper.ragFileId,
+          papers: [{
+            id: paper.id,
+            ragFileId: paper.ragFileId,
+            fileName: paper.fileName,
+            fileUrl: paper.fileUrl || '',
+            orderIndex: 0,
+            tabOrder: 0,
+          }],
+          messages: [],
+        });
+        nav(`/chat/${conversationId}`);
+      } else {
+        const firstPaper = papers[0];
+        setCurrentPaper(firstPaper);
+
+        const { conversationId } = await startSession(firstPaper.id, firstPaper.ragFileId);
+        console.log('HomeUpload - created session for multiple papers:', conversationId);
+
+        for (let i = 1; i < papers.length; i++) {
+          await addPaperToConversation(conversationId, papers[i].id);
+        }
+
+        setSession({
+          id: conversationId,
+          paperId: firstPaper.id,
+          ragFileId: firstPaper.ragFileId,
+          papers: papers.map((p, index) => ({
+            id: p.id,
+            ragFileId: p.ragFileId,
+            fileName: p.fileName,
+            fileUrl: p.fileUrl || '',
+            orderIndex: index,
+            tabOrder: index,
+          })),
+          messages: [],
+        });
+        nav(`/chat/${conversationId}`);
+      }
     } catch (error) {
       console.error('Upload failed:', error);
       throw error;
@@ -99,12 +139,14 @@ export default function HomeUpload() {
   /**
    * Process upload for guest user (no folder, persisted to localStorage)
    * Navigates to chat immediately, ingest runs in background
+   * Guest is limited to 1 file upload at a time to prevent limit abuse
    */
   const processGuestUpload = async (
-    file: File,
+    files: File[],
     setProgress: (v: number) => void,
   ) => {
     try {
+      const file = files[0];
       const { guestPaper, localUrl } = await guestUploadPdf(file, setProgress);
       console.log('HomeUpload - guest upload:', guestPaper);
 
@@ -148,6 +190,14 @@ export default function HomeUpload() {
         id: guestSessionId,
         paperId: guestPaperObj.id,
         ragFileId: guestPaperObj.ragFileId,
+        papers: [{
+          id: guestPaperObj.id,
+          ragFileId: guestPaperObj.ragFileId,
+          fileName: guestPaperObj.fileName,
+          fileUrl: guestPaperObj.fileUrl,
+          orderIndex: 0,
+          tabOrder: 0,
+        }],
         messages: [],
       });
 
@@ -162,10 +212,10 @@ export default function HomeUpload() {
   /**
    * Handle file upload
    */
-  const onUpload = async (file: File, setProgress: (v: number) => void) => {
+  const onUpload = async (files: File[], setProgress: (v: number) => void) => {
     if (isAuthenticated) {
       // Logged-in user: Show folder selection modal
-      setPendingFile({ file, setProgress });
+      setPendingFiles({ files, setProgress });
       setShowFolderModal(true);
     } else {
       // Check upload limit (1 per session)
@@ -179,7 +229,7 @@ export default function HomeUpload() {
       guestUploadingRef.current = true;
       useGuestLimitStore.getState().tryUseUpload();
       try {
-        await processGuestUpload(file, setProgress);
+        await processGuestUpload(files, setProgress);
       } finally {
         guestUploadingRef.current = false;
       }
@@ -190,10 +240,10 @@ export default function HomeUpload() {
    * Handle folder selection confirm
    */
   const handleFolderConfirm = async (folderId: string | null) => {
-    if (!pendingFile) return;
+    if (!pendingFiles) return;
     await processAuthenticatedUpload(
-      pendingFile.file,
-      pendingFile.setProgress,
+      pendingFiles.files,
+      pendingFiles.setProgress,
       folderId,
     );
   };
@@ -204,7 +254,7 @@ export default function HomeUpload() {
   const handleFolderModalClose = () => {
     if (!isUploading) {
       setShowFolderModal(false);
-      setPendingFile(null);
+      setPendingFiles(null);
     }
   };
 
@@ -271,7 +321,7 @@ export default function HomeUpload() {
       {isAuthenticated && (
         <FolderSelectModal
           open={showFolderModal}
-          fileNames={pendingFile ? [pendingFile.file.name] : []}
+          fileNames={pendingFiles ? pendingFiles.files.map(f => f.name) : []}
           isProcessing={isUploading}
           onClose={handleFolderModalClose}
           onConfirm={handleFolderConfirm}

@@ -19,6 +19,15 @@ interface PaperUIState {
     paperId?: string;
     ragFileId?: string;
     title?: string;
+    papers?: Array<{
+      id: string;
+      ragFileId: string;
+      title?: string;
+      fileName: string;
+      fileUrl: string;
+      orderIndex: number;
+      tabOrder?: number;
+    }>;
   } | null;
 
   // Optimistic messages (for real-time chat experience)
@@ -46,6 +55,15 @@ interface PaperUIState {
     paperId?: string;
     ragFileId?: string;
     title?: string;
+    papers?: Array<{
+      id: string;
+      ragFileId: string;
+      title?: string;
+      fileName: string;
+      fileUrl: string;
+      orderIndex: number;
+      tabOrder?: number;
+    }>;
     messages?: ChatMessage[];
   }) => void;
 
@@ -106,6 +124,7 @@ export const usePaperStore = create<PaperUIState>((set) => ({
         paperId: session.paperId,
         ragFileId: session.ragFileId,
         title: session.title,
+        papers: session.papers,
       },
       optimisticMessages: session.messages ?? [],
       pendingJump: null,
@@ -160,6 +179,15 @@ export interface SessionData {
   paperId?: string;
   ragFileId?: string;
   title?: string;
+  papers?: Array<{
+    id: string;
+    ragFileId: string;
+    title?: string;
+    fileName: string;
+    fileUrl: string;
+    orderIndex: number;
+    tabOrder?: number;
+  }>;
   messages: ChatMessage[];
 }
 
@@ -171,6 +199,7 @@ export const selectSession = (state: PaperUIState): SessionData | null => {
     paperId: state.sessionMeta?.paperId,
     ragFileId: state.sessionMeta?.ragFileId,
     title: state.sessionMeta?.title,
+    papers: state.sessionMeta?.papers,
     messages: state.optimisticMessages,
   };
 };

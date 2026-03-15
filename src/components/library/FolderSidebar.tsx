@@ -9,6 +9,7 @@ import {
   Trash2,
   Loader2,
   BookOpen,
+  History,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { Folder as FolderType } from '../../utils/types';
@@ -75,6 +76,20 @@ export function FolderSidebar({
         >
           <BookOpen className='h-4 w-4' />
           <span>Notebooks</span>
+        </button>
+
+        {/* Chat History quick entry */}
+        <button
+          onClick={() => onSelectView('history')}
+          className={cn(
+            'w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm mt-2 transition-colors',
+            selectedView === 'history'
+              ? 'bg-orange-100 text-orange-700'
+              : 'text-gray-700 hover:bg-gray-100',
+          )}
+        >
+          <History className='h-4 w-4' />
+          <span>Session History</span>
         </button>
 
         <div className='mt-4'>

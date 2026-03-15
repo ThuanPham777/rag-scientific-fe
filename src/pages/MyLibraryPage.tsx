@@ -33,6 +33,7 @@ import {
 //   MovePaperDialog,
 // } from '../components/library';
 import NotebookListTable from '@/components/notebook/NotebookListTable';
+import ChatHistoryTable from '@/components/chat/ChatHistoryTable';
 import ChatDock from '../components/chat/ChatDock';
 import { FolderSelectModal } from '@/components/uploader/FolderSelectModal';
 import { useFolderStore } from '@/store/useFolderStore';
@@ -156,7 +157,7 @@ export default function MyLibraryPage() {
 
   // View state (UI state)
   // If URL has folderId, use it; otherwise default to 'all'
-  const [selectedView, setSelectedView] = useState<'all' | string>(
+  const [selectedView, setSelectedView] = useState<'all' | 'notebooks' | 'history' | string>(
     urlFolderId || 'all',
   );
   const [foldersExpanded, setFoldersExpanded] = useState(true);
@@ -369,7 +370,9 @@ export default function MyLibraryPage() {
       ? 'All files'
       : selectedView === 'notebooks'
         ? 'Notebooks'
-        : selectedFolder?.name || 'Loading...';
+        : selectedView === 'history'
+          ? 'Session History'
+          : selectedFolder?.name || 'Loading...';
 
   // Multi-select handlers
   const selectedPaperIds = selectedPapers.map((p) => p.id);
@@ -432,7 +435,7 @@ export default function MyLibraryPage() {
               </>
             )}
           </div>
-          {selectedView !== 'notebooks' && (
+          {selectedView !== 'notebooks' && selectedView !== 'history' && (
             <div className='flex items-center gap-2'>
               {displayPapers.length > 0 && (
                 <Button
@@ -467,7 +470,9 @@ export default function MyLibraryPage() {
         </header>
 
         <div className='flex-1 overflow-auto'>
-          {selectedView === 'notebooks' ? (
+          {selectedView === 'history' ? (
+            <ChatHistoryTable />
+          ) : selectedView === 'notebooks' ? (
             <NotebookListTable />
           ) : selectedView === 'all' && !isInFolderView ? (
             <PaperSectionList

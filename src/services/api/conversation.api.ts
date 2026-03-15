@@ -5,6 +5,7 @@ import api from '../../config/axios';
 import type {
   ApiResponse,
   Conversation,
+  ConversationHistoryItem,
   SuggestedQuestionsResult,
   FollowUpQuestionsResult,
 } from '../../utils/types';
@@ -85,17 +86,79 @@ export async function deleteConversation(
 }
 
 /**
+ * Get full conversation history (with stats) for the current user
+ */
+export async function getConversationHistory(): Promise<
+  ApiResponse<ConversationHistoryItem[]>
+> {
+  const { data } = await api.get('/conversations/history');
+  return data;
+}
+
+/**
+ * Rename a conversation
+ */
+export async function updateConversation(
+  id: string,
+  payload: { title: string },
+): Promise<ApiResponse<Conversation>> {
+  const { data } = await api.patch(`/conversations/${id}`, payload);
+  return data;
+}
+
+/**
+ * Close a conversation (no further chat)
+ */
+export async function closeConversation(
+  id: string,
+): Promise<{ success: boolean }> {
+  const { data } = await api.patch(`/conversations/${id}/close`);
+  return data;
+}
+
+/**
  * Start a chat session by creating a conversation for a paper
  * This is a convenience wrapper around createConversation that returns only the conversationId
  */
 export async function startSession(
   paperId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _ragFileId?: string,
 ): Promise<{ conversationId: string }> {
   const res = await createConversation(paperId);
   return {
     conversationId: res.data.id,
   };
+}
+
+// ============================================================
+// Multi-Paper Session Management
+// ============================================================
+
+/**
+ * Add a paper to a multi-paper conversation
+ */
+export async function addPaperToConversation(
+  conversationId: string,
+  paperId: string,
+): Promise<ApiResponse<null>> {
+  const { data } = await api.post(`/conversations/${conversationId}/papers`, {
+    paperId,
+  });
+  return data;
+}
+
+/**
+ * Remove a paper from a multi-paper conversation
+ */
+export async function removePaperFromConversation(
+  conversationId: string,
+  paperId: string,
+): Promise<ApiResponse<null>> {
+  const { data } = await api.delete(
+    `/conversations/${conversationId}/papers/${paperId}`,
+  );
+  return data;
 }
 
 // ============================================================

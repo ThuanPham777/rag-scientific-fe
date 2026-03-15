@@ -23,6 +23,9 @@ export {
   useSuggestedQuestions,
   useGenerateSuggestedQuestions,
   useGenerateFollowUpQuestions,
+  useConversationHistory,
+  useUpdateConversation,
+  useCloseConversation,
 } from './useConversationQueries';
 
 // Chat queries and keys
