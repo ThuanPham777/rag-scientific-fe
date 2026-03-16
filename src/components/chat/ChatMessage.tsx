@@ -131,9 +131,14 @@ export default function ChatMessage({
   const navigate = useNavigate();
   const currentUserId = useAuthStore((s) => s.user?.id);
 
-  // In collaborative mode, determine if this message is from the current user
-  // If msg.userId is not set (e.g. optimistic/local messages), assume it's ours
-  const isOwnMessage = isUser && (!msg.userId || msg.userId === currentUserId);
+  // In collaborative mode, use strict userId check — messages without userId
+  // are NOT ours (they may be from other users, created before userId tracking).
+  // In personal mode, fall back to "own" when userId is missing (all USER messages are ours).
+  const isOwnMessage = isUser && (
+    isCollaborative
+      ? msg.userId === currentUserId           // Strict: must match
+      : (!msg.userId || msg.userId === currentUserId) // Personal: fallback to own
+  );
 
   // State for sources section and modal
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -394,162 +399,162 @@ export default function ChatMessage({
               </div>
             ) : (
               <>
-              <MarkdownContent
-                content={msg.content}
-                citations={msg.citations}
-                onJumpToCitation={handleJumpToCitation}
-              />
+                <MarkdownContent
+                  content={msg.content}
+                  citations={msg.citations}
+                  onJumpToCitation={handleJumpToCitation}
+                />
 
-              {/* ── Notebook action buttons (assistant only) ── */}
-              <div className='mt-2 flex items-center gap-2 flex-wrap'>
-                {/* Save to notebook — auto find/create */}
-                <button
-                  className='inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors'
-                  onClick={async () => {
-                    if (!isAuthenticated) { setShowNbAuthModal(true); return; }
-                    setNbSaving(true);
-                    try {
-                      const targetTitle = `Note from AI chat with ${currentPaper?.title || currentPaper?.fileName || 'AI'}`;
-                      const allNbs = await notebookService.list();
-                      const existing = allNbs.find((nb: any) => nb.title === targetTitle);
-                      let notebookId: string;
-                      const htmlContent = mdToHtml(msg.content);
-                      if (existing) {
-                        const full = await notebookService.get(existing.id);
-                        const appended = (full.content || '') + htmlContent;
-                        await notebookService.update(existing.id, { content: appended });
-                        notebookId = existing.id;
-                      } else {
-                        const created = await notebookService.create({ title: targetTitle, content: htmlContent });
-                        notebookId = created.id;
-                      }
-                      const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
-                      setPendingNotebookId(notebookId);
-                      openNotebooks();
-                    } catch (err) {
-                      console.error('Failed to save to notebook', err);
-                    } finally {
-                      setNbSaving(false);
-                    }
-                  }}
-                  disabled={nbSaving}
-                >
-                  <NotebookPen size={14} />
-                  {nbSaving ? 'Saving...' : 'Save to notebook'}
-                </button>
-
-                {/* Select a notebook — picker toggle */}
-                <div className='relative'>
+                {/* ── Notebook action buttons (assistant only) ── */}
+                <div className='mt-2 flex items-center gap-2 flex-wrap'>
+                  {/* Save to notebook — auto find/create */}
                   <button
                     className='inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors'
                     onClick={async () => {
                       if (!isAuthenticated) { setShowNbAuthModal(true); return; }
-                      if (showNbPicker) { setShowNbPicker(false); return; }
-                      setShowNbPicker(true);
-                      setNbSearch('');
-                      setNbLoading(true);
+                      setNbSaving(true);
                       try {
-                        const list = await notebookService.list();
-                        setNbList(list);
+                        const targetTitle = `Note from AI chat with ${currentPaper?.title || currentPaper?.fileName || 'AI'}`;
+                        const allNbs = await notebookService.list();
+                        const existing = allNbs.find((nb: any) => nb.title === targetTitle);
+                        let notebookId: string;
+                        const htmlContent = mdToHtml(msg.content);
+                        if (existing) {
+                          const full = await notebookService.get(existing.id);
+                          const appended = (full.content || '') + htmlContent;
+                          await notebookService.update(existing.id, { content: appended });
+                          notebookId = existing.id;
+                        } else {
+                          const created = await notebookService.create({ title: targetTitle, content: htmlContent });
+                          notebookId = created.id;
+                        }
+                        const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
+                        setPendingNotebookId(notebookId);
+                        openNotebooks();
                       } catch (err) {
-                        console.error('Failed to load notebooks', err);
+                        console.error('Failed to save to notebook', err);
                       } finally {
-                        setNbLoading(false);
+                        setNbSaving(false);
                       }
                     }}
+                    disabled={nbSaving}
                   >
-                    <ListTree size={14} />
-                    Select a notebook
-                    <ChevronDown size={12} />
+                    <NotebookPen size={14} />
+                    {nbSaving ? 'Saving...' : 'Save to notebook'}
                   </button>
 
-                  {showNbPicker && (
-                    <div className='absolute left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50'>
-                      {/* Search */}
-                      <div className='flex items-center gap-2 px-3 py-2 border-b border-gray-100'>
-                        <Search size={14} className='text-gray-400 flex-shrink-0' />
-                        <input
-                          autoFocus
-                          value={nbSearch}
-                          onChange={(e) => setNbSearch(e.target.value)}
-                          placeholder='Search'
-                          className='flex-1 text-sm outline-none bg-transparent placeholder:text-gray-400'
-                        />
-                      </div>
-                      {/* List */}
-                      <div className='max-h-48 overflow-y-auto'>
-                        {nbLoading ? (
-                          <div className='px-3 py-4 text-center text-sm text-gray-400'>Loading...</div>
-                        ) : (() => {
-                          const filtered = nbSearch.trim()
-                            ? nbList.filter((nb: any) => (nb.title || 'Untitled').toLowerCase().includes(nbSearch.toLowerCase()))
-                            : nbList;
-                          return filtered.length === 0 ? (
-                            <div className='px-3 py-4 text-center text-sm text-gray-400'>{nbSearch ? 'No notebooks found' : 'No notebooks yet'}</div>
-                          ) : (
-                            filtered.map((nb: any) => (
-                              <button
-                                key={nb.id}
-                                className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-sm disabled:opacity-50'
-                                disabled={nbSaving}
-                                onClick={async () => {
-                                  setNbSaving(true);
-                                  try {
-                                    const full = await notebookService.get(nb.id);
-                                    const appended = (full.content || '') + mdToHtml(msg.content);
-                                    await notebookService.update(nb.id, { content: appended });
-                                    const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
-                                    setPendingNotebookId(nb.id);
-                                    openNotebooks();
-                                  } catch (err) {
-                                    console.error('Failed to save to notebook', err);
-                                  } finally {
-                                    setNbSaving(false);
-                                    setShowNbPicker(false);
-                                  }
-                                }}
-                              >
-                                {nb.title || 'Untitled'}
-                              </button>
-                            ))
-                          );
-                        })()}
-                      </div>
-                      {/* Create new */}
-                      <div className='border-t border-gray-100'>
-                        <button
-                          className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-sm font-medium'
-                          disabled={nbSaving}
-                          onClick={async () => {
-                            setNbSaving(true);
-                            try {
-                              const created = await notebookService.create({ title: 'Untitled', content: mdToHtml(msg.content) });
-                              const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
-                              setPendingNotebookId(created.id);
-                              openNotebooks();
-                            } catch (err) {
-                              console.error('Failed to create notebook', err);
-                            } finally {
-                              setNbSaving(false);
-                              setShowNbPicker(false);
-                            }
-                          }}
-                        >
-                          <Plus size={14} /> Create New Notebook
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+                  {/* Select a notebook — picker toggle */}
+                  <div className='relative'>
+                    <button
+                      className='inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors'
+                      onClick={async () => {
+                        if (!isAuthenticated) { setShowNbAuthModal(true); return; }
+                        if (showNbPicker) { setShowNbPicker(false); return; }
+                        setShowNbPicker(true);
+                        setNbSearch('');
+                        setNbLoading(true);
+                        try {
+                          const list = await notebookService.list();
+                          setNbList(list);
+                        } catch (err) {
+                          console.error('Failed to load notebooks', err);
+                        } finally {
+                          setNbLoading(false);
+                        }
+                      }}
+                    >
+                      <ListTree size={14} />
+                      Select a notebook
+                      <ChevronDown size={12} />
+                    </button>
 
-              {/* Auth modal for notebook actions */}
-              <AuthModal
-                isOpen={showNbAuthModal}
-                onClose={() => setShowNbAuthModal(false)}
-                initialMode='login'
-                onLoginSuccess={() => setShowNbAuthModal(false)}
-              />
+                    {showNbPicker && (
+                      <div className='absolute left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50'>
+                        {/* Search */}
+                        <div className='flex items-center gap-2 px-3 py-2 border-b border-gray-100'>
+                          <Search size={14} className='text-gray-400 flex-shrink-0' />
+                          <input
+                            autoFocus
+                            value={nbSearch}
+                            onChange={(e) => setNbSearch(e.target.value)}
+                            placeholder='Search'
+                            className='flex-1 text-sm outline-none bg-transparent placeholder:text-gray-400'
+                          />
+                        </div>
+                        {/* List */}
+                        <div className='max-h-48 overflow-y-auto'>
+                          {nbLoading ? (
+                            <div className='px-3 py-4 text-center text-sm text-gray-400'>Loading...</div>
+                          ) : (() => {
+                            const filtered = nbSearch.trim()
+                              ? nbList.filter((nb: any) => (nb.title || 'Untitled').toLowerCase().includes(nbSearch.toLowerCase()))
+                              : nbList;
+                            return filtered.length === 0 ? (
+                              <div className='px-3 py-4 text-center text-sm text-gray-400'>{nbSearch ? 'No notebooks found' : 'No notebooks yet'}</div>
+                            ) : (
+                              filtered.map((nb: any) => (
+                                <button
+                                  key={nb.id}
+                                  className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-sm disabled:opacity-50'
+                                  disabled={nbSaving}
+                                  onClick={async () => {
+                                    setNbSaving(true);
+                                    try {
+                                      const full = await notebookService.get(nb.id);
+                                      const appended = (full.content || '') + mdToHtml(msg.content);
+                                      await notebookService.update(nb.id, { content: appended });
+                                      const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
+                                      setPendingNotebookId(nb.id);
+                                      openNotebooks();
+                                    } catch (err) {
+                                      console.error('Failed to save to notebook', err);
+                                    } finally {
+                                      setNbSaving(false);
+                                      setShowNbPicker(false);
+                                    }
+                                  }}
+                                >
+                                  {nb.title || 'Untitled'}
+                                </button>
+                              ))
+                            );
+                          })()}
+                        </div>
+                        {/* Create new */}
+                        <div className='border-t border-gray-100'>
+                          <button
+                            className='w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-sm font-medium'
+                            disabled={nbSaving}
+                            onClick={async () => {
+                              setNbSaving(true);
+                              try {
+                                const created = await notebookService.create({ title: 'Untitled', content: mdToHtml(msg.content) });
+                                const { openNotebooks, setPendingNotebookId } = useUiStore.getState();
+                                setPendingNotebookId(created.id);
+                                openNotebooks();
+                              } catch (err) {
+                                console.error('Failed to create notebook', err);
+                              } finally {
+                                setNbSaving(false);
+                                setShowNbPicker(false);
+                              }
+                            }}
+                          >
+                            <Plus size={14} /> Create New Notebook
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Auth modal for notebook actions */}
+                <AuthModal
+                  isOpen={showNbAuthModal}
+                  onClose={() => setShowNbAuthModal(false)}
+                  initialMode='login'
+                  onLoginSuccess={() => setShowNbAuthModal(false)}
+                />
               </>
             )}
 

@@ -1513,7 +1513,7 @@ export default function ChatPage() {
       <ChatDock
         session={activeSession as any}
         messages={messages}
-        mode={conversationData?.type === 'MULTI_PAPER' ? 'multi' : 'single'}
+        mode={conversationData?.type === 'MULTI_PAPER' || (sessionMeta?.papers?.length || 0) > 1 ? 'multi' : 'single'}
         selectedPapers={sessionMeta?.papers || []}
         onSend={onSend}
         onClearChatHistory={handleClearChatHistory}

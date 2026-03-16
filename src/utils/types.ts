@@ -363,6 +363,14 @@ export type SessionDetail = {
   paperTitle?: string;
   paperFileName?: string;
   paperUrl?: string;
+  paperRagFileId?: string;
+  papers?: Array<{
+    id: string;
+    title: string;
+    fileName: string;
+    fileUrl: string;
+    ragFileId?: string;
+  }>;
   createdAt: string;
 };
 

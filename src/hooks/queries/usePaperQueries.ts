@@ -76,7 +76,7 @@ export function usePaper(id: string | undefined) {
       const response = await getPaper(id!);
       return response.data;
     },
-    enabled: !!id,
+    enabled: !!id && !id.startsWith('uploading-'),
     staleTime: 5 * 60 * 1000, // 5 minutes - paper details don't change often
     // Poll every 3s while the paper is still being ingested; stop once done.
     refetchInterval: (query) => {

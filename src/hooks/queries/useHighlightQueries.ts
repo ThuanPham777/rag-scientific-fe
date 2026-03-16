@@ -43,7 +43,7 @@ export function useHighlights(paperId: string | undefined, enabled = true) {
       const res = await getHighlightsByPaper(paperId);
       return res.data;
     },
-    enabled: enabled && !!paperId,
+    enabled: enabled && !!paperId && !paperId.startsWith('uploading-'),
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 }

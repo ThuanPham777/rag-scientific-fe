@@ -58,10 +58,24 @@ export default function JoinSessionPage() {
             createdAt: new Date().toISOString(),
           } as any);
 
+          // Build papers array for multi-paper collab sessions
+          const sessionPapers = d.papers?.length
+            ? d.papers.map((p: any, idx: number) => ({
+              id: p.id,
+              ragFileId: p.ragFileId || '',
+              title: p.title || p.fileName || '',
+              fileName: p.fileName || '',
+              fileUrl: p.fileUrl || '',
+              orderIndex: idx,
+              tabOrder: idx,
+            }))
+            : undefined;
+
           usePaperStore.getState().setSession({
             id: conversationId,
             paperId: d.paperId,
             ragFileId,
+            papers: sessionPapers,
             messages: [],
           });
         }
