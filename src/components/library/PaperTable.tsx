@@ -112,7 +112,8 @@ export function PaperTable({
               />
             </div>
           )}
-          <div className={selectable ? 'col-span-4' : 'col-span-4'}>
+          {/* When selectable=true we must keep total grid spans = 12 (avoid Actions wrapping). */}
+          <div className={selectable ? 'col-span-3' : 'col-span-4'}>
             Files ({papers.length}/{totalPapers})
           </div>
           <div className='col-span-2'>Title</div>
@@ -145,7 +146,7 @@ export function PaperTable({
                 </div>
               )}
               <div
-                className={`${selectable ? 'col-span-4' : 'col-span-4'} flex items-start gap-3 min-w-0`}
+                className={`${selectable ? 'col-span-3' : 'col-span-4'} flex items-start gap-3 min-w-0`}
               >
                 <div className='shrink-0 w-10 h-12 bg-red-100 rounded flex items-center justify-center'>
                   <FileText className='h-5 w-5 text-red-600' />

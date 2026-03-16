@@ -16,6 +16,7 @@ import { useGuestStore, isGuestSession } from '../../store/useGuestStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUiStore } from '../../store/useUiStore';
 import { findCitation } from '../../utils/citation';
+import { normalizePdfHyphenation } from '../../utils/text';
 import { createConversation, listConversations } from '../../services';
 import notebookService from '@/services/notebookService';
 import type { ChatMessage as Msg, Citation } from '../../utils/types';
@@ -398,10 +399,12 @@ export default function ChatMessage({
                     <span className='font-semibold text-yellow-200'>
                       @Assistant
                     </span>
-                    {msg.content.replace(/^@Assistant\s*/i, ' ')}
+                    {normalizePdfHyphenation(
+                      msg.content.replace(/^@Assistant\s*/i, ' '),
+                    )}
                   </>
                 ) : (
-                  msg.content
+                  normalizePdfHyphenation(msg.content)
                 )}
               </div>
             ) : (
@@ -518,10 +521,10 @@ export default function ChatMessage({
                             (() => {
                               const filtered = nbSearch.trim()
                                 ? nbList.filter((nb: any) =>
-                                    (nb.title || 'Untitled')
-                                      .toLowerCase()
-                                      .includes(nbSearch.toLowerCase()),
-                                  )
+                                  (nb.title || 'Untitled')
+                                    .toLowerCase()
+                                    .includes(nbSearch.toLowerCase()),
+                                )
                                 : nbList;
                               return filtered.length === 0 ? (
                                 <div className='px-3 py-4 text-center text-sm text-gray-400'>
