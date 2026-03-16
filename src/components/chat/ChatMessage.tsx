@@ -164,8 +164,10 @@ export default function ChatMessage({
   const [nbSaving, setNbSaving] = useState(false);
   const [showNbAuthModal, setShowNbAuthModal] = useState(false);
 
-  // Paper title for notebook naming
+  // Paper + session info for notebook naming and multi-paper navigation
   const currentPaper = usePaperStore((s) => s.currentPaper);
+  const sessionMeta = usePaperStore((s) => s.sessionMeta);
+  const setCurrentPaper = usePaperStore((s) => s.setCurrentPaper);
 
   // Get setPendingJump from appropriate store
   const paperStorePendingJump = usePaperStore((s) => s.setPendingJump);
@@ -178,6 +180,47 @@ export default function ChatMessage({
   const setPendingJump = isGuest
     ? guestStorePendingJump
     : paperStorePendingJump;
+
+  /**
+   * When in a multi-paper conversation (tabbed PDF view), jump to a citation
+   * that belongs to another paper within the same session by switching the
+   * active tab + setting pendingJump, instead of navigating to a new
+   * single-paper ChatPage.
+   *
+   * Returns true if the citation was handled inside the current multi-paper
+   * session, false if caller should fall back to legacy navigation behavior.
+   */
+  const jumpWithinSessionIfPossible = useCallback(
+    (citation: Citation): boolean => {
+      if (!citation.sourcePaperId || !citation.page) return false;
+
+      const papers = sessionMeta?.papers;
+      if (!papers || papers.length <= 1) return false;
+
+      const target = papers.find((p) => p.id === citation.sourcePaperId);
+      if (!target) return false;
+
+      // Switch active tab/paper in the same conversation
+      setCurrentPaper({
+        id: target.id,
+        ragFileId: target.ragFileId,
+        fileName: target.fileName,
+        fileUrl: target.fileUrl || '',
+        status: (target as any).status || 'COMPLETED',
+        createdAt: new Date().toISOString(),
+      } as any);
+
+      // Trigger jump inside PdfPanel for the newly active paper
+      setPendingJump(
+        citation.rect
+          ? { pageNumber: citation.page, rect: citation.rect }
+          : { pageNumber: citation.page },
+      );
+
+      return true;
+    },
+    [sessionMeta?.papers, setCurrentPaper, setPendingJump],
+  );
 
   /**
    * Check if citation is from a different paper (multi-paper mode)
@@ -254,8 +297,12 @@ export default function ChatMessage({
 
       // Check if multi-paper citation - navigate to that paper's ChatPage
       if (isMultiPaperCitation(citation)) {
-        console.log('Navigating to cited paper for citation', citation);
-        navigateToCitedPaper(citation);
+        // First, try to handle inside current multi-paper session (tab switch)
+        const handledInSession = jumpWithinSessionIfPossible(citation);
+        if (!handledInSession) {
+          console.log('Navigating to cited paper for citation', citation);
+          navigateToCitedPaper(citation);
+        }
         return;
       }
 
@@ -277,7 +324,10 @@ export default function ChatMessage({
     (citation: Citation) => {
       // Check if multi-paper citation - navigate to that paper's ChatPage
       if (isMultiPaperCitation(citation)) {
-        navigateToCitedPaper(citation);
+        const handledInSession = jumpWithinSessionIfPossible(citation);
+        if (!handledInSession) {
+          navigateToCitedPaper(citation);
+        }
         return;
       }
 
@@ -290,7 +340,12 @@ export default function ChatMessage({
         );
       }
     },
-    [setPendingJump, isMultiPaperCitation, navigateToCitedPaper],
+    [
+      setPendingJump,
+      isMultiPaperCitation,
+      navigateToCitedPaper,
+      jumpWithinSessionIfPossible,
+    ],
   );
 
   /**
