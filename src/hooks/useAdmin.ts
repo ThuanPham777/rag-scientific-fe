@@ -10,6 +10,7 @@ import {
     createAdminUser,
     deleteAdminUser,
     resetAdminUserPassword,
+    getUsageStats,
 } from '../services/api/admin.api';
 
 // ============================================================
@@ -27,6 +28,13 @@ export function useAdminRecentUsers(limit: number = 10) {
     return useQuery({
         queryKey: ['admin', 'recent-users', limit],
         queryFn: () => getRecentUsers(limit),
+    });
+}
+
+export function useAdminUsageStats(days: number = 7) {
+    return useQuery({
+        queryKey: ['admin', 'usage-stats', days],
+        queryFn: () => getUsageStats(days),
     });
 }
 

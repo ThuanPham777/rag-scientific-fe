@@ -61,6 +61,7 @@
     "react-pdf": "^10.1.0",
     "react-pdf-highlighter": "^8.0.0-rc.0",
     "react-router-dom": "^7.9.3",
+    "recharts": "^3.8.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",

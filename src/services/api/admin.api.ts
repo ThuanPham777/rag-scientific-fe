@@ -135,3 +135,43 @@ export async function resetAdminUserPassword(userId: string) {
     const { data } = await api.post(`/admin/users/${userId}/reset-password`);
     return data;
 }
+
+// ============================================================
+// LLM USAGE STATS
+// ============================================================
+
+export interface UsageByModel {
+    model: string;
+    provider: string;
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+}
+
+export interface UsageByDay {
+    date: string;
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+}
+
+export interface UsageByPurpose {
+    purpose: string;
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+}
+
+export interface UsageStats {
+    totalCalls: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    callsByModel: UsageByModel[];
+    callsByDay: UsageByDay[];
+    callsByPurpose: UsageByPurpose[];
+}
+
+export async function getUsageStats(days: number = 7): Promise<{ data: UsageStats }> {
+    const { data } = await api.get(`/admin/usage-stats?days=${days}`);
+    return data;
+}
