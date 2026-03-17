@@ -11,6 +11,7 @@ import {
     RefreshCw,
     Trash2,
 } from 'lucide-react';
+import PaginationBar from '../../components/common/PaginationBar';
 import {
     useAdminUserDetail,
     useAdminUserPapers,
@@ -277,27 +278,13 @@ export default function AdminUserDetailPage() {
                 )}
 
                 {pagination && pagination.totalPages > 1 && (
-                    <div className='px-6 py-4 border-t flex items-center justify-between text-sm bg-gray-50'>
-                        <span className='text-gray-500'>
-                            Trang {pagination.page} của {pagination.totalPages}
-                        </span>
-                        <div className='flex gap-2'>
-                            <button
-                                className='px-4 py-2 border border-gray-200 rounded-lg hover:bg-white bg-gray-50 shadow-sm font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all'
-                                disabled={!pagination.hasPrev}
-                                onClick={() => setPaperPage((p) => p - 1)}
-                            >
-                                Trước
-                            </button>
-                            <button
-                                className='px-4 py-2 border border-gray-200 rounded-lg hover:bg-white bg-gray-50 shadow-sm font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all'
-                                disabled={!pagination.hasNext}
-                                onClick={() => setPaperPage((p) => p + 1)}
-                            >
-                                Tiếp
-                            </button>
-                        </div>
-                    </div>
+                    <PaginationBar
+                        page={pagination.page}
+                        totalPages={pagination.totalPages}
+                        total={pagination.total}
+                        label='papers'
+                        onPageChange={setPaperPage}
+                    />
                 )}
             </div>
 

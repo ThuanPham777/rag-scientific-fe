@@ -22,15 +22,18 @@ function buildMigratePayload(): GuestMigratePayload | null {
 
   if (!currentPaper || !currentSession) return null;
 
-  const messages = currentSession.messages.map((msg: ChatMessage) => ({
-    role: msg.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-    content: msg.content,
-    imageUrl: msg.imageUrl || msg.imageDataUrl || undefined,
-    modelName: msg.modelName,
-    tokenCount: msg.tokenCount,
-    citations: msg.citations,
-    createdAt: msg.createdAt,
-  }));
+  // Filter out messages with empty content (would fail backend validation)
+  const messages = currentSession.messages
+    .filter((msg: ChatMessage) => msg.content && msg.content.trim())
+    .map((msg: ChatMessage) => ({
+      role: msg.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: msg.content,
+      imageUrl: msg.imageUrl || msg.imageDataUrl || undefined,
+      modelName: msg.modelName,
+      tokenCount: msg.tokenCount,
+      citations: msg.citations,
+      createdAt: msg.createdAt,
+    }));
 
   return {
     ragFileId: currentPaper.ragFileId,
@@ -121,9 +124,14 @@ export function useGuestMigration() {
           paperId: result.paperId,
           pendingQuestion,
         };
-      } catch (error) {
+      } catch (error: any) {
         console.error('Guest migration failed:', error);
-        // Don't clear guest data on failure — user can retry
+        // Clear stale guest data on 4xx errors to prevent infinite retry
+        const status = error?.response?.status;
+        if (status && status >= 400 && status < 500) {
+          console.warn('Clearing stale guest data due to', status, 'error');
+          useGuestStore.getState().clearGuestData();
+        }
         return null;
       } finally {
         isMigrating.current = false;

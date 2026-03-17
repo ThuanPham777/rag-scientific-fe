@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Database, Search, FileText, Copy, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
-import axios from 'axios';
-
-const RAG_URL = import.meta.env.VITE_RAG_URL || 'http://localhost:8000';
+import { Database, Search, FileText, Copy, RefreshCw } from 'lucide-react';
+import { getKbExplorerStats, getKbExplorerDuplicates, getKbExplorerChunks } from '../../services/api/adminConfig.api';
+import PaginationBar from '../../components/common/PaginationBar';
 
 interface CollectionStats {
     total_chunks: number;
@@ -16,6 +15,11 @@ interface ChunkData {
     content: string;
     metadata: Record<string, any>;
 }
+
+const COLLECTIONS = [
+    { key: 'content_store', label: 'Content Store' },
+    { key: 'system_knowledge_base', label: 'System Knowledge Base' },
+] as const;
 
 const MODALITY_COLORS: Record<string, string> = {
     text: 'bg-blue-100 text-blue-700',
@@ -31,6 +35,7 @@ export default function KBExplorerPage() {
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [chunksLoading, setChunksLoading] = useState(false);
     const [filterPaperId, setFilterPaperId] = useState('');
     const [filterCategory, setFilterCategory] = useState('');
@@ -41,12 +46,16 @@ export default function KBExplorerPage() {
     // Load stats
     useEffect(() => {
         setLoading(true);
-        axios.get(`${RAG_URL}/inspect/collection-stats`)
+        setError(null);
+        getKbExplorerStats()
             .then((res) => setStats(res.data))
-            .catch(() => setStats({}))
+            .catch((err) => {
+                setStats({});
+                setError(`Không thể tải stats: ${err?.response?.status === 404 ? 'Endpoint chưa có — hãy restart NestJS backend' : err?.message}`);
+            })
             .finally(() => setLoading(false));
 
-        axios.get(`${RAG_URL}/inspect/duplicates`)
+        getKbExplorerDuplicates()
             .then((res) => setDuplicates(res.data.duplicates || []))
             .catch(() => setDuplicates([]));
     }, []);
@@ -58,7 +67,7 @@ export default function KBExplorerPage() {
         if (filterPaperId) params.paper_id = filterPaperId;
         if (filterCategory) params.category = filterCategory;
 
-        axios.get(`${RAG_URL}/inspect/chunks`, { params })
+        getKbExplorerChunks(params)
             .then((res) => {
                 setChunks(res.data.chunks || []);
                 setTotal(res.data.total || 0);
@@ -92,18 +101,30 @@ export default function KBExplorerPage() {
                 <p className='text-gray-500 mt-1'>Khám phá vector store: chunks, statistics, và duplicates</p>
             </div>
 
-            {/* Collection Selector */}
+            {/* Error banner */}
+            {error && (
+                <div className='mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800'>
+                    ⚠️ {error}
+                </div>
+            )}
+
+            {/* Collection Selector — always shows both tabs */}
             <div className='flex gap-3 mb-6'>
-                {Object.keys(stats).map((col) => (
+                {COLLECTIONS.map(({ key, label }) => (
                     <button
-                        key={col}
-                        onClick={() => { setCollection(col); setPage(1); }}
-                        className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${collection === col
-                                ? 'bg-indigo-600 text-white shadow-md'
-                                : 'bg-white text-gray-600 border hover:bg-gray-50'
+                        key={key}
+                        onClick={() => { setCollection(key); setPage(1); }}
+                        className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${collection === key
+                            ? 'bg-indigo-600 text-white shadow-md'
+                            : 'bg-white text-gray-600 border hover:bg-gray-50'
                             }`}
                     >
-                        {col}
+                        {label}
+                        {stats[key] && (
+                            <span className='ml-2 text-xs opacity-75'>
+                                ({stats[key].total_chunks.toLocaleString()})
+                            </span>
+                        )}
                     </button>
                 ))}
             </div>
@@ -213,27 +234,13 @@ export default function KBExplorerPage() {
                 )}
 
                 {/* Pagination */}
-                {totalPages > 1 && (
-                    <div className='px-6 py-3 border-t flex items-center justify-between text-sm text-gray-500'>
-                        <span>Trang {page} / {totalPages} ({total} chunks)</span>
-                        <div className='flex gap-2'>
-                            <button
-                                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                disabled={page <= 1}
-                                className='p-1.5 hover:bg-gray-100 rounded disabled:opacity-30'
-                            >
-                                <ChevronLeft size={16} />
-                            </button>
-                            <button
-                                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                                disabled={page >= totalPages}
-                                className='p-1.5 hover:bg-gray-100 rounded disabled:opacity-30'
-                            >
-                                <ChevronRight size={16} />
-                            </button>
-                        </div>
-                    </div>
-                )}
+                <PaginationBar
+                    page={page}
+                    totalPages={totalPages}
+                    total={total}
+                    label='chunks'
+                    onPageChange={setPage}
+                />
             </div>
 
             {/* Duplicates */}

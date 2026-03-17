@@ -11,6 +11,7 @@ import {
     getKbPapers,
     addPaperToKb,
     removePaperFromKb,
+    bulkRemovePapersFromKb,
     classifyPaper,
     getAllPapers,
     getChunksPreview,
@@ -128,6 +129,16 @@ export function useRemovePaperFromKb() {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: removePaperFromKb,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin', 'kb'] });
+        },
+    });
+}
+
+export function useBulkRemovePapersFromKb() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (paperIds: string[]) => bulkRemovePapersFromKb(paperIds),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['admin', 'kb'] });
         },

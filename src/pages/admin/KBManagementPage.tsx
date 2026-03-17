@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import {
     BookOpen, Plus, Trash2, Edit3, FolderTree, FileText, Tag, ChevronRight, ChevronDown, X,
 } from 'lucide-react';
+import PaginationBar from '../../components/common/PaginationBar';
 import {
     useKbCategories, useCreateKbCategory, useUpdateKbCategory, useDeleteKbCategory,
-    useKbPapers, useRemovePaperFromKb,
+    useKbPapers, useRemovePaperFromKb, useBulkRemovePapersFromKb,
 } from '../../hooks/useAdminConfig';
 
 function CategoryNode({ cat, depth = 0, onEdit, onDelete }: any) {
@@ -52,19 +53,52 @@ function CategoryNode({ cat, depth = 0, onEdit, onDelete }: any) {
 
 export default function KBManagementPage() {
     const { data: catRes, isLoading: catLoading } = useKbCategories();
-    const { data: papersRes, isLoading: papersLoading } = useKbPapers({ page: 1, limit: 50 });
+    const [paperPage, setPaperPage] = useState(1);
+    const paperLimit = 20;
+    const { data: papersRes, isLoading: papersLoading } = useKbPapers({ page: paperPage, limit: paperLimit });
     const createCategory = useCreateKbCategory();
     const updateCategory = useUpdateKbCategory();
     const deleteCategory = useDeleteKbCategory();
     const removePaper = useRemovePaperFromKb();
+    const bulkRemove = useBulkRemovePapersFromKb();
 
     const [showCreate, setShowCreate] = useState(false);
     const [editCat, setEditCat] = useState<any>(null);
     const [form, setForm] = useState({ name: '', slug: '', description: '', parentId: '' });
+    const [selectedPapers, setSelectedPapers] = useState<Set<string>>(new Set());
     const navigate = useNavigate();
 
     const categories = catRes?.data?.data || [];
     const papers = papersRes?.data?.papers || [];
+    const paperTotal = papersRes?.data?.total || 0;
+    const paperTotalPages = papersRes?.data?.totalPages || 1;
+
+    // Selection helpers
+    const isAllSelected = papers.length > 0 && papers.every((p: any) => selectedPapers.has(p.id));
+    const toggleSelect = (id: string) => {
+        setSelectedPapers((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+    const toggleSelectAll = () => {
+        if (isAllSelected) {
+            setSelectedPapers(new Set());
+        } else {
+            setSelectedPapers(new Set(papers.map((p: any) => p.id)));
+        }
+    };
+    const handleBulkRemove = async () => {
+        if (!selectedPapers.size) return;
+        if (!confirm(`Xóa ${selectedPapers.size} papers khỏi System KB?`)) return;
+        try {
+            await bulkRemove.mutateAsync(Array.from(selectedPapers));
+            setSelectedPapers(new Set());
+        } catch (e) {
+            console.error(e);
+        }
+    };
 
     const handleCreate = async () => {
         try {
@@ -186,8 +220,30 @@ export default function KBManagementPage() {
                         <div className='px-6 py-4 border-b flex items-center gap-2'>
                             <FileText size={18} className='text-indigo-600' />
                             <h3 className='font-semibold text-gray-900'>Papers trong KB</h3>
-                            <span className='ml-auto text-sm text-gray-400'>{papers.length} papers</span>
+                            <span className='ml-auto text-sm text-gray-400'>{paperTotal} papers</span>
                         </div>
+                        {/* Bulk Action Bar */}
+                        {selectedPapers.size > 0 && (
+                            <div className='px-6 py-2.5 bg-red-50 border-b flex items-center gap-3'>
+                                <span className='text-sm font-medium text-red-700'>
+                                    Đã chọn {selectedPapers.size} paper{selectedPapers.size > 1 ? 's' : ''}
+                                </span>
+                                <button
+                                    onClick={handleBulkRemove}
+                                    disabled={bulkRemove.isPending}
+                                    className='ml-auto px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1.5 disabled:opacity-50'
+                                >
+                                    <Trash2 size={13} />
+                                    {bulkRemove.isPending ? 'Đang xóa...' : 'Xóa khỏi KB'}
+                                </button>
+                                <button
+                                    onClick={() => setSelectedPapers(new Set())}
+                                    className='px-3 py-1.5 text-xs text-gray-600 hover:bg-red-100 rounded-lg transition-colors'
+                                >
+                                    Bỏ chọn
+                                </button>
+                            </div>
+                        )}
                         {papersLoading ? (
                             <div className='p-12 text-center text-gray-500'>Đang tải...</div>
                         ) : papers.length === 0 ? (
@@ -200,20 +256,36 @@ export default function KBManagementPage() {
                                 <table className='w-full text-left'>
                                     <thead>
                                         <tr className='bg-gray-50 border-b text-xs uppercase tracking-wider text-gray-500'>
-                                            <th className='px-6 py-3 font-medium'>Title</th>
-                                            <th className='px-6 py-3 font-medium'>Categories</th>
-                                            <th className='px-6 py-3 font-medium'>Tags</th>
-                                            <th className='px-6 py-3 font-medium w-16'></th>
+                                            <th className='px-4 py-3 w-10'>
+                                                <input
+                                                    type='checkbox'
+                                                    checked={isAllSelected}
+                                                    onChange={toggleSelectAll}
+                                                    className='w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer'
+                                                />
+                                            </th>
+                                            <th className='px-4 py-3 font-medium'>Title</th>
+                                            <th className='px-4 py-3 font-medium'>Categories</th>
+                                            <th className='px-4 py-3 font-medium'>Tags</th>
+                                            <th className='px-4 py-3 font-medium w-12'></th>
                                         </tr>
                                     </thead>
                                     <tbody className='divide-y divide-gray-100'>
                                         {papers.map((paper: any) => (
-                                            <tr key={paper.id} className='hover:bg-gray-50/50 transition-colors'>
-                                                <td className='px-6 py-3'>
+                                            <tr key={paper.id} className={`hover:bg-gray-50/50 transition-colors ${selectedPapers.has(paper.id) ? 'bg-indigo-50/40' : ''}`}>
+                                                <td className='px-4 py-3'>
+                                                    <input
+                                                        type='checkbox'
+                                                        checked={selectedPapers.has(paper.id)}
+                                                        onChange={() => toggleSelect(paper.id)}
+                                                        className='w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer'
+                                                    />
+                                                </td>
+                                                <td className='px-4 py-3'>
                                                     <div className='text-sm font-medium text-gray-900'>{paper.title || paper.fileName}</div>
                                                     <div className='text-xs text-gray-400'>{paper.fileName}</div>
                                                 </td>
-                                                <td className='px-6 py-3'>
+                                                <td className='px-4 py-3'>
                                                     <div className='flex flex-wrap gap-1'>
                                                         {paper.kbPaperCategories?.map((pc: any) => (
                                                             <span key={pc.category.id} className='text-xs px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full'>
@@ -222,7 +294,7 @@ export default function KBManagementPage() {
                                                         ))}
                                                     </div>
                                                 </td>
-                                                <td className='px-6 py-3'>
+                                                <td className='px-4 py-3'>
                                                     <div className='flex flex-wrap gap-1'>
                                                         {(paper.kbTags || []).slice(0, 3).map((tag: string) => (
                                                             <span key={tag} className='text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full'>
@@ -231,7 +303,7 @@ export default function KBManagementPage() {
                                                         ))}
                                                     </div>
                                                 </td>
-                                                <td className='px-6 py-3'>
+                                                <td className='px-4 py-3'>
                                                     <button
                                                         onClick={() => removePaper.mutate(paper.id)}
                                                         className='p-1.5 hover:bg-red-100 rounded-lg text-red-500 transition-colors'
@@ -246,6 +318,14 @@ export default function KBManagementPage() {
                                 </table>
                             </div>
                         )}
+                        {/* Pagination */}
+                        <PaginationBar
+                            page={paperPage}
+                            totalPages={paperTotalPages}
+                            total={paperTotal}
+                            label='papers'
+                            onPageChange={(p) => { setPaperPage(p); setSelectedPapers(new Set()); }}
+                        />
                     </div>
                 </div>
             </div>

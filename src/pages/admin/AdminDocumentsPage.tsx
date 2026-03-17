@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react';
 import { FileText, Search, RefreshCw, User, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAllPapers, useChunksPreview, useDeletePaper } from '../../hooks/useAdminConfig';
+import PaginationBar from '../../components/common/PaginationBar';
 
 function ChunksPanel({ paperId }: { paperId: string }) {
     const [page, setPage] = useState(1);
@@ -40,15 +41,13 @@ function ChunksPanel({ paperId }: { paperId: string }) {
                 {chunks.length === 0 && <div className='text-center py-4 text-gray-400 text-xs'>Không có chunks</div>}
             </div>
             {total > 20 && (
-                <div className='flex justify-center gap-2 mt-3'>
-                    <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
-                        className='px-2 py-1 bg-white border rounded text-xs disabled:opacity-40'>Trước</button>
-                    <span className='px-2 py-1 text-xs text-gray-400'>
-                        {page}/{Math.ceil(total / 20)}
-                    </span>
-                    <button onClick={() => setPage(page + 1)} disabled={page >= Math.ceil(total / 20)}
-                        className='px-2 py-1 bg-white border rounded text-xs disabled:opacity-40'>Sau</button>
-                </div>
+                <PaginationBar
+                    page={page}
+                    totalPages={Math.ceil(total / 20)}
+                    total={total}
+                    label='chunks'
+                    onPageChange={setPage}
+                />
             )}
         </div>
     );
@@ -225,16 +224,14 @@ export default function AdminDocumentsPage() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-                <div className='flex justify-center items-center gap-3 mt-6'>
-                    <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
-                        className='px-4 py-2 bg-white border rounded-xl text-sm disabled:opacity-40 hover:bg-gray-50'>
-                        Trước
-                    </button>
-                    <span className='text-sm text-gray-500'>Trang {page} / {totalPages}</span>
-                    <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages}
-                        className='px-4 py-2 bg-white border rounded-xl text-sm disabled:opacity-40 hover:bg-gray-50'>
-                        Sau
-                    </button>
+                <div className='mt-6 bg-white rounded-2xl border shadow-sm overflow-hidden'>
+                    <PaginationBar
+                        page={page}
+                        totalPages={totalPages}
+                        total={total}
+                        label='documents'
+                        onPageChange={setPage}
+                    />
                 </div>
             )}
         </div>

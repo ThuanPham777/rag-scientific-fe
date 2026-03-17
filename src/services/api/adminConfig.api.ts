@@ -45,6 +45,9 @@ export const addPaperToKb = (paperId: string, categoryIds: string[]) =>
 export const removePaperFromKb = (paperId: string) =>
     api.delete(`/admin/kb/papers/${paperId}`);
 
+export const bulkRemovePapersFromKb = (paperIds: string[]) =>
+    api.post('/admin/kb/papers/bulk-remove', { paperIds });
+
 export const classifyPaper = (paperId: string) =>
     api.post(`/admin/kb/papers/${paperId}/classify`);
 
@@ -61,3 +64,17 @@ export const updatePaperKbTags = (paperId: string, tags: string[]) =>
 
 export const deletePaper = (paperId: string) =>
     api.delete(`/admin/kb/papers/${paperId}`);
+
+// ─── KB Explorer ────────────────────────────
+
+export const getKbExplorerStats = () => api.get('/admin/kb/explorer/stats');
+
+export const getKbExplorerDuplicates = () => api.get('/admin/kb/explorer/duplicates');
+
+export const getKbExplorerChunks = (params?: {
+    collection?: string;
+    paper_id?: string;
+    category?: string;
+    page?: number;
+    limit?: number;
+}) => api.get('/admin/kb/explorer/chunks', { params });
