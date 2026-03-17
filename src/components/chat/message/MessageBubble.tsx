@@ -82,7 +82,7 @@ function MessageBubbleBase({
             {hoverActions}
             <div
               ref={bubbleContentRef}
-              className={`relative px-4 py-2 break-all overflow-hidden cursor-default ${
+              className={`relative px-4 py-2 break-words overflow-hidden cursor-default ${
                 isUser
                   ? 'bg-orange-500 text-white rounded-2xl rounded-br-none shadow-sm border border-orange-500'
                   : 'bg-white text-gray-800 border-gray-200 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border rounded-2xl rounded-bl-none'
@@ -155,7 +155,7 @@ function MessageBubbleBase({
             ref={bubbleContentRef}
             onMouseEnter={handleBubbleEnter}
             onMouseLeave={handleBubbleLeave}
-            className={`relative rounded-2xl px-4 py-2 shadow-sm border transition-all break-all overflow-hidden cursor-default ${
+            className={`relative rounded-2xl px-4 py-2 shadow-sm border transition-all break-words overflow-hidden cursor-default ${
               alignRight
                 ? `bg-orange-500 text-white border-orange-500 ${
                     isGrouped ? 'rounded-tr-lg' : 'rounded-br-none'

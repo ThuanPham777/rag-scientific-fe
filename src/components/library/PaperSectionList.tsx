@@ -71,9 +71,8 @@ function PaperRow({
 }) {
   return (
     <div
-      className={`grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors ${
-        isSelected ? 'bg-orange-50/50' : ''
-      }`}
+      className={`grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors ${isSelected ? 'bg-orange-50/50' : ''
+        }`}
       onClick={() => onPaperClick(paper)}
     >
       {selectable && (
@@ -88,7 +87,7 @@ function PaperRow({
         </div>
       )}
       <div
-        className={`${selectable ? 'col-span-4' : 'col-span-4'} flex items-start gap-3 min-w-0`}
+        className={`${selectable ? 'col-span-3' : 'col-span-4'} flex items-start gap-3 min-w-0`}
       >
         <div className='shrink-0 w-10 h-12 bg-red-100 rounded flex items-center justify-center'>
           <FileText className='h-5 w-5 text-red-600' />
@@ -340,7 +339,8 @@ export function PaperSectionList({
               />
             </div>
           )}
-          <div className={selectable ? 'col-span-4' : 'col-span-4'}>
+          {/* When selectable=true we must keep total grid spans = 12 (avoid Actions wrapping). */}
+          <div className={selectable ? 'col-span-3' : 'col-span-4'}>
             Files ({totalPapers})
           </div>
           <div className='col-span-2'>Title</div>

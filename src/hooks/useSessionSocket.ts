@@ -27,6 +27,7 @@ import {
   markMessageDeletedInCache,
 } from './queries/useChatQueries';
 import type { ReactionAggregate } from '../utils/types';
+import { parseCitationsFromResponse } from '../utils/citation';
 
 // Typing auto-clear timeout (ms). If we don't receive a stop event
 // within this window, we force-clear the typing state for that user.
@@ -258,6 +259,19 @@ export function useSessionSocket(
       const cId = conversationIdRef.current;
       if (!cId) return;
 
+      // Some backend events (especially assistant answers) may include citations inside
+      // a nested `context` object rather than a top-level `citations` field.
+      // If we don't normalize this, other members will see the answer but not the Sources
+      // until a later refetch happens.
+      const rawCitations =
+        msgData?.citations ??
+        msgData?.context?.citations ??
+        msgData?.context?.sources ??
+        msgData?.context?.context?.citations;
+      const parsedCitations = Array.isArray(rawCitations)
+        ? parseCitationsFromResponse(rawCitations, paperIdRef.current)
+        : undefined;
+
       // --- Normalise the payload so it matches the format that
       //     getMessageHistory() produces (lowercase role, string dates, etc.)
       //     The backend broadcasts  role: 'USER' | 'ASSISTANT' | 'SYSTEM'
@@ -274,6 +288,10 @@ export function useSessionSocket(
             : new Date(msgData.createdAt).toISOString(),
         // Map imageUrl (S3 URL from BE) → imageDataUrl so ChatMessage renders it
         imageDataUrl: msgData.imageDataUrl || msgData.imageUrl || undefined,
+        // Normalized citations so Sources render immediately for all members
+        citations: msgData?.citations
+          ? parsedCitations
+          : parsedCitations || undefined,
       };
 
       // Clear typing for the sender (they just sent a message)
@@ -356,7 +374,20 @@ export function useSessionSocket(
       const currentCache = queryClient.getQueryData<any>(
         chatKeys.infiniteMessages(cId),
       );
-      if (!currentCache?.pages?.length) {
+
+      // For assistant messages, do an immediate refetch so that all members
+      // get the authoritative version from the REST history endpoint, which
+      // always includes full citations. This avoids cases where the socket
+      // payload is missing/partial citations and users only see Sources after
+      // a manual reload.
+      if (normalised.role === 'assistant') {
+        console.log(
+          '[useSessionSocket] Assistant message received — triggering immediate refetch for citations sync',
+        );
+        queryClient.invalidateQueries({
+          queryKey: chatKeys.infiniteMessages(cId),
+        });
+      } else if (!currentCache?.pages?.length) {
         console.log(
           '[useSessionSocket] No cache after insert — triggering full refetch',
         );
